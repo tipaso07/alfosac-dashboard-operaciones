@@ -57,7 +57,7 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
     const operations = source.map((item) => ({
       id: item.id, modalidad: item.modalidad, estado: item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
-      fechaIngresoDespacho: null, fechaCompletado: null, fuente: 'FALCON' as const
+      fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
     }));
     await guardarOperaciones(operations);
     response.json({ imported: true, count: operations.length, message: 'Importación marítima completada en la base propia del dashboard.' });
@@ -74,9 +74,9 @@ app.post('/api/integrations/falcon/import', async (_request, response) => {
   try {
     const [maritimas, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
     const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
-      id: item.id, modalidad: item.modalidad, estado: item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+      id: item.id, modalidad: item.modalidad, estado: item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
-      fechaIngresoDespacho: null, fechaCompletado: null, fuente: 'FALCON' as const
+      fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
     });
     await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
     response.json({ imported: true, maritime: maritimas.length, aereo: aereas.length, message: 'Datos de Falcon actualizados en la base propia del dashboard.' });

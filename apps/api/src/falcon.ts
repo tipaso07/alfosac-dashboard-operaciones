@@ -53,6 +53,7 @@ export interface FalconMaritimeOperation {
   unidad: string;
   fechaCita: string | null;
   fechaGarita: string | null;
+  fechaIngresoDespacho: string | null;
 }
 
 function enabled() {
@@ -339,7 +340,8 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
       return [{
         id, modalidad, volante: text(value(row, ['cod_volante'])) ?? id,
         unidad: garita[1] || text(value(row, ['des_placa'])) || '-',
-        fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])), fechaGarita: garita[0] ?? null
+        fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])), fechaGarita: garita[0] ?? null,
+        fechaIngresoDespacho: null
       }];
     });
   } finally { await pool.close(); }
@@ -361,7 +363,8 @@ export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritime
         id: `AR-${id}`, modalidad: 'AEREO',
         volante: text(value(row, ['cpa_volante', 'cpa_lista_retiro'])) ?? id,
         unidad: '-', fechaCita: null,
-        fechaGarita: dateText(value(row, ['cpa_fecha_atencion']))
+        fechaGarita: null,
+        fechaIngresoDespacho: dateText(value(row, ['cpa_fecha_atencion']))
       }];
     });
   } finally { await pool.close(); }
