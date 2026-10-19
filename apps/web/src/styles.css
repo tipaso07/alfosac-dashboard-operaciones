@@ -50,8 +50,9 @@ td:first-child { font-weight: 700; }
 .filter-row { display: flex; flex-wrap: wrap; gap: 10px; padding: 20px 0; }
 .filter-row button, .view-row button, .detail-button { border: 1px solid #329AD6; background: #ffffff; color: #000059; padding: 10px 14px; cursor: pointer; font-weight: 700; }
 .filter-row button.selected, .view-row button.selected, .detail-button { background: #329AD6; color: #ffffff; }
-.view-row { display: flex; justify-content: flex-end; gap: 0; margin: -58px 0 18px; }
-.view-row button + button { border-left: 0; }
+.view-row { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 12px; margin: 4px 0 14px; padding-top: 18px; border-top: 1px solid #329AD6; }
+.view-row button { min-width: 206px; }
+.data-source-note { margin: 0 0 22px; padding: 12px 14px; border-left: 3px solid #329AD6; background: #ffffff; color: #000059; font-size: .9rem; }
 .operations-table-wrap { overflow-x: auto; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
@@ -91,5 +92,6 @@ td:first-child { font-weight: 700; }
   .internal-kpis, .modal-summary { grid-template-columns: 1fr; }
   .operations-panel { padding: 16px; }
   .view-row { justify-content: start; margin: 0 0 18px; }
+  .view-row button { min-width: 0; }
   .panel-heading, .timeline li { align-items: start; flex-direction: column; }
 }

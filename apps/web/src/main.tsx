@@ -29,9 +29,9 @@ type Resumen = {
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 const rotationMs = 15_000;
 const nombres: Record<Modalidad, string> = {
-  FCL: 'FCL marítimo',
-  LCL: 'LCL marítimo',
-  BB: 'BB marítimo',
+  FCL: 'FCL importación',
+  LCL: 'LCL importación',
+  BB: 'BB importación',
   AEREO: 'Aéreo / A.R.'
 };
 
@@ -207,6 +207,7 @@ function InternalScreen({ resumen, operaciones, updatedAt, reportDate, dataMode 
           <button className={vista === 'RESUMEN' ? 'selected' : ''} onClick={() => setVista('RESUMEN')}>Resumen agrupado por hora</button>
           <button className={vista === 'LISTA' ? 'selected' : ''} onClick={() => setVista('LISTA')}>Lista detallada</button>
         </div>
+        <p className="data-source-note"><strong>Fuentes:</strong> cita, volante, garita y placa: Falcon. Ingreso y despacho marítimo: GITS. A.R. e ingreso aéreo: Falcon.</p>
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
@@ -218,7 +219,7 @@ function InternalScreen({ resumen, operaciones, updatedAt, reportDate, dataMode 
             <thead>
               <tr>
                 <th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante / A.R.</th>
-                <th>Placa / unidad</th>
+                <th>Placa</th>
                 <th>Registro garita</th><th>Espera</th><th>Ingreso</th><th>Despacho</th>
                 <th></th>
               </tr>
@@ -289,9 +290,9 @@ function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose:
         </header>
 
         <div className="modal-summary">
-          <p><span>Unidad</span><strong>{operacion.unidad}</strong></p>
+          <p><span>Placa</span><strong>{operacion.unidad}</strong></p>
           <p><span>Estado actual</span><StateBadge estado={operacion.estado} /></p>
-          <p><span>Fuente</span><strong>Demostración</strong></p>
+          <p><span>Fuentes</span><strong>Falcon / GITS</strong></p>
         </div>
 
         <h3>Trazabilidad de la operación</h3>
