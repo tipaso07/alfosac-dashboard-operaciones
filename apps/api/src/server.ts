@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { guardarOperaciones, listarOperaciones } from './report-store.js';
+import { guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
@@ -51,6 +51,11 @@ app.get('/api/dashboard/summary', (_request, response) => {
 app.get('/api/dashboard/operations', (_request, response) => {
   listarOperaciones().then((stored) => response.json({ mode: stored.length > 0 ? 'reportes' : 'demo', reportDate: fechaReporteConfigurada(), operations: stored.length > 0 ? stored : operacionesDemo }))
     .catch(() => response.json({ mode: 'demo', reportDate: fechaReporteConfigurada(), operations: operacionesDemo }));
+});
+
+app.get('/api/dashboard/pending-arrivals', (_request, response) => {
+  listarPendientesLlegada().then((operations) => response.json({ operations }))
+    .catch(() => response.json({ operations: [] }));
 });
 
 app.post('/api/integrations/falcon/import/maritime', async (_request, response) => {

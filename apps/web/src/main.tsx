@@ -46,6 +46,7 @@ function App() {
   const tv = window.location.pathname === '/tv';
   const [resumen, setResumen] = useState<Resumen[]>(demoResumen);
   const [operaciones, setOperaciones] = useState<Operacion[]>([]);
+  const [pendientes, setPendientes] = useState<Operacion[]>([]);
   const [updatedAt, setUpdatedAt] = useState(new Date().toISOString());
   const [reportDate, setReportDate] = useState<string | null>(null);
   const [dataMode, setDataMode] = useState<'demo' | 'reportes'>('demo');
@@ -54,12 +55,14 @@ function App() {
   useEffect(() => {
     const cargar = async () => {
       try {
-        const respuestas = await Promise.all([fetch('/api/dashboard/summary'), fetch('/api/dashboard/operations')]);
-        if (!respuestas[0].ok || !respuestas[1].ok) return;
+        const respuestas = await Promise.all([fetch('/api/dashboard/summary'), fetch('/api/dashboard/operations'), fetch('/api/dashboard/pending-arrivals')]);
+        if (!respuestas[0].ok || !respuestas[1].ok || !respuestas[2].ok) return;
         const summaryData = await respuestas[0].json() as { mode: 'demo' | 'reportes'; summary: Resumen[]; updatedAt: string; reportDate: string | null };
         const operationsData = await respuestas[1].json() as { operations: Operacion[]; reportDate: string | null };
+        const pendingData = await respuestas[2].json() as { operations: Operacion[] };
         setResumen(summaryData.summary);
         setOperaciones(operationsData.operations);
+        setPendientes(pendingData.operations);
         setUpdatedAt(summaryData.updatedAt);
         setReportDate(summaryData.reportDate ?? operationsData.reportDate ?? null);
         setDataMode(summaryData.mode);
@@ -85,7 +88,7 @@ function App() {
 
   return tv
     ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} />
-    : <InternalScreen resumen={resumen} operaciones={operaciones} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
+    : <InternalScreen resumen={resumen} operaciones={operaciones} pendientes={pendientes} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
 function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }: {
@@ -157,7 +160,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
   );
 }
 
-function InternalScreen({ resumen, operaciones, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; operaciones: Operacion[]; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
+function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; operaciones: Operacion[]; pendientes: Operacion[]; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionada, setSeleccionada] = useState<Operacion | null>(null);
@@ -198,16 +201,20 @@ function InternalScreen({ resumen, operaciones, updatedAt, reportDate, dataMode 
           <p>{operacionesFiltradas.length} registro(s)</p>
         </div>
 
-        <div className="filter-row" aria-label="Filtrar por operación">
-          <button className={filtro === 'TODAS' ? 'selected' : ''} onClick={() => setFiltro('TODAS')}>Todas</button>
-          {orden.map((item) => <button className={filtro === item ? 'selected' : ''} key={item} onClick={() => setFiltro(item)}>{nombres[item]}</button>)}
+        <div className="toolbar-row">
+          <div className="filter-row" aria-label="Filtrar por operación">
+            <button className={filtro === 'TODAS' ? 'selected' : ''} onClick={() => setFiltro('TODAS')}>Todas</button>
+            {orden.map((item) => <button className={filtro === item ? 'selected' : ''} key={item} onClick={() => setFiltro(item)}>{nombres[item]}</button>)}
+          </div>
+          <div className="view-row" aria-label="Elegir vista">
+            <button className={vista === 'RESUMEN' ? 'selected' : ''} onClick={() => setVista('RESUMEN')} title="Resumen agrupado por hora" aria-label="Resumen agrupado por hora">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 7v5l3 2"/></svg>
+            </button>
+            <button className={vista === 'LISTA' ? 'selected' : ''} onClick={() => setVista('LISTA')} title="Lista detallada" aria-label="Lista detallada">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
+            </button>
+          </div>
         </div>
-
-        <div className="view-row" aria-label="Elegir vista">
-          <button className={vista === 'RESUMEN' ? 'selected' : ''} onClick={() => setVista('RESUMEN')}>Resumen agrupado por hora</button>
-          <button className={vista === 'LISTA' ? 'selected' : ''} onClick={() => setVista('LISTA')}>Lista detallada</button>
-        </div>
-        <p className="data-source-note"><strong>Fuentes:</strong> cita, volante, garita y placa: Falcon. Ingreso y despacho marítimo: GITS. A.R. e ingreso aéreo: Falcon.</p>
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
@@ -242,6 +249,11 @@ function InternalScreen({ resumen, operaciones, updatedAt, reportDate, dataMode 
             </tbody>
           </table>}
         </div>
+      </section>
+
+      <section className="pending-panel">
+        <div><p className="brand">SEGUIMIENTO</p><h2>Pendientes de llegada</h2></div>
+        {pendientes.length ? <div className="pending-list">{pendientes.map((item) => <article key={item.id}><strong>{item.volante}</strong><span>{nombres[item.modalidad]} · Cita: {item.fechaCita ? formatDateTime(item.fechaCita) : '—'}</span></article>)}</div> : <p>No hay citas vencidas pendientes de registro en garita.</p>}
       </section>
 
       {seleccionada && <OperationModal operacion={seleccionada} onClose={() => setSeleccionada(null)} />}

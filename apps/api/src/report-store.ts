@@ -77,3 +77,20 @@ export async function listarOperaciones() {
     fuente: row.fuente_origen
   }));
 }
+
+export async function listarPendientesLlegada() {
+  const result = await pool.query<{
+    identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado']; volante: string | null; unidad: string | null; fecha_cita: string | null; fuente_origen: Operacion['fuente'];
+  }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fuente_origen
+      FROM operaciones
+      WHERE fecha_cita < (((NOW() AT TIME ZONE 'America/Lima')::date)::timestamp AT TIME ZONE 'America/Lima')
+        AND fecha_garita IS NULL
+        AND fecha_ingreso_despacho IS NULL
+        AND fecha_completado IS NULL
+      ORDER BY fecha_cita ASC LIMIT 100;`);
+  return result.rows.map((row) => ({
+    id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
+    volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
+    fechaCita: row.fecha_cita, fechaGarita: null, fechaIngresoDespacho: null, fechaCompletado: null, fuente: row.fuente_origen
+  }));
+}

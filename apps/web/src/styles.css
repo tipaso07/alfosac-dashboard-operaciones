@@ -47,13 +47,21 @@ td:first-child { font-weight: 700; }
 .panel-heading { display: flex; align-items: end; justify-content: space-between; gap: 18px; border-bottom: 2px solid #329AD6; padding-bottom: 18px; }
 .panel-heading h2 { margin-bottom: 0; font-size: 1.7rem; }
 .panel-heading > p { margin: 0; font-weight: 700; }
-.filter-row { display: flex; flex-wrap: wrap; gap: 10px; padding: 20px 0; }
+.toolbar-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 0; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 10px; }
 .filter-row button, .view-row button, .detail-button { border: 1px solid #329AD6; background: #ffffff; color: #000059; padding: 10px 14px; cursor: pointer; font-weight: 700; }
 .filter-row button.selected, .view-row button.selected, .detail-button { background: #329AD6; color: #ffffff; }
-.view-row { display: flex; justify-content: flex-start; flex-wrap: wrap; gap: 12px; margin: 4px 0 14px; padding-top: 18px; border-top: 1px solid #329AD6; }
-.view-row button { min-width: 206px; }
-.data-source-note { margin: 0 0 22px; padding: 12px 14px; border-left: 3px solid #329AD6; background: #ffffff; color: #000059; font-size: .9rem; }
+.view-row { display: flex; border: 1px solid #329AD6; }
+.view-row button { width: 46px; height: 40px; padding: 8px; display: grid; place-items: center; }
+.view-row button + button { border-left: 1px solid #329AD6; }
+.view-row svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .operations-table-wrap { overflow-x: auto; }
+.pending-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
+.pending-panel h2 { margin-bottom: 16px; }
+.pending-panel > p { margin-bottom: 0; }
+.pending-list { display: grid; gap: 10px; }
+.pending-list article { border-left: 3px solid #000059; padding: 10px 14px; display: flex; justify-content: space-between; gap: 16px; }
+.pending-list strong, .pending-list span { display: block; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
 .operations-table td { padding: 16px 12px; }
@@ -91,7 +99,6 @@ td:first-child { font-weight: 700; }
   .rotation { gap: 6px; }
   .internal-kpis, .modal-summary { grid-template-columns: 1fr; }
   .operations-panel { padding: 16px; }
-  .view-row { justify-content: start; margin: 0 0 18px; }
-  .view-row button { min-width: 0; }
+  .toolbar-row { align-items: flex-start; flex-direction: column; }
   .panel-heading, .timeline li { align-items: start; flex-direction: column; }
 }
