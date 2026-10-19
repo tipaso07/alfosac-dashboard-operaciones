@@ -176,6 +176,11 @@ function fechaConHora(fecha: unknown, hora: unknown) {
   return `${day}T${numericHour}:00:00-05:00`;
 }
 
+function fechaReporte() {
+  const value = process.env.DASHBOARD_REPORT_DATE?.trim();
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
 function maritimeMode(negocio: string | null): Modalidad | 'OTRA' {
   if (negocio === '3') return 'FCL';
   if (negocio === '4') return 'LCL';
@@ -311,12 +316,15 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   try {
-    const citasResult = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
+    const date = fechaReporte();
+    const request = pool.request().input('limit', sql.Int, limit);
+    if (date) request.input('reportDate', sql.Date, date);
+    const citasResult = await request.query<SourceRow>(`
       SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa
       FROM dbo.citas_programadas
       WHERE cod_negocio IN (3, 4, 5)
-        AND fecha >= DATEADD(day, -1, CONVERT(date, GETDATE()))
-        AND fecha < DATEADD(day, 2, CONVERT(date, GETDATE()))
+        AND fecha >= ${date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())'}
+        AND fecha < DATEADD(day, 1, ${date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())'})
       ORDER BY fecha DESC, hora DESC;
     `);
     const ids = citasResult.recordset.map((row) => text(value(row, ['id']))).filter((id): id is string => Boolean(id));

@@ -47,6 +47,8 @@ function App() {
   const [resumen, setResumen] = useState<Resumen[]>(demoResumen);
   const [operaciones, setOperaciones] = useState<Operacion[]>([]);
   const [updatedAt, setUpdatedAt] = useState(new Date().toISOString());
+  const [reportDate, setReportDate] = useState<string | null>(null);
+  const [dataMode, setDataMode] = useState<'demo' | 'reportes'>('demo');
   const [indice, setIndice] = useState(0);
 
   useEffect(() => {
@@ -54,11 +56,13 @@ function App() {
       try {
         const respuestas = await Promise.all([fetch('/api/dashboard/summary'), fetch('/api/dashboard/operations')]);
         if (!respuestas[0].ok || !respuestas[1].ok) return;
-        const summaryData = await respuestas[0].json() as { summary: Resumen[]; updatedAt: string };
-        const operationsData = await respuestas[1].json() as { operations: Operacion[] };
+        const summaryData = await respuestas[0].json() as { mode: 'demo' | 'reportes'; summary: Resumen[]; updatedAt: string; reportDate: string | null };
+        const operationsData = await respuestas[1].json() as { operations: Operacion[]; reportDate: string | null };
         setResumen(summaryData.summary);
         setOperaciones(operationsData.operations);
         setUpdatedAt(summaryData.updatedAt);
+        setReportDate(summaryData.reportDate ?? operationsData.reportDate ?? null);
+        setDataMode(summaryData.mode);
       } catch {
         // Se conserva el último dato visible si la API se reinicia.
       }
@@ -80,15 +84,16 @@ function App() {
   const detalle = useMemo(() => crearDetalle(operaciones.filter((item) => item.modalidad === modalidad)), [modalidad, operaciones]);
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} indice={indice} />
-    : <InternalScreen resumen={resumen} operaciones={operaciones} updatedAt={updatedAt} />;
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} />
+    : <InternalScreen resumen={resumen} operaciones={operaciones} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, updatedAt, indice }: {
+function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
   updatedAt: string;
+  reportDate: string | null;
   indice: number;
 }) {
   return (
@@ -97,6 +102,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, indice }: {
         <div>
           <p className="brand">ALMACENES FORWARDER S.A.C.</p>
           <h1>{nombres[modalidad]}</h1>
+          {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
         <div className="tv-clock">
           <strong>{formatHour(new Date().toISOString())}</strong>
@@ -151,7 +157,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, indice }: {
   );
 }
 
-function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[]; operaciones: Operacion[]; updatedAt: string }) {
+function InternalScreen({ resumen, operaciones, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; operaciones: Operacion[]; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionada, setSeleccionada] = useState<Operacion | null>(null);
@@ -171,8 +177,9 @@ function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[
         <div>
           <p className="brand">ALMACENES FORWARDER S.A.C.</p>
           <h1>Dashboard operativo</h1>
+          {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
-        <p>Modo demostración · actualizado {formatHour(updatedAt)}</p>
+        <p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p>
       </header>
 
       <section className="internal-kpis" aria-label="Resumen general">
@@ -328,6 +335,11 @@ function crearDetalle(operaciones: Operacion[]): DetalleHora[] {
 
 function formatHour(value: string) {
   return new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
+    .format(new Date(`${value}T12:00:00-05:00`));
 }
 
 function formatDateTime(value: string) {

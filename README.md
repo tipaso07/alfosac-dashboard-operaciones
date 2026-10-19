@@ -45,3 +45,13 @@ Cuando se despliegue en la PC con acceso a Falcon, se activa temporalmente `FALC
 Para validar los campos antes de construir la sincronización está disponible `http://localhost:5100/api/integrations/falcon/preview`. Devuelve como máximo 15 registros recientes de citas marítimas, A.R. aéreas y garita. Es una consulta limitada, de solo lectura y no guarda información.
 
 También se puede comprobar una trazabilidad marítima puntual con `http://localhost:5100/api/integrations/falcon/citas/<id-cita>`. Devuelve la cita y sus registros de garita relacionados, sin consultar ni modificar otros datos.
+
+## Revisar un día específico
+
+Por defecto el dashboard muestra el día actual en Lima. Para revisar una jornada anterior sin modificar Falcon, agrega temporalmente en `.env`:
+
+```text
+DASHBOARD_REPORT_DATE=2026-10-14
+```
+
+Luego reconstruye la API e importa de forma manual. Falcon se consulta solo en lectura para esa fecha y los datos se guardan únicamente en la base propia del dashboard. Al terminar la revisión, deja la variable vacía para volver a mostrar el día actual.

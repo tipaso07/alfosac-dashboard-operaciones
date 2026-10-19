@@ -9,6 +9,11 @@ import { guardarOperaciones, listarOperaciones } from './report-store.js';
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
 
+function fechaReporteConfigurada() {
+  const value = process.env.DASHBOARD_REPORT_DATE?.trim();
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
 app.use(cors());
 app.use(express.json());
 
@@ -32,19 +37,20 @@ app.get('/api/integrations/falcon/citas/:citaId', async (request, response) => {
 
 app.get('/api/dashboard/summary', (_request, response) => {
   listarOperaciones().then((stored) => response.json({
-    mode: 'demo',
+    mode: stored.length > 0 ? 'reportes' : 'demo',
     updatedAt: new Date().toISOString(),
+    reportDate: fechaReporteConfigurada(),
     sources: {
       falcon: process.env.FALCON_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA',
       gits: process.env.GITS_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA'
     },
     summary: crearResumen(stored.length > 0 ? stored : operacionesDemo)
-  })).catch(() => response.json({ mode: 'demo', updatedAt: new Date().toISOString(), sources: {}, summary: crearResumen(operacionesDemo) }));
+  })).catch(() => response.json({ mode: 'demo', updatedAt: new Date().toISOString(), reportDate: fechaReporteConfigurada(), sources: {}, summary: crearResumen(operacionesDemo) }));
 });
 
 app.get('/api/dashboard/operations', (_request, response) => {
-  listarOperaciones().then((stored) => response.json({ mode: stored.length > 0 ? 'reportes' : 'demo', operations: stored.length > 0 ? stored : operacionesDemo }))
-    .catch(() => response.json({ mode: 'demo', operations: operacionesDemo }));
+  listarOperaciones().then((stored) => response.json({ mode: stored.length > 0 ? 'reportes' : 'demo', reportDate: fechaReporteConfigurada(), operations: stored.length > 0 ? stored : operacionesDemo }))
+    .catch(() => response.json({ mode: 'demo', reportDate: fechaReporteConfigurada(), operations: operacionesDemo }));
 });
 
 app.post('/api/integrations/falcon/import/maritime', async (_request, response) => {

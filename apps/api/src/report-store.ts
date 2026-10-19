@@ -4,6 +4,14 @@ import type { Operacion } from './domain.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
+function fechaActualLima() {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
+  return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
 function stableUuid(value: string) {
   const hex = createHash('sha256').update(value).digest('hex').slice(0, 32);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20)}`;
@@ -38,6 +46,8 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
 }
 
 export async function listarOperaciones() {
+  const configuredDate = process.env.DASHBOARD_REPORT_DATE?.trim();
+  const reportDate = configuredDate && /^\d{4}-\d{2}-\d{2}$/.test(configuredDate) ? configuredDate : null;
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
     volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
@@ -45,11 +55,20 @@ export async function listarOperaciones() {
   }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
       fecha_ingreso_despacho, fecha_completado, fuente_origen
      FROM operaciones
-     WHERE COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) >=
-       (((NOW() AT TIME ZONE 'America/Lima')::date)::timestamp AT TIME ZONE 'America/Lima')
-       AND COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) <
-       ((((NOW() AT TIME ZONE 'America/Lima')::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
-     ORDER BY COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) DESC LIMIT 500;`);
+     WHERE (
+       fecha_cita >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND fecha_cita < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
+     ) OR (
+       fecha_garita >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND fecha_garita < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
+     ) OR (
+       fecha_ingreso_despacho >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND fecha_ingreso_despacho < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
+     ) OR (
+       fecha_completado >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND fecha_completado < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
+     )
+     ORDER BY COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) DESC LIMIT 500;`, [reportDate ?? fechaActualLima()]);
   return result.rows.map((row) => ({
     id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
     volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
