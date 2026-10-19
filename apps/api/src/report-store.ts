@@ -4,12 +4,17 @@ import type { Operacion } from './domain.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-function fechaActualLima() {
+export function fechaActualLima() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit'
   }).formatToParts(new Date());
   const value = (type: string) => parts.find((part) => part.type === type)?.value ?? '';
   return `${value('year')}-${value('month')}-${value('day')}`;
+}
+
+export function fechaReporteActual() {
+  const configuredDate = process.env.DASHBOARD_REPORT_DATE?.trim();
+  return configuredDate && /^\d{4}-\d{2}-\d{2}$/.test(configuredDate) ? configuredDate : fechaActualLima();
 }
 
 function stableUuid(value: string) {
@@ -46,8 +51,7 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
 }
 
 export async function listarOperaciones() {
-  const configuredDate = process.env.DASHBOARD_REPORT_DATE?.trim();
-  const reportDate = configuredDate && /^\d{4}-\d{2}-\d{2}$/.test(configuredDate) ? configuredDate : null;
+  const reportDate = fechaReporteActual();
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
     volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
@@ -68,7 +72,7 @@ export async function listarOperaciones() {
        fecha_completado >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
        AND fecha_completado < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
      )
-     ORDER BY COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) DESC LIMIT 500;`, [reportDate ?? fechaActualLima()]);
+     ORDER BY COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) DESC LIMIT 500;`, [reportDate]);
   return result.rows.map((row) => ({
     id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
     volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',

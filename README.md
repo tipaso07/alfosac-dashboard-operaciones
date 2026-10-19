@@ -26,7 +26,7 @@ La API queda disponible internamente en `/api`; el puerto `5100` se expone solo 
 
 ## Integración futura
 
-El conector Falcon ya queda preparado, pero se mantiene desactivado por seguridad. Al activarlo solo comprueba la conexión de lectura y que estén disponibles las tablas que se usarán para el mapeo; aún no carga datos automáticos sin validar primero el resultado en la PC operativa.
+El conector Falcon se mantiene separado de la base propia del dashboard y usa únicamente consultas de lectura. La importación automática requiere una activación explícita, después de validar el resultado en la PC operativa.
 
 Variables de Falcon:
 
@@ -36,6 +36,7 @@ Variables de Falcon:
 - `FALCON_DB_USER`, `FALCON_DB_PASSWORD`
 - `FALCON_DB_ENCRYPT`, `FALCON_DB_TRUST_CERTIFICATE`
 - `FALCON_SYNC_INTERVAL_SECONDS`
+- `FALCON_AUTO_SYNC_ENABLED`: activa la importación periódica; queda en `false` por defecto.
 - `GITS_SYNC_ENABLED`
 
 Cada conector deberá consultar únicamente cambios nuevos y guardarlos en esta base de reportes. Las pantallas nunca deberán consultar Falcon ni GITS directamente.
@@ -45,6 +46,16 @@ Cuando se despliegue en la PC con acceso a Falcon, se activa temporalmente `FALC
 Para validar los campos antes de construir la sincronización está disponible `http://localhost:5100/api/integrations/falcon/preview`. Devuelve como máximo 15 registros recientes de citas marítimas, A.R. aéreas y garita. Es una consulta limitada, de solo lectura y no guarda información.
 
 También se puede comprobar una trazabilidad marítima puntual con `http://localhost:5100/api/integrations/falcon/citas/<id-cita>`. Devuelve la cita y sus registros de garita relacionados, sin consultar ni modificar otros datos.
+
+Para revisar una hora concreta de Falcon sin una herramienta SQL, está disponible la consulta limitada:
+
+```text
+http://localhost:5100/api/integrations/falcon/citas?date=2026-10-19&modalidad=LCL&hour=7
+```
+
+Solo acepta fecha, modalidad marítima y hora; no permite ejecutar SQL libre. Incluye la última garita disponible, placa, conductor y transportista cuando Falcon los tenga.
+
+GITS conserva una configuración independiente y apagada por defecto. Cuando se entregue su acceso de solo lectura se configurarán `GITS_DB_HOST`, `GITS_DB_PORT`, `GITS_DB_NAME`, `GITS_DB_USER`, `GITS_DB_PASSWORD`, `GITS_DB_ENCRYPT` y `GITS_DB_TRUST_CERTIFICATE`; el dashboard seguirá funcionando con Falcon aunque GITS no esté disponible.
 
 ## Revisar un día específico
 

@@ -84,7 +84,7 @@ function App() {
 
   const modalidad = orden[indice];
   const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen[indice];
-  const detalle = useMemo(() => crearDetalle(operaciones.filter((item) => item.modalidad === modalidad)), [modalidad, operaciones]);
+  const detalle = useMemo(() => crearDetalle(operaciones.filter((item) => item.modalidad === modalidad), reportDate), [modalidad, operaciones, reportDate]);
 
   return tv
     ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} />
@@ -165,7 +165,7 @@ function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDat
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionada, setSeleccionada] = useState<Operacion | null>(null);
   const operacionesFiltradas = filtro === 'TODAS' ? operaciones : operaciones.filter((item) => item.modalidad === filtro);
-  const resumenHora = crearDetalle(operacionesFiltradas);
+  const resumenHora = crearDetalle(operacionesFiltradas, reportDate);
   const totales = resumen.reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
@@ -234,8 +234,8 @@ function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDat
             <tbody>
               {operacionesFiltradas.length > 0 ? operacionesFiltradas.map((item) => (
                 <tr key={item.id}>
-                  <td>{primaryDate(item) ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short' }).format(new Date(primaryDate(item)!)) : '—'}</td>
-                  <td>{primaryDate(item) ? formatHour(primaryDate(item)!) : '—'}</td>
+                  <td>{fechaOperacionEnReporte(item, reportDate) ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeZone: 'America/Lima' }).format(new Date(fechaOperacionEnReporte(item, reportDate)!)) : '—'}</td>
+                  <td>{fechaOperacionEnReporte(item, reportDate) ? formatHour(fechaOperacionEnReporte(item, reportDate)!) : '—'}</td>
                   <td>{nombres[item.modalidad]}</td>
                   <td><strong>{item.volante}</strong></td>
                   <td>{item.unidad}</td>
@@ -271,6 +271,20 @@ function primaryDate(operation: Operacion) {
   return operation.fechaCita ?? operation.fechaIngresoDespacho ?? operation.fechaGarita;
 }
 
+function fechaLima(value: string | null) {
+  if (!value) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function fechaOperacionEnReporte(operation: Operacion, reportDate: string | null) {
+  const events = [operation.fechaCita, operation.fechaGarita, operation.fechaIngresoDespacho, operation.fechaCompletado];
+  return events.find((value) => value && (!reportDate || fechaLima(value) === reportDate)) ?? primaryDate(operation);
+}
+
 function StateBadge({ estado }: { estado: Estado }) {
   const labels: Record<Estado, string> = {
     AGENDADA: 'Agendada',
@@ -304,7 +318,6 @@ function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose:
         <div className="modal-summary">
           <p><span>Placa</span><strong>{operacion.unidad}</strong></p>
           <p><span>Estado actual</span><StateBadge estado={operacion.estado} /></p>
-          <p><span>Fuentes</span><strong>Falcon / GITS</strong></p>
         </div>
 
         <h3>Trazabilidad de la operación</h3>
@@ -327,11 +340,11 @@ function Kpi({ label, value }: { label: string; value: number }) {
 
 type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; critical: boolean };
 
-function crearDetalle(operaciones: Operacion[]): DetalleHora[] {
+function crearDetalle(operaciones: Operacion[], reportDate: string | null): DetalleHora[] {
   const data = new Map<string, DetalleHora>();
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false) => {
-    if (!date) return;
-    const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false }).format(new Date(date)) + ':00';
+    if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
+    const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
     const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, critical: false };
     row[field] += 1;
     row.critical ||= critical;

@@ -4,25 +4,62 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
+import { diagnosticarGits } from './gits.js';
+import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
 
 function fechaReporteConfigurada() {
-  const value = process.env.DASHBOARD_REPORT_DATE?.trim();
-  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+  return fechaReporteActual();
+}
+
+let lastFalconSyncAt: string | null = null;
+let lastFalconSyncError: string | null = null;
+let syncRunning = false;
+
+async function importarFalcon() {
+  const [maritimas, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
+  const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
+    id: item.id, modalidad: item.modalidad, estado: item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+    volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
+    fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
+  });
+  await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
+  return { maritime: maritimas.length, aereo: aereas.length };
+}
+
+async function syncFalconIfEnabled() {
+  if (process.env.FALCON_AUTO_SYNC_ENABLED !== 'true' || syncRunning) return;
+  syncRunning = true;
+  try {
+    await importarFalcon();
+    lastFalconSyncAt = new Date().toISOString();
+    lastFalconSyncError = null;
+  } catch (error) {
+    lastFalconSyncError = error instanceof Error ? error.message : 'No se pudo sincronizar Falcon.';
+  } finally {
+    syncRunning = false;
+  }
 }
 
 app.use(cors());
 app.use(express.json());
 
 app.get('/api/health', (_request, response) => {
-  response.json({ status: 'ok', mode: 'demo', timestamp: new Date().toISOString() });
+  response.json({
+    status: 'ok', timestamp: new Date().toISOString(), reportDate: fechaReporteActual(),
+    falcon: { autoSync: process.env.FALCON_AUTO_SYNC_ENABLED === 'true', lastSyncAt: lastFalconSyncAt, lastError: lastFalconSyncError },
+    gits: diagnosticarGits()
+  });
 });
 
 app.get('/api/integrations/falcon', async (_request, response) => {
-  response.json(await diagnosticarFalcon());
+  response.json({ ...(await diagnosticarFalcon()), autoSync: process.env.FALCON_AUTO_SYNC_ENABLED === 'true', lastSyncAt: lastFalconSyncAt, lastError: lastFalconSyncError });
+});
+
+app.get('/api/integrations/gits', (_request, response) => {
+  response.json(diagnosticarGits());
 });
 
 app.get('/api/integrations/falcon/preview', async (request, response) => {
@@ -81,8 +118,8 @@ app.get('/api/dashboard/summary', (_request, response) => {
       falcon: process.env.FALCON_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA',
       gits: process.env.GITS_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA'
     },
-    summary: crearResumen(stored.length > 0 ? stored : operacionesDemo)
-  })).catch(() => response.json({ mode: 'demo', updatedAt: new Date().toISOString(), reportDate: fechaReporteConfigurada(), sources: {}, summary: crearResumen(operacionesDemo) }));
+    summary: crearResumen(stored.length > 0 ? stored : operacionesDemo, fechaReporteActual())
+  })).catch(() => response.json({ mode: 'demo', updatedAt: new Date().toISOString(), reportDate: fechaReporteConfigurada(), sources: {}, summary: crearResumen(operacionesDemo, fechaReporteActual()) }));
 });
 
 app.get('/api/dashboard/operations', (_request, response) => {
@@ -120,14 +157,10 @@ app.post('/api/integrations/falcon/import', async (_request, response) => {
     return;
   }
   try {
-    const [maritimas, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
-    const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
-      id: item.id, modalidad: item.modalidad, estado: item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
-      volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
-      fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
-    });
-    await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
-    response.json({ imported: true, maritime: maritimas.length, aereo: aereas.length, message: 'Datos de Falcon actualizados en la base propia del dashboard.' });
+    const result = await importarFalcon();
+    lastFalconSyncAt = new Date().toISOString();
+    lastFalconSyncError = null;
+    response.json({ imported: true, ...result, message: 'Datos de Falcon actualizados en la base propia del dashboard.' });
   } catch (error) {
     response.status(503).json({ imported: false, message: error instanceof Error ? error.message : 'No se pudo importar Falcon.' });
   }
@@ -135,5 +168,9 @@ app.post('/api/integrations/falcon/import', async (_request, response) => {
 
 app.listen(port, () => {
   console.log(`Dashboard API disponible en el puerto ${port}`);
+  const configuredInterval = Number(process.env.FALCON_SYNC_INTERVAL_SECONDS ?? 300);
+  const intervalSeconds = Number.isFinite(configuredInterval) ? Math.max(60, Math.floor(configuredInterval)) : 300;
+  void syncFalconIfEnabled();
+  setInterval(() => void syncFalconIfEnabled(), intervalSeconds * 1_000);
 });
 

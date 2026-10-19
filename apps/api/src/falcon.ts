@@ -69,6 +69,7 @@ export interface FalconHourAppointment {
   fechaRegistro: string | null;
   fechaVigencia: string | null;
   fechaAtencion: string | null;
+  fechaGarita: string | null;
   usuarioAtencion: string | null;
   placa: string | null;
   conductor: string | null;
@@ -101,13 +102,21 @@ export async function consultarCitasPorHora(date: string, modalidad: Modalidad, 
         SELECT TOP (50)
           id, id_master, id_hijo, fecha, hora, cod_volante, flag_cita, express,
           fecha_registro, fec_vigencia, fecha_atencion, user_atencion_estado,
-          des_placa, des_conductor, des_transportista
-        FROM dbo.citas_programadas
-        WHERE cod_negocio = @business
-          AND fecha >= CONVERT(date, @reportDate)
-          AND fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
-          AND hora = @hour
-        ORDER BY fecha_registro ASC, id ASC;
+          des_placa, des_conductor, des_transportista,
+          ultima.fecha_registro AS fecha_garita,
+          ultima.des_placa AS placa_garita
+        FROM dbo.citas_programadas c
+        OUTER APPLY (
+          SELECT TOP (1) g.fecha_registro, g.des_placa
+          FROM dbo.transportistas_citas g
+          WHERE g.id_cita = c.id
+          ORDER BY g.fecha_registro DESC, g.id DESC
+        ) ultima
+        WHERE c.cod_negocio = @business
+          AND c.fecha >= CONVERT(date, @reportDate)
+          AND c.fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+          AND c.hora = @hour
+        ORDER BY c.fecha_registro ASC, c.id ASC;
       `);
 
     return result.recordset.map((row) => ({
@@ -123,8 +132,9 @@ export async function consultarCitasPorHora(date: string, modalidad: Modalidad, 
       fechaRegistro: dateText(value(row, ['fecha_registro'])),
       fechaVigencia: dateText(value(row, ['fec_vigencia'])),
       fechaAtencion: dateText(value(row, ['fecha_atencion'])),
+      fechaGarita: dateText(value(row, ['fecha_garita'])),
       usuarioAtencion: text(value(row, ['user_atencion_estado'])),
-      placa: text(value(row, ['des_placa'])),
+      placa: text(value(row, ['placa_garita', 'des_placa'])),
       conductor: text(value(row, ['des_conductor'])),
       transportista: text(value(row, ['des_transportista']))
     }));
