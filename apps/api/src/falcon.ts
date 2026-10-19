@@ -317,41 +317,55 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   try {
     const date = fechaReporte();
-    const request = pool.request().input('limit', sql.Int, limit);
-    if (date) request.input('reportDate', sql.Date, date);
-    const citasResult = await request.query<SourceRow>(`
+    const dayStart = date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())';
+    const citasRequest = pool.request().input('limit', sql.Int, limit);
+    if (date) citasRequest.input('reportDate', sql.Date, date);
+    const citasResult = await citasRequest.query<SourceRow>(`
       SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa
       FROM dbo.citas_programadas
       WHERE cod_negocio IN (3, 4, 5)
-        AND fecha >= ${date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())'}
-        AND fecha < DATEADD(day, 1, ${date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())'})
+        AND fecha >= ${dayStart}
+        AND fecha < DATEADD(day, 1, ${dayStart})
       ORDER BY fecha DESC, hora DESC;
     `);
-    const ids = citasResult.recordset.map((row) => text(value(row, ['id']))).filter((id): id is string => Boolean(id));
-    const garitaByCita = new Map<string, string>();
-    for (let offset = 0; offset < ids.length; offset += 100) {
-      const chunk = ids.slice(offset, offset + 100);
-      const request = pool.request();
-      const params = chunk.map((id, index) => { request.input(`id${index}`, sql.NVarChar, id); return `@id${index}`; }).join(', ');
-      const garitas = await request.query<SourceRow>(`SELECT id_cita, MAX(fecha_registro) AS fecha_garita, MAX(des_placa) AS des_placa FROM dbo.transportistas_citas WHERE id_cita IN (${params}) GROUP BY id_cita;`);
-      for (const row of garitas.recordset) {
-        const citaId = text(value(row, ['id_cita']));
-        const fechaGarita = dateText(value(row, ['fecha_garita']));
-        if (citaId && fechaGarita) garitaByCita.set(citaId, `${fechaGarita}|${text(value(row, ['des_placa'])) ?? ''}`);
-      }
-    }
-    return citasResult.recordset.flatMap((row) => {
+
+    const garitasRequest = pool.request().input('limit', sql.Int, limit);
+    if (date) garitasRequest.input('reportDate', sql.Date, date);
+    const garitasResult = await garitasRequest.query<SourceRow>(`
+      SELECT TOP (@limit)
+        c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante, c.des_placa,
+        ultima.fecha_registro AS fecha_garita, ultima.des_placa AS placa_garita
+      FROM dbo.citas_programadas c
+      CROSS APPLY (
+        SELECT TOP 1 g.fecha_registro, g.des_placa
+        FROM dbo.transportistas_citas g
+        WHERE g.id_cita = c.id
+          AND g.fecha_registro >= ${dayStart}
+          AND g.fecha_registro < DATEADD(day, 1, ${dayStart})
+        ORDER BY g.fecha_registro DESC, g.id DESC
+      ) ultima
+      WHERE c.cod_negocio IN (3, 4, 5)
+      ORDER BY ultima.fecha_registro DESC;
+    `);
+
+    const operations = new Map<string, FalconMaritimeOperation>();
+    const save = (row: SourceRow, fechaGarita: string | null, placaGarita: string | null) => {
       const id = text(value(row, ['id']));
       const modalidad = maritimeMode(text(value(row, ['cod_negocio'])));
-      if (!id || modalidad === 'OTRA') return [];
-      const garita = garitaByCita.get(id)?.split('|') ?? [];
-      return [{
-        id, modalidad, volante: text(value(row, ['cod_volante'])) ?? id,
-        unidad: garita[1] || text(value(row, ['des_placa'])) || '-',
-        fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])), fechaGarita: garita[0] ?? null,
+      if (!id || modalidad === 'OTRA') return;
+      const previous = operations.get(id);
+      operations.set(id, {
+        id, modalidad,
+        volante: text(value(row, ['cod_volante'])) ?? previous?.volante ?? id,
+        unidad: placaGarita ?? text(value(row, ['des_placa'])) ?? previous?.unidad ?? '-',
+        fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])) ?? previous?.fechaCita ?? null,
+        fechaGarita: fechaGarita ?? previous?.fechaGarita ?? null,
         fechaIngresoDespacho: null
-      }];
-    });
+      });
+    };
+    citasResult.recordset.forEach((row) => save(row, null, null));
+    garitasResult.recordset.forEach((row) => save(row, dateText(value(row, ['fecha_garita'])), text(value(row, ['placa_garita']))));
+    return [...operations.values()];
   } finally { await pool.close(); }
 }
 
