@@ -1,0 +1,13 @@
+{
+  "name": "alfosac-dashboard-operaciones",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "build": "npm run build --workspace=@alfosac/dashboard-api && npm run build --workspace=@alfosac/dashboard-web",
+    "test": "npm run test --workspace=@alfosac/dashboard-api",
+    "dev:api": "npm run dev --workspace=@alfosac/dashboard-api",
+    "dev:web": "npm run dev --workspace=@alfosac/dashboard-web"
+  }
+}
+
