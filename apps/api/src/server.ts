@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
-import { consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
+import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { diagnosticarGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
@@ -76,6 +76,17 @@ app.get('/api/integrations/falcon/counts', async (request, response) => {
   }
   try { response.json({ date, items: await contarCitasPorHora(date) }); }
   catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' }); }
+});
+
+app.get('/api/integrations/falcon/event-candidates', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Catálogo de tablas y campos candidatos. Consulta de solo lectura; no incluye registros.',
+      candidates: await buscarEventosOperativosFalcon()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo inspeccionar Falcon.' });
+  }
 });
 
 app.get('/api/integrations/falcon/citas', async (request, response) => {

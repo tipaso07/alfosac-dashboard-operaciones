@@ -69,11 +69,18 @@ export interface FalconHourAppointment {
   fechaRegistro: string | null;
   fechaVigencia: string | null;
   fechaAtencion: string | null;
-  fechaGarita: string | null;
+  /** Registro administrativo del transportista; no equivale a llegada física. */
+  fechaRegistroTransporte: string | null;
   usuarioAtencion: string | null;
   placa: string | null;
   conductor: string | null;
   transportista: string | null;
+}
+
+export interface FalconEventCandidate {
+  schema: string;
+  table: string;
+  columns: string[];
 }
 
 const maritimeBusiness: Record<Modalidad, number | null> = {
@@ -103,7 +110,7 @@ export async function consultarCitasPorHora(date: string, modalidad: Modalidad, 
           c.id, c.id_master, c.id_hijo, c.fecha, c.hora, c.cod_volante, c.flag_cita, c.express,
           c.fecha_registro, c.fec_vigencia, c.fecha_atencion, c.user_atencion_estado,
           c.des_placa, c.des_conductor, c.des_transportista,
-          ultima.fecha_registro AS fecha_garita,
+          ultima.fecha_registro AS fecha_registro_transporte,
           ultima.des_placa AS placa_garita
         FROM dbo.citas_programadas c
         OUTER APPLY (
@@ -132,12 +139,46 @@ export async function consultarCitasPorHora(date: string, modalidad: Modalidad, 
       fechaRegistro: dateText(value(row, ['fecha_registro'])),
       fechaVigencia: dateText(value(row, ['fec_vigencia'])),
       fechaAtencion: dateText(value(row, ['fecha_atencion'])),
-      fechaGarita: dateText(value(row, ['fecha_garita'])),
+      fechaRegistroTransporte: dateText(value(row, ['fecha_registro_transporte'])),
       usuarioAtencion: text(value(row, ['user_atencion_estado'])),
       placa: text(value(row, ['placa_garita', 'des_placa'])),
       conductor: text(value(row, ['des_conductor'])),
       transportista: text(value(row, ['des_transportista']))
     }));
+  } finally { await pool.close(); }
+}
+
+/**
+ * Inventario limitado de candidatos para eventos operativos. Solo consulta el
+ * catálogo de Falcon: no lee filas de negocio ni admite parámetros del cliente.
+ */
+export async function buscarEventosOperativosFalcon(): Promise<FalconEventCandidate[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().query<{ table_schema: string; table_name: string; column_name: string }>(`
+      SELECT TOP (300) table_schema, table_name, column_name
+      FROM information_schema.columns
+      WHERE table_schema NOT IN ('sys', 'INFORMATION_SCHEMA')
+        AND (
+          table_name LIKE '%garita%' OR table_name LIKE '%despacho%' OR table_name LIKE '%ingreso%'
+          OR table_name LIKE '%atencion%' OR table_name LIKE '%salida%' OR table_name LIKE '%control%'
+          OR table_name LIKE '%transporte%' OR table_name LIKE '%cita%'
+          OR column_name LIKE '%garita%' OR column_name LIKE '%despacho%' OR column_name LIKE '%ingreso%'
+          OR column_name LIKE '%atencion%' OR column_name LIKE '%salida%' OR column_name LIKE '%placa%'
+          OR column_name LIKE '%conductor%' OR column_name LIKE '%transportista%'
+        )
+      ORDER BY table_schema, table_name, ordinal_position;
+    `);
+
+    const tables = new Map<string, FalconEventCandidate>();
+    for (const row of result.recordset) {
+      const key = `${row.table_schema}.${row.table_name}`;
+      const candidate = tables.get(key) ?? { schema: row.table_schema, table: row.table_name, columns: [] };
+      candidate.columns.push(row.column_name);
+      tables.set(key, candidate);
+    }
+    return [...tables.values()].slice(0, 80);
   } finally { await pool.close(); }
 }
 
@@ -434,27 +475,8 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
       ORDER BY fecha DESC, hora DESC;
     `);
 
-    const garitasRequest = pool.request().input('limit', sql.Int, limit);
-    if (date) garitasRequest.input('reportDate', sql.Date, date);
-    const garitasResult = await garitasRequest.query<SourceRow>(`
-      SELECT TOP (@limit)
-        c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante, c.des_placa,
-        ultima.fecha_registro AS fecha_garita, ultima.des_placa AS placa_garita
-      FROM dbo.citas_programadas c
-      CROSS APPLY (
-        SELECT TOP 1 g.fecha_registro, g.des_placa
-        FROM dbo.transportistas_citas g
-        WHERE g.id_cita = c.id
-          AND g.fecha_registro >= ${dayStart}
-          AND g.fecha_registro < DATEADD(day, 1, ${dayStart})
-        ORDER BY g.fecha_registro DESC, g.id DESC
-      ) ultima
-      WHERE c.cod_negocio IN (3, 4, 5)
-      ORDER BY ultima.fecha_registro DESC;
-    `);
-
     const operations = new Map<string, FalconMaritimeOperation>();
-    const save = (row: SourceRow, fechaGarita: string | null, placaGarita: string | null) => {
+    const save = (row: SourceRow) => {
       const id = text(value(row, ['id']));
       const modalidad = maritimeMode(text(value(row, ['cod_negocio'])));
       if (!id || modalidad === 'OTRA') return;
@@ -462,14 +484,14 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
       operations.set(id, {
         id, modalidad,
         volante: text(value(row, ['cod_volante'])) ?? previous?.volante ?? id,
-        unidad: placaGarita ?? text(value(row, ['des_placa'])) ?? previous?.unidad ?? '-',
+        unidad: text(value(row, ['des_placa'])) ?? previous?.unidad ?? '-',
         fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])) ?? previous?.fechaCita ?? null,
-        fechaGarita: fechaGarita ?? previous?.fechaGarita ?? null,
+        // El preregistro de transportista no se debe interpretar como garita.
+        fechaGarita: null,
         fechaIngresoDespacho: null
       });
     };
-    citasResult.recordset.forEach((row) => save(row, null, null));
-    garitasResult.recordset.forEach((row) => save(row, dateText(value(row, ['fecha_garita'])), text(value(row, ['placa_garita']))));
+    citasResult.recordset.forEach(save);
     return [...operations.values()];
   } finally { await pool.close(); }
 }
