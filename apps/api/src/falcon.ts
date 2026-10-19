@@ -17,10 +17,12 @@ type SourceRow = Record<string, unknown>;
 export interface FalconPreviewItem {
   origen: 'CITA_MARITIMA' | 'AR_AEREO' | 'GARITA';
   identificador: string;
+  idCitaRelacionada: string | null;
   modalidad: Modalidad | 'OTRA';
   volante: string | null;
   unidad: string | null;
   fechaCita: string | null;
+  horaCita: string | null;
   fechaRegistro: string | null;
   fechaAtencion: string | null;
   negocio: string | null;
@@ -31,6 +33,7 @@ export interface FalconPreview {
   connected: boolean;
   generatedAt: string;
   items: FalconPreviewItem[];
+  camposDetectados: Record<string, string[]>;
   message: string;
 }
 
@@ -85,7 +88,8 @@ async function tableAvailability(database: string, tableNames: string[]) {
 const columnsForPreview = [
   'id', 'id_cita', 'cod_negocio', 'fecha', 'hora', 'fecha_cita', 'fecha_registro',
   'fecha_atencion', 'cnt', 'placa', 'unidad', 'volante', 'cpa_volante',
-  'cpa_lista_retiro', 'cpa_flag_cita', 'flag_cita'
+  'cpa_lista_retiro', 'cpa_flag_cita', 'flag_cita', 'cpa_id', 'cpa_fecha',
+  'cpa_hora', 'cpa_fecha_registro', 'cpa_fecha_atencion', 'cpa_placa'
 ];
 
 function quoteIdentifier(identifier: string) {
@@ -100,11 +104,11 @@ async function previewTable(pool: sql.ConnectionPool, tableName: string, limit: 
   `);
   const available = new Set(columnsResult.recordset.map((item) => item.column_name.toLowerCase()));
   const selected = columnsForPreview.filter((column) => available.has(column.toLowerCase()));
-  if (selected.length === 0) return [] as SourceRow[];
+  if (selected.length === 0) return { rows: [] as SourceRow[], columns: [...available].sort() };
   const orderBy = ['fecha_registro', 'fecha', 'id'].find((column) => available.has(column)) ?? selected[0];
   const query = `SELECT TOP (@limit) ${selected.map(quoteIdentifier).join(', ')} FROM dbo.${quoteIdentifier(tableName)} ORDER BY ${quoteIdentifier(orderBy)} DESC;`;
   const result = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(query);
-  return result.recordset;
+  return { rows: result.recordset, columns: [...available].sort() };
 }
 
 function value(row: SourceRow, candidates: string[]) {
@@ -132,16 +136,18 @@ function maritimeMode(negocio: string | null): Modalidad | 'OTRA' {
 
 function normalize(row: SourceRow, origen: FalconPreviewItem['origen']): FalconPreviewItem {
   const negocio = text(value(row, ['cod_negocio']));
-  const identifier = text(value(row, ['id', 'id_cita'])) ?? 'SIN_IDENTIFICADOR';
+  const identifier = text(value(row, ['cpa_id', 'id', 'id_cita'])) ?? 'SIN_IDENTIFICADOR';
   return {
     origen,
     identificador: identifier,
+    idCitaRelacionada: origen === 'GARITA' ? text(value(row, ['id_cita'])) : null,
     modalidad: origen === 'AR_AEREO' ? 'AEREO' : maritimeMode(negocio),
-    volante: text(value(row, ['volante', 'cpa_volante', 'cpa_lista_retiro', 'cnt'])),
-    unidad: text(value(row, ['placa', 'unidad'])),
-    fechaCita: dateText(value(row, ['fecha_cita', 'fecha'])),
-    fechaRegistro: dateText(value(row, ['fecha_registro'])),
-    fechaAtencion: dateText(value(row, ['fecha_atencion'])),
+    volante: text(value(row, ['volante', 'cpa_volante', 'cpa_lista_retiro'])),
+    unidad: text(value(row, ['placa', 'unidad', 'cpa_placa'])),
+    fechaCita: dateText(value(row, ['fecha_cita', 'fecha', 'cpa_fecha'])),
+    horaCita: text(value(row, ['hora', 'cpa_hora'])),
+    fechaRegistro: dateText(value(row, ['fecha_registro', 'cpa_fecha_registro'])),
+    fechaAtencion: dateText(value(row, ['fecha_atencion', 'cpa_fecha_atencion'])),
     negocio
   };
 }
@@ -181,10 +187,10 @@ export async function diagnosticarFalcon(): Promise<FalconDiagnostic> {
 export async function vistaPreviaFalcon(limit = 15): Promise<FalconPreview> {
   const generatedAt = new Date().toISOString();
   if (!enabled()) {
-    return { enabled: false, connected: false, generatedAt, items: [], message: 'Falcon está desactivado.' };
+    return { enabled: false, connected: false, generatedAt, items: [], camposDetectados: {}, message: 'Falcon está desactivado.' };
   }
   if (!configured()) {
-    return { enabled: true, connected: false, generatedAt, items: [], message: 'Faltan datos de conexión de Falcon.' };
+    return { enabled: true, connected: false, generatedAt, items: [], camposDetectados: {}, message: 'Faltan datos de conexión de Falcon.' };
   }
 
   try {
@@ -200,10 +206,15 @@ export async function vistaPreviaFalcon(limit = 15): Promise<FalconPreview> {
         connected: true,
         generatedAt,
         items: [
-          ...maritimas.map((row) => normalize(row, 'CITA_MARITIMA')),
-          ...aereas.map((row) => normalize(row, 'AR_AEREO')),
-          ...garitas.map((row) => normalize(row, 'GARITA'))
+          ...maritimas.rows.map((row) => normalize(row, 'CITA_MARITIMA')),
+          ...aereas.rows.map((row) => normalize(row, 'AR_AEREO')),
+          ...garitas.rows.map((row) => normalize(row, 'GARITA'))
         ],
+        camposDetectados: {
+          citas_programadas: maritimas.columns,
+          citas_programadas_aereo: aereas.columns,
+          transportistas_citas: garitas.columns
+        },
         message: 'Vista previa de solo lectura. No se guardó ni modificó información.'
       };
     } finally {
@@ -211,6 +222,6 @@ export async function vistaPreviaFalcon(limit = 15): Promise<FalconPreview> {
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Error desconocido al consultar Falcon.';
-    return { enabled: true, connected: false, generatedAt, items: [], message: `No se pudo obtener la vista previa: ${message}` };
+    return { enabled: true, connected: false, generatedAt, items: [], camposDetectados: {}, message: `No se pudo obtener la vista previa: ${message}` };
   }
 }
