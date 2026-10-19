@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
-import { detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
+import { contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
@@ -29,6 +29,16 @@ app.get('/api/integrations/falcon/preview', async (request, response) => {
   const requestedLimit = Number(request.query.limit ?? 15);
   const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 30) : 15;
   response.json(await vistaPreviaFalcon(limit));
+});
+
+app.get('/api/integrations/falcon/counts', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    response.status(400).json({ message: 'Indica la fecha con ?date=AAAA-MM-DD.' });
+    return;
+  }
+  try { response.json({ date, items: await contarCitasPorHora(date) }); }
+  catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' }); }
 });
 
 app.get('/api/integrations/falcon/citas/:citaId', async (request, response) => {

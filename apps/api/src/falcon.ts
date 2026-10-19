@@ -56,6 +56,26 @@ export interface FalconMaritimeOperation {
   fechaIngresoDespacho: string | null;
 }
 
+export async function contarCitasPorHora(date: string) {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().input('reportDate', sql.Date, date).query<SourceRow>(`
+      SELECT cod_negocio, hora, COUNT(*) AS cantidad
+      FROM dbo.citas_programadas
+      WHERE cod_negocio IN (3,4,5)
+        AND fecha >= CONVERT(date, @reportDate)
+        AND fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+      GROUP BY cod_negocio, hora
+      ORDER BY cod_negocio, hora;`);
+    return result.recordset.map((row) => ({
+      modalidad: maritimeMode(text(value(row, ['cod_negocio']))),
+      hora: text(value(row, ['hora']))?.padStart(2, '0') ?? '—',
+      cantidad: Number(value(row, ['cantidad']) ?? 0)
+    })).filter((item) => item.modalidad !== 'OTRA');
+  } finally { await pool.close(); }
+}
+
 function enabled() {
   return process.env.FALCON_SYNC_ENABLED === 'true';
 }
