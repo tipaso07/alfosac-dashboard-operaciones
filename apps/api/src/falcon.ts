@@ -100,9 +100,9 @@ export async function consultarCitasPorHora(date: string, modalidad: Modalidad, 
       .input('hour', sql.Int, hour)
       .query<SourceRow>(`
         SELECT TOP (50)
-          id, id_master, id_hijo, fecha, hora, cod_volante, flag_cita, express,
-          fecha_registro, fec_vigencia, fecha_atencion, user_atencion_estado,
-          des_placa, des_conductor, des_transportista,
+          c.id, c.id_master, c.id_hijo, c.fecha, c.hora, c.cod_volante, c.flag_cita, c.express,
+          c.fecha_registro, c.fec_vigencia, c.fecha_atencion, c.user_atencion_estado,
+          c.des_placa, c.des_conductor, c.des_transportista,
           ultima.fecha_registro AS fecha_garita,
           ultima.des_placa AS placa_garita
         FROM dbo.citas_programadas c
