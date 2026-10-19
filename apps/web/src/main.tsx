@@ -334,7 +334,9 @@ function crearDetalle(operaciones: Operacion[]): DetalleHora[] {
 }
 
 function formatHour(value: string) {
-  return new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(value));
+  return new Intl.DateTimeFormat('es-PE', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Lima'
+  }).format(new Date(value));
 }
 
 function formatDate(value: string) {
@@ -343,7 +345,9 @@ function formatDate(value: string) {
 }
 
 function formatDateTime(value: string) {
-  return new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(value));
+  return new Intl.DateTimeFormat('es-PE', {
+    dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Lima'
+  }).format(new Date(value));
 }
 
 function formatLastUpdate(operacion: Operacion) {
