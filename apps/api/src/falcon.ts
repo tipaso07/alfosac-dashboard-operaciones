@@ -42,8 +42,32 @@ export interface FalconCitaDetail {
   connected: boolean;
   citaId: string;
   cita: FalconPreviewItem | null;
-  registrosGarita: FalconPreviewItem[];
+  registrosTransporte: FalconTransportRecord[];
+  historialTransporte: FalconTransportRecord[];
+  controlesSalida: FalconControlSalida[];
   message: string;
+}
+
+export interface FalconTransportRecord {
+  id: string;
+  fechaRegistro: string | null;
+  tipoCambio: string | null;
+  placa: string | null;
+  conductor: string | null;
+  transportista: string | null;
+}
+
+export interface FalconControlSalida {
+  id: string;
+  fechaRegistro: string | null;
+  estado: string | null;
+  estadoToken: string | null;
+  detalles: Array<{
+    fechaRegistro: string | null;
+    estadoProceso: string | null;
+    descripcionEstado: string | null;
+    estado: string | null;
+  }>;
 }
 
 export interface FalconMaritimeOperation {
@@ -428,7 +452,7 @@ export async function vistaPreviaFalcon(limit = 15): Promise<FalconPreview> {
 
 export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetail> {
   const empty = (message: string, connected = false): FalconCitaDetail => ({
-    enabled: enabled(), connected, citaId, cita: null, registrosGarita: [], message
+    enabled: enabled(), connected, citaId, cita: null, registrosTransporte: [], historialTransporte: [], controlesSalida: [], message
   });
   if (!enabled()) return empty('Falcon está desactivado.');
   if (!configured()) return empty('Faltan datos de conexión de Falcon.');
@@ -437,17 +461,71 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
   try {
     const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
     try {
-      const [citas, garitas] = await Promise.all([
+      const [citas, transportes, historial, controles] = await Promise.all([
         previewTableByValue(pool, 'citas_programadas', 'id', citaId),
-        previewTableByValue(pool, 'transportistas_citas', 'id_cita', citaId)
+        pool.request().input('citaId', sql.Int, Number(citaId)).query<SourceRow>(`
+          SELECT TOP (20) id, fecha_registro, des_placa, des_conductor, des_transportista
+          FROM dbo.transportistas_citas
+          WHERE id_cita = @citaId
+          ORDER BY fecha_registro ASC, id ASC;
+        `),
+        pool.request().input('citaId', sql.Int, Number(citaId)).query<SourceRow>(`
+          SELECT TOP (50) id, fecha_registro, flag_tipo, des_placa, des_conductor, des_transportista
+          FROM dbo.transportistas_citas_historial
+          WHERE id_cita = @citaId
+          ORDER BY fecha_registro ASC, id ASC;
+        `),
+        pool.request().input('citaId', sql.Int, Number(citaId)).query<SourceRow>(`
+          SELECT TOP (100)
+            c.id AS control_id, c.fecha_registro AS control_fecha_registro,
+            c.estado AS control_estado, c.estado_token,
+            d.fecha_registro AS detalle_fecha_registro, d.id_estado_proceso,
+            d.des_estado_proceso, d.estado AS detalle_estado
+          FROM dbo.control_salida_carga c
+          LEFT JOIN dbo.control_salida_carga_detalle d ON d.id_control_salida = c.id
+          WHERE c.id_cita = @citaId
+          ORDER BY c.fecha_registro ASC, d.fecha_registro ASC, d.id ASC;
+        `)
       ]);
+
+      const toTransport = (row: SourceRow): FalconTransportRecord => ({
+        id: text(value(row, ['id'])) ?? '',
+        fechaRegistro: dateText(value(row, ['fecha_registro'])),
+        tipoCambio: text(value(row, ['flag_tipo'])),
+        placa: text(value(row, ['des_placa'])),
+        conductor: text(value(row, ['des_conductor'])),
+        transportista: text(value(row, ['des_transportista']))
+      });
+      const controls = new Map<string, FalconControlSalida>();
+      for (const row of controles.recordset) {
+        const id = text(value(row, ['control_id'])) ?? '';
+        if (!id) continue;
+        const control = controls.get(id) ?? {
+          id,
+          fechaRegistro: dateText(value(row, ['control_fecha_registro'])),
+          estado: text(value(row, ['control_estado'])),
+          estadoToken: text(value(row, ['estado_token'])),
+          detalles: []
+        };
+        if (value(row, ['detalle_fecha_registro', 'id_estado_proceso', 'des_estado_proceso']) !== null) {
+          control.detalles.push({
+            fechaRegistro: dateText(value(row, ['detalle_fecha_registro'])),
+            estadoProceso: text(value(row, ['id_estado_proceso'])),
+            descripcionEstado: text(value(row, ['des_estado_proceso'])),
+            estado: text(value(row, ['detalle_estado']))
+          });
+        }
+        controls.set(id, control);
+      }
       return {
         enabled: true,
         connected: true,
         citaId,
         cita: citas[0] ? normalize(citas[0], 'CITA_MARITIMA') : null,
-        registrosGarita: garitas.map((row) => normalize(row, 'GARITA')),
-        message: 'Detalle de solo lectura. No se guardó ni modificó información.'
+        registrosTransporte: transportes.recordset.map(toTransport),
+        historialTransporte: historial.recordset.map(toTransport),
+        controlesSalida: [...controls.values()],
+        message: 'Traza de solo lectura. Los registros de transporte no se interpretan como llegada a garita.'
       };
     } finally {
       await pool.close();
