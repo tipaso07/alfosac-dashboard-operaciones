@@ -165,6 +165,16 @@ function dateText(valueToFormat: unknown) {
   return String(valueToFormat);
 }
 
+function fechaConHora(fecha: unknown, hora: unknown) {
+  const date = dateText(fecha);
+  if (!date) return null;
+  const day = date.slice(0, 10);
+  const rawHour = text(hora);
+  if (!rawHour) return `${day}T00:00:00-05:00`;
+  const numericHour = rawHour.split(':')[0].padStart(2, '0');
+  return `${day}T${numericHour}:00:00-05:00`;
+}
+
 function maritimeMode(negocio: string | null): Modalidad | 'OTRA' {
   if (negocio === '3') return 'FCL';
   if (negocio === '4') return 'LCL';
@@ -301,7 +311,7 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   try {
     const citasResult = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
-      SELECT TOP (@limit) id, cod_negocio, fecha, hora, fecha_registro
+      SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa
       FROM dbo.citas_programadas
       WHERE cod_negocio IN (3, 4, 5)
         AND fecha >= DATEADD(day, -1, CONVERT(date, GETDATE()))
@@ -314,20 +324,44 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
       const chunk = ids.slice(offset, offset + 100);
       const request = pool.request();
       const params = chunk.map((id, index) => { request.input(`id${index}`, sql.NVarChar, id); return `@id${index}`; }).join(', ');
-      const garitas = await request.query<SourceRow>(`SELECT id_cita, MAX(fecha_registro) AS fecha_garita FROM dbo.transportistas_citas WHERE id_cita IN (${params}) GROUP BY id_cita;`);
+      const garitas = await request.query<SourceRow>(`SELECT id_cita, MAX(fecha_registro) AS fecha_garita, MAX(des_placa) AS des_placa FROM dbo.transportistas_citas WHERE id_cita IN (${params}) GROUP BY id_cita;`);
       for (const row of garitas.recordset) {
         const citaId = text(value(row, ['id_cita']));
         const fechaGarita = dateText(value(row, ['fecha_garita']));
-        if (citaId && fechaGarita) garitaByCita.set(citaId, fechaGarita);
+        if (citaId && fechaGarita) garitaByCita.set(citaId, `${fechaGarita}|${text(value(row, ['des_placa'])) ?? ''}`);
       }
     }
     return citasResult.recordset.flatMap((row) => {
       const id = text(value(row, ['id']));
       const modalidad = maritimeMode(text(value(row, ['cod_negocio'])));
       if (!id || modalidad === 'OTRA') return [];
+      const garita = garitaByCita.get(id)?.split('|') ?? [];
       return [{
-        id, modalidad, volante: id, unidad: '-',
-        fechaCita: dateText(value(row, ['fecha'])), fechaGarita: garitaByCita.get(id) ?? null
+        id, modalidad, volante: text(value(row, ['cod_volante'])) ?? id,
+        unidad: garita[1] || text(value(row, ['des_placa'])) || '-',
+        fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])), fechaGarita: garita[0] ?? null
+      }];
+    });
+  } finally { await pool.close(); }
+}
+
+export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritimeOperation[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
+      SELECT TOP (@limit) cpa_id, cpa_volante, cpa_lista_retiro, cpa_flag_cita, cpa_fecha_atencion
+      FROM dbo.citas_programadas_aereo
+      ORDER BY cpa_id DESC;
+    `);
+    return result.recordset.flatMap((row) => {
+      const id = text(value(row, ['cpa_id']));
+      if (!id) return [];
+      return [{
+        id: `AR-${id}`, modalidad: 'AEREO',
+        volante: text(value(row, ['cpa_volante', 'cpa_lista_retiro'])) ?? id,
+        unidad: '-', fechaCita: null,
+        fechaGarita: dateText(value(row, ['cpa_fecha_atencion']))
       }];
     });
   } finally { await pool.close(); }

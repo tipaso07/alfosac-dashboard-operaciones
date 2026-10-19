@@ -3,7 +3,7 @@ import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
-import { leerOperacionesMaritimas } from './falcon.js';
+import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { guardarOperaciones, listarOperaciones } from './report-store.js';
 
 const app = express();
@@ -61,6 +61,25 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
     }));
     await guardarOperaciones(operations);
     response.json({ imported: true, count: operations.length, message: 'Importación marítima completada en la base propia del dashboard.' });
+  } catch (error) {
+    response.status(503).json({ imported: false, message: error instanceof Error ? error.message : 'No se pudo importar Falcon.' });
+  }
+});
+
+app.post('/api/integrations/falcon/import', async (_request, response) => {
+  if (process.env.FALCON_IMPORT_ENABLED !== 'true') {
+    response.status(409).json({ imported: false, message: 'La importación está desactivada. Define FALCON_IMPORT_ENABLED=true para habilitarla explícitamente.' });
+    return;
+  }
+  try {
+    const [maritimas, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
+    const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
+      id: item.id, modalidad: item.modalidad, estado: item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+      volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
+      fechaIngresoDespacho: null, fechaCompletado: null, fuente: 'FALCON' as const
+    });
+    await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
+    response.json({ imported: true, maritime: maritimas.length, aereo: aereas.length, message: 'Datos de Falcon actualizados en la base propia del dashboard.' });
   } catch (error) {
     response.status(503).json({ imported: false, message: error instanceof Error ? error.message : 'No se pudo importar Falcon.' });
   }

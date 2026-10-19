@@ -153,8 +153,10 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, indice }: {
 
 function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[]; operaciones: Operacion[]; updatedAt: string }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
+  const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionada, setSeleccionada] = useState<Operacion | null>(null);
   const operacionesFiltradas = filtro === 'TODAS' ? operaciones : operaciones.filter((item) => item.modalidad === filtro);
+  const resumenHora = crearDetalle(operacionesFiltradas);
   const totales = resumen.reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
@@ -194,37 +196,54 @@ function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[
           {orden.map((item) => <button className={filtro === item ? 'selected' : ''} key={item} onClick={() => setFiltro(item)}>{nombres[item]}</button>)}
         </div>
 
+        <div className="view-row" aria-label="Elegir vista">
+          <button className={vista === 'RESUMEN' ? 'selected' : ''} onClick={() => setVista('RESUMEN')}>Resumen agrupado por hora</button>
+          <button className={vista === 'LISTA' ? 'selected' : ''} onClick={() => setVista('LISTA')}>Lista detallada</button>
+        </div>
+
         <div className="operations-table-wrap">
-          <table className="operations-table">
+          {vista === 'RESUMEN' ? <table className="operations-table">
+            <thead><tr><th>Hora</th><th>Citas / A.R.</th><th>Registro en garita</th><th>Ingreso</th><th>Despacho</th><th>Estado</th></tr></thead>
+            <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
+              <tr key={item.hora}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td><span className="state-badge">{item.critical ? 'Revisar' : 'Operativo'}</span></td></tr>
+            )) : <tr><td colSpan={6} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
+          </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
-                <th>Volante / A.R.</th>
+                <th>Fecha</th><th>Hora</th><th>Volante / A.R.</th>
                 <th>Unidad</th>
-                <th>Operación</th>
-                <th>Último estado</th>
-                <th>Actualización</th>
+                <th>Registro garita</th><th>Espera</th><th>Ingreso</th><th>Despacho</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {operacionesFiltradas.length > 0 ? operacionesFiltradas.map((item) => (
                 <tr key={item.id}>
+                  <td>{item.fechaCita ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short' }).format(new Date(item.fechaCita)) : '—'}</td>
+                  <td>{item.fechaCita ? formatHour(item.fechaCita) : '—'}</td>
                   <td><strong>{item.volante}</strong></td>
                   <td>{item.unidad}</td>
-                  <td>{nombres[item.modalidad]}</td>
-                  <td><StateBadge estado={item.estado} /></td>
-                  <td>{formatLastUpdate(item)}</td>
+                  <td>{item.fechaGarita ? formatHour(item.fechaGarita) : '—'}</td>
+                  <td>{difference(item.fechaCita, item.fechaGarita)}</td>
+                  <td>{item.fechaIngresoDespacho ? formatHour(item.fechaIngresoDespacho) : '—'}</td>
+                  <td>{item.fechaCompletado ? formatHour(item.fechaCompletado) : '—'}</td>
                   <td><button className="detail-button" onClick={() => setSeleccionada(item)}>Ver detalle</button></td>
                 </tr>
               )) : <tr><td colSpan={6} className="empty">No hay operaciones para este filtro.</td></tr>}
             </tbody>
-          </table>
+          </table>}
         </div>
       </section>
 
       {seleccionada && <OperationModal operacion={seleccionada} onClose={() => setSeleccionada(null)} />}
     </main>
   );
+}
+
+function difference(start: string | null, end: string | null) {
+  if (!start || !end) return '—';
+  const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
 function StateBadge({ estado }: { estado: Estado }) {
