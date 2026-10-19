@@ -210,8 +210,8 @@ function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[
           </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
-                <th>Fecha</th><th>Hora</th><th>Volante / A.R.</th>
-                <th>Unidad</th>
+                <th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante / A.R.</th>
+                <th>Placa / unidad</th>
                 <th>Registro garita</th><th>Espera</th><th>Ingreso</th><th>Despacho</th>
                 <th></th>
               </tr>
@@ -221,6 +221,7 @@ function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[
                 <tr key={item.id}>
                   <td>{item.fechaCita ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short' }).format(new Date(item.fechaCita)) : '—'}</td>
                   <td>{item.fechaCita ? formatHour(item.fechaCita) : '—'}</td>
+                  <td>{nombres[item.modalidad]}</td>
                   <td><strong>{item.volante}</strong></td>
                   <td>{item.unidad}</td>
                   <td>{item.fechaGarita ? formatHour(item.fechaGarita) : '—'}</td>
