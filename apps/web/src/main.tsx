@@ -219,8 +219,8 @@ function InternalScreen({ resumen, operaciones, updatedAt }: { resumen: Resumen[
             <tbody>
               {operacionesFiltradas.length > 0 ? operacionesFiltradas.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.fechaCita ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short' }).format(new Date(item.fechaCita)) : '—'}</td>
-                  <td>{item.fechaCita ? formatHour(item.fechaCita) : '—'}</td>
+                  <td>{primaryDate(item) ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short' }).format(new Date(primaryDate(item)!)) : '—'}</td>
+                  <td>{primaryDate(item) ? formatHour(primaryDate(item)!) : '—'}</td>
                   <td>{nombres[item.modalidad]}</td>
                   <td><strong>{item.volante}</strong></td>
                   <td>{item.unidad}</td>
@@ -245,6 +245,10 @@ function difference(start: string | null, end: string | null) {
   if (!start || !end) return '—';
   const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function primaryDate(operation: Operacion) {
+  return operation.fechaCita ?? operation.fechaIngresoDespacho ?? operation.fechaGarita;
 }
 
 function StateBadge({ estado }: { estado: Estado }) {
