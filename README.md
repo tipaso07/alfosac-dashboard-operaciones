@@ -26,9 +26,18 @@ La API queda disponible internamente en `/api`; el puerto `5100` se expone solo 
 
 ## Integración futura
 
-Los conectores se habilitarán por variables de entorno:
+El conector Falcon ya queda preparado, pero se mantiene desactivado por seguridad. Al activarlo solo comprueba la conexión de lectura y que estén disponibles las tablas que se usarán para el mapeo; aún no carga datos automáticos sin validar primero el resultado en la PC operativa.
+
+Variables de Falcon:
 
 - `FALCON_SYNC_ENABLED`
+- `FALCON_DB_HOST`, `FALCON_DB_PORT`
+- `FALCON_EXTRANET_DB`, `FALCON_MAESTROS_DB`
+- `FALCON_DB_USER`, `FALCON_DB_PASSWORD`
+- `FALCON_DB_ENCRYPT`, `FALCON_DB_TRUST_CERTIFICATE`
+- `FALCON_SYNC_INTERVAL_SECONDS`
 - `GITS_SYNC_ENABLED`
 
 Cada conector deberá consultar únicamente cambios nuevos y guardarlos en esta base de reportes. Las pantallas nunca deberán consultar Falcon ni GITS directamente.
+
+Cuando se despliegue en la PC con acceso a Falcon, se activa temporalmente `FALCON_SYNC_ENABLED=true` y se revisa `http://localhost:5100/api/integrations/falcon`. Este diagnóstico no expone contraseñas ni modifica Falcon.

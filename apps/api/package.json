@@ -11,14 +11,17 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "mssql": "^12.7.10",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
+    "@types/mssql": "^12.3.0",
     "@types/node": "^22.15.30",
+    "@types/pg": "^8.23.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }
 }
-
