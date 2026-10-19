@@ -44,7 +44,12 @@ export async function listarOperaciones() {
     fecha_ingreso_despacho: string | null; fecha_completado: string | null; fuente_origen: Operacion['fuente'];
   }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
       fecha_ingreso_despacho, fecha_completado, fuente_origen
-     FROM operaciones ORDER BY COALESCE(fecha_cita, actualizado_origen_en) DESC LIMIT 500;`);
+     FROM operaciones
+     WHERE COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) >=
+       (((NOW() AT TIME ZONE 'America/Lima')::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) <
+       ((((NOW() AT TIME ZONE 'America/Lima')::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
+     ORDER BY COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) DESC LIMIT 500;`);
   return result.rows.map((row) => ({
     id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
     volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
