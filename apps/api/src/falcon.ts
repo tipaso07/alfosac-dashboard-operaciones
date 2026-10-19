@@ -56,6 +56,81 @@ export interface FalconMaritimeOperation {
   fechaIngresoDespacho: string | null;
 }
 
+export interface FalconHourAppointment {
+  id: string;
+  modalidad: Modalidad;
+  fecha: string | null;
+  hora: string | null;
+  volante: string | null;
+  idMaster: string | null;
+  idHijo: string | null;
+  flagCita: string | null;
+  express: string | null;
+  fechaRegistro: string | null;
+  fechaVigencia: string | null;
+  fechaAtencion: string | null;
+  usuarioAtencion: string | null;
+  placa: string | null;
+  conductor: string | null;
+  transportista: string | null;
+}
+
+const maritimeBusiness: Record<Modalidad, number | null> = {
+  FCL: 3,
+  LCL: 4,
+  BB: 5,
+  AEREO: null
+};
+
+/**
+ * Consulta diagnóstica limitada: solo expone campos operativos de una hora y
+ * modalidad concretas. No acepta SQL, nombres de tabla ni columnas arbitrarias.
+ */
+export async function consultarCitasPorHora(date: string, modalidad: Modalidad, hour: number): Promise<FalconHourAppointment[]> {
+  const negocio = maritimeBusiness[modalidad];
+  if (!negocio) throw new Error('La consulta por hora solo está disponible para FCL, LCL y BB.');
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request()
+      .input('reportDate', sql.Date, date)
+      .input('business', sql.Int, negocio)
+      .input('hour', sql.Int, hour)
+      .query<SourceRow>(`
+        SELECT TOP (50)
+          id, id_master, id_hijo, fecha, hora, cod_volante, flag_cita, express,
+          fecha_registro, fec_vigencia, fecha_atencion, user_atencion_estado,
+          des_placa, des_conductor, des_transportista
+        FROM dbo.citas_programadas
+        WHERE cod_negocio = @business
+          AND fecha >= CONVERT(date, @reportDate)
+          AND fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+          AND hora = @hour
+        ORDER BY fecha_registro ASC, id ASC;
+      `);
+
+    return result.recordset.map((row) => ({
+      id: text(value(row, ['id'])) ?? '',
+      modalidad,
+      fecha: dateText(value(row, ['fecha'])),
+      hora: text(value(row, ['hora'])),
+      volante: text(value(row, ['cod_volante'])),
+      idMaster: text(value(row, ['id_master'])),
+      idHijo: text(value(row, ['id_hijo'])),
+      flagCita: text(value(row, ['flag_cita'])),
+      express: text(value(row, ['express'])),
+      fechaRegistro: dateText(value(row, ['fecha_registro'])),
+      fechaVigencia: dateText(value(row, ['fec_vigencia'])),
+      fechaAtencion: dateText(value(row, ['fecha_atencion'])),
+      usuarioAtencion: text(value(row, ['user_atencion_estado'])),
+      placa: text(value(row, ['des_placa'])),
+      conductor: text(value(row, ['des_conductor'])),
+      transportista: text(value(row, ['des_transportista']))
+    }));
+  } finally { await pool.close(); }
+}
+
 export async function contarCitasPorHora(date: string) {
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();

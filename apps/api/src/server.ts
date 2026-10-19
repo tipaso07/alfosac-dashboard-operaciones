@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
-import { contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
+import { consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
@@ -39,6 +39,33 @@ app.get('/api/integrations/falcon/counts', async (request, response) => {
   }
   try { response.json({ date, items: await contarCitasPorHora(date) }); }
   catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' }); }
+});
+
+app.get('/api/integrations/falcon/citas', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  const modalidad = String(request.query.modalidad ?? '').toUpperCase();
+  const hour = Number(request.query.hour ?? Number.NaN);
+  const modalidades = ['FCL', 'LCL', 'BB'] as const;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    response.status(400).json({ message: 'Indica la fecha con ?date=AAAA-MM-DD.' });
+    return;
+  }
+  if (!modalidades.includes(modalidad as typeof modalidades[number])) {
+    response.status(400).json({ message: 'Indica ?modalidad=FCL, LCL o BB.' });
+    return;
+  }
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+    response.status(400).json({ message: 'Indica ?hour=0 hasta 23.' });
+    return;
+  }
+
+  try {
+    const items = await consultarCitasPorHora(date, modalidad as typeof modalidades[number], hour);
+    response.json({ date, modalidad, hour: String(hour).padStart(2, '0'), count: items.length, items });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' });
+  }
 });
 
 app.get('/api/integrations/falcon/citas/:citaId', async (request, response) => {
