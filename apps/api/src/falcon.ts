@@ -70,6 +70,19 @@ export interface FalconControlSalida {
   }>;
 }
 
+export interface FalconExitControlCandidate {
+  citaId: string;
+  controlId: string;
+  fechaControl: string | null;
+  estadoControl: string | null;
+  modalidad: Modalidad | 'OTRA';
+  fechaCita: string | null;
+  horaCita: string | null;
+  volante: string | null;
+  fechaAtencion: string | null;
+  etapasRegistradas: number;
+}
+
 export interface FalconMaritimeOperation {
   id: string;
   modalidad: Modalidad;
@@ -203,6 +216,39 @@ export async function buscarEventosOperativosFalcon(): Promise<FalconEventCandid
       tables.set(key, candidate);
     }
     return [...tables.values()].slice(0, 80);
+  } finally { await pool.close(); }
+}
+
+/** Citas vinculadas a un control de salida, para comparar sus eventos sin consulta libre. */
+export async function listarCitasConControlSalida(limit = 10): Promise<FalconExitControlCandidate[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
+      SELECT TOP (@limit)
+        s.id_cita, s.id AS control_id, s.fecha_registro AS fecha_control,
+        s.estado AS estado_control, c.cod_negocio, c.fecha, c.hora,
+        c.cod_volante, c.fecha_atencion, COUNT(d.id) AS etapas_registradas
+      FROM dbo.control_salida_carga s
+      LEFT JOIN dbo.citas_programadas c ON c.id = s.id_cita
+      LEFT JOIN dbo.control_salida_carga_detalle d ON d.id_control_salida = s.id
+      WHERE s.id_cita IS NOT NULL
+      GROUP BY s.id_cita, s.id, s.fecha_registro, s.estado, c.cod_negocio,
+        c.fecha, c.hora, c.cod_volante, c.fecha_atencion
+      ORDER BY s.fecha_registro DESC, s.id DESC;
+    `);
+    return result.recordset.map((row) => ({
+      citaId: text(value(row, ['id_cita'])) ?? '',
+      controlId: text(value(row, ['control_id'])) ?? '',
+      fechaControl: dateText(value(row, ['fecha_control'])),
+      estadoControl: text(value(row, ['estado_control'])),
+      modalidad: maritimeMode(text(value(row, ['cod_negocio']))),
+      fechaCita: dateText(value(row, ['fecha'])),
+      horaCita: text(value(row, ['hora'])),
+      volante: text(value(row, ['cod_volante'])),
+      fechaAtencion: dateText(value(row, ['fecha_atencion'])),
+      etapasRegistradas: Number(value(row, ['etapas_registradas']) ?? 0)
+    }));
   } finally { await pool.close(); }
 }
 

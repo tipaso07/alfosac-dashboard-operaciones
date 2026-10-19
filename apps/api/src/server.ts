@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
-import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
+import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { diagnosticarGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
@@ -86,6 +86,19 @@ app.get('/api/integrations/falcon/event-candidates', async (_request, response) 
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo inspeccionar Falcon.' });
+  }
+});
+
+app.get('/api/integrations/falcon/with-exit-control', async (request, response) => {
+  const requestedLimit = Number(request.query.limit ?? 10);
+  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 20) : 10;
+  try {
+    response.json({
+      message: 'Citas vinculadas a control de salida. Consulta de solo lectura para análisis.',
+      items: await listarCitasConControlSalida(limit)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' });
   }
 });
 
