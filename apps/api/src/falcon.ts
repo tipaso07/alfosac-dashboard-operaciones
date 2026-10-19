@@ -46,6 +46,15 @@ export interface FalconCitaDetail {
   message: string;
 }
 
+export interface FalconMaritimeOperation {
+  id: string;
+  modalidad: Modalidad;
+  volante: string;
+  unidad: string;
+  fechaCita: string | null;
+  fechaGarita: string | null;
+}
+
 function enabled() {
   return process.env.FALCON_SYNC_ENABLED === 'true';
 }
@@ -285,4 +294,41 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
     const message = error instanceof Error ? error.message : 'Error desconocido al consultar Falcon.';
     return empty(`No se pudo obtener el detalle: ${message}`);
   }
+}
+
+export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMaritimeOperation[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const citasResult = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
+      SELECT TOP (@limit) id, cod_negocio, fecha, hora, fecha_registro
+      FROM dbo.citas_programadas
+      WHERE cod_negocio IN (3, 4, 5)
+        AND fecha >= DATEADD(day, -1, CONVERT(date, GETDATE()))
+        AND fecha < DATEADD(day, 2, CONVERT(date, GETDATE()))
+      ORDER BY fecha DESC, hora DESC;
+    `);
+    const ids = citasResult.recordset.map((row) => text(value(row, ['id']))).filter((id): id is string => Boolean(id));
+    const garitaByCita = new Map<string, string>();
+    for (let offset = 0; offset < ids.length; offset += 100) {
+      const chunk = ids.slice(offset, offset + 100);
+      const request = pool.request();
+      const params = chunk.map((id, index) => { request.input(`id${index}`, sql.NVarChar, id); return `@id${index}`; }).join(', ');
+      const garitas = await request.query<SourceRow>(`SELECT id_cita, MAX(fecha_registro) AS fecha_garita FROM dbo.transportistas_citas WHERE id_cita IN (${params}) GROUP BY id_cita;`);
+      for (const row of garitas.recordset) {
+        const citaId = text(value(row, ['id_cita']));
+        const fechaGarita = dateText(value(row, ['fecha_garita']));
+        if (citaId && fechaGarita) garitaByCita.set(citaId, fechaGarita);
+      }
+    }
+    return citasResult.recordset.flatMap((row) => {
+      const id = text(value(row, ['id']));
+      const modalidad = maritimeMode(text(value(row, ['cod_negocio'])));
+      if (!id || modalidad === 'OTRA') return [];
+      return [{
+        id, modalidad, volante: id, unidad: '-',
+        fechaCita: dateText(value(row, ['fecha'])), fechaGarita: garitaByCita.get(id) ?? null
+      }];
+    });
+  } finally { await pool.close(); }
 }

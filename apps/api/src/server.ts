@@ -3,6 +3,8 @@ import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { detalleCitaFalcon, diagnosticarFalcon, vistaPreviaFalcon } from './falcon.js';
+import { leerOperacionesMaritimas } from './falcon.js';
+import { guardarOperaciones, listarOperaciones } from './report-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
@@ -29,19 +31,39 @@ app.get('/api/integrations/falcon/citas/:citaId', async (request, response) => {
 });
 
 app.get('/api/dashboard/summary', (_request, response) => {
-  response.json({
+  listarOperaciones().then((stored) => response.json({
     mode: 'demo',
     updatedAt: new Date().toISOString(),
     sources: {
       falcon: process.env.FALCON_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA',
       gits: process.env.GITS_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA'
     },
-    summary: crearResumen(operacionesDemo)
-  });
+    summary: crearResumen(stored.length > 0 ? stored : operacionesDemo)
+  })).catch(() => response.json({ mode: 'demo', updatedAt: new Date().toISOString(), sources: {}, summary: crearResumen(operacionesDemo) }));
 });
 
 app.get('/api/dashboard/operations', (_request, response) => {
-  response.json({ mode: 'demo', operations: operacionesDemo });
+  listarOperaciones().then((stored) => response.json({ mode: stored.length > 0 ? 'reportes' : 'demo', operations: stored.length > 0 ? stored : operacionesDemo }))
+    .catch(() => response.json({ mode: 'demo', operations: operacionesDemo }));
+});
+
+app.post('/api/integrations/falcon/import/maritime', async (_request, response) => {
+  if (process.env.FALCON_IMPORT_ENABLED !== 'true') {
+    response.status(409).json({ imported: false, message: 'La importación está desactivada. Define FALCON_IMPORT_ENABLED=true para habilitarla explícitamente.' });
+    return;
+  }
+  try {
+    const source = await leerOperacionesMaritimas();
+    const operations = source.map((item) => ({
+      id: item.id, modalidad: item.modalidad, estado: item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+      volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
+      fechaIngresoDespacho: null, fechaCompletado: null, fuente: 'FALCON' as const
+    }));
+    await guardarOperaciones(operations);
+    response.json({ imported: true, count: operations.length, message: 'Importación marítima completada en la base propia del dashboard.' });
+  } catch (error) {
+    response.status(503).json({ imported: false, message: error instanceof Error ? error.message : 'No se pudo importar Falcon.' });
+  }
 });
 
 app.listen(port, () => {
