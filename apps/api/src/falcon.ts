@@ -572,9 +572,12 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
             h.fecha_fast_salida, h.ticket_salida, h.respuesta_fast_salida,
             h.ws_flag_salida
           FROM dbo.citas_programadas c
-          LEFT JOIN dbo.hijos_m h ON h.id_hijo = c.id_hijo
-          LEFT JOIN dbo.masters_m m ON m.id_master = c.id_master
-          LEFT JOIN dbo.VW_LISTADO_CITAS_GENERAL v ON v.id = c.id
+          -- Falcon no conserva un tipo uniforme para estas llaves entre módulos.
+          -- Esta traza es de una sola cita y normaliza a texto para evitar
+          -- conversiones implícitas que podrían fallar con códigos alfanuméricos.
+          LEFT JOIN dbo.hijos_m h ON CONVERT(nvarchar(255), h.id_hijo) = CONVERT(nvarchar(255), c.id_hijo)
+          LEFT JOIN dbo.masters_m m ON CONVERT(nvarchar(255), m.id_master) = CONVERT(nvarchar(255), c.id_master)
+          LEFT JOIN dbo.VW_LISTADO_CITAS_GENERAL v ON CONVERT(nvarchar(255), v.id) = CONVERT(nvarchar(255), c.id)
           WHERE c.id = @citaId;
         `)
       ]);
