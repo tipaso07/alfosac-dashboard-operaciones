@@ -194,18 +194,23 @@ export async function buscarEventosOperativosFalcon(): Promise<FalconEventCandid
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   try {
     const result = await pool.request().query<{ table_schema: string; table_name: string; column_name: string }>(`
-      SELECT TOP (300) table_schema, table_name, column_name
-      FROM information_schema.columns
-      WHERE table_schema NOT IN ('sys', 'INFORMATION_SCHEMA')
-        AND (
-          table_name LIKE '%garita%' OR table_name LIKE '%despacho%' OR table_name LIKE '%ingreso%'
-          OR table_name LIKE '%atencion%' OR table_name LIKE '%salida%' OR table_name LIKE '%control%'
-          OR table_name LIKE '%transporte%' OR table_name LIKE '%cita%'
-          OR column_name LIKE '%garita%' OR column_name LIKE '%despacho%' OR column_name LIKE '%ingreso%'
-          OR column_name LIKE '%atencion%' OR column_name LIKE '%salida%' OR column_name LIKE '%placa%'
-          OR column_name LIKE '%conductor%' OR column_name LIKE '%transportista%'
-        )
-      ORDER BY table_schema, table_name, ordinal_position;
+      WITH tablas_candidatas AS (
+        SELECT DISTINCT table_schema, table_name
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('sys', 'INFORMATION_SCHEMA')
+          AND (
+            table_name LIKE '%garita%' OR table_name LIKE '%despacho%' OR table_name LIKE '%ingreso%'
+            OR table_name LIKE '%atencion%' OR table_name LIKE '%salida%' OR table_name LIKE '%control%'
+            OR table_name LIKE '%transporte%' OR table_name LIKE '%cita%'
+            OR column_name LIKE '%garita%' OR column_name LIKE '%despacho%' OR column_name LIKE '%ingreso%'
+            OR column_name LIKE '%atencion%' OR column_name LIKE '%salida%' OR column_name LIKE '%placa%'
+            OR column_name LIKE '%conductor%' OR column_name LIKE '%transportista%'
+          )
+      )
+      SELECT c.table_schema, c.table_name, c.column_name
+      FROM information_schema.columns c
+      INNER JOIN tablas_candidatas t ON t.table_schema = c.table_schema AND t.table_name = c.table_name
+      ORDER BY c.table_schema, c.table_name, c.ordinal_position;
     `);
 
     const tables = new Map<string, FalconEventCandidate>();
