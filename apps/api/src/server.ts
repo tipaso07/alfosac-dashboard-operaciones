@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
-import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, vistaPreviaFalcon } from './falcon.js';
+import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { diagnosticarGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
@@ -96,6 +96,19 @@ app.get('/api/integrations/falcon/with-exit-control', async (request, response) 
     response.json({
       message: 'Citas vinculadas a control de salida. Consulta de solo lectura para análisis.',
       items: await listarCitasConControlSalida(limit)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' });
+  }
+});
+
+app.get('/api/integrations/falcon/with-logistic-events', async (request, response) => {
+  const requestedLimit = Number(request.query.limit ?? 5);
+  const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 10) : 5;
+  try {
+    response.json({
+      message: 'Muestra limitada de citas históricas con tarja o salida. Consulta de solo lectura para validar el flujo.',
+      items: await listarCitasConEventosLogisticos(limit)
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' });

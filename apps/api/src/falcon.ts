@@ -107,6 +107,19 @@ export interface FalconExitControlCandidate {
   etapasRegistradas: number;
 }
 
+export interface FalconLogisticEventSample {
+  citaId: string;
+  modalidad: Modalidad | 'OTRA';
+  fechaCita: string | null;
+  horaCita: string | null;
+  volante: string | null;
+  fechaAtencion: string | null;
+  fechaHoraTarja: string | null;
+  fechaSalida: string | null;
+  fechaEscaneoSalida: string | null;
+  fastSalida: string | null;
+}
+
 export interface FalconMaritimeOperation {
   id: string;
   modalidad: Modalidad;
@@ -277,6 +290,48 @@ export async function listarCitasConControlSalida(limit = 10): Promise<FalconExi
       volante: text(value(row, ['cod_volante'])),
       fechaAtencion: dateText(value(row, ['fecha_atencion'])),
       etapasRegistradas: Number(value(row, ['etapas_registradas']) ?? 0)
+    }));
+  } finally { await pool.close(); }
+}
+
+/** Muestra pocas citas históricas con eventos físicos de carga para validar el mapeo. */
+export async function listarCitasConEventosLogisticos(limit = 5): Promise<FalconLogisticEventSample[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
+      WITH hijos_con_evento AS (
+        SELECT TOP (50)
+          id_hijo, fecha_hora_tarja, fecha_salida, fecha_escaneo_salida, fast_salida
+        FROM dbo.hijos_m
+        WHERE fecha_hora_tarja IS NOT NULL
+           OR fecha_salida IS NOT NULL
+           OR fecha_escaneo_salida IS NOT NULL
+        ORDER BY COALESCE(fecha_salida, fecha_escaneo_salida, fecha_hora_tarja) DESC
+      )
+      SELECT TOP (@limit)
+        c.id AS cita_id, c.cod_negocio, c.fecha, c.hora, c.cod_volante, c.fecha_atencion,
+        h.fecha_hora_tarja, h.fecha_salida, h.fecha_escaneo_salida, h.fast_salida
+      FROM hijos_con_evento h
+      CROSS APPLY (
+        SELECT TOP (1) id, cod_negocio, fecha, hora, cod_volante, fecha_atencion
+        FROM dbo.citas_programadas c
+        WHERE CONVERT(nvarchar(255), c.id_hijo) = CONVERT(nvarchar(255), h.id_hijo)
+        ORDER BY c.fecha DESC, c.id DESC
+      ) c
+      ORDER BY COALESCE(h.fecha_salida, h.fecha_escaneo_salida, h.fecha_hora_tarja) DESC;
+    `);
+    return result.recordset.map((row) => ({
+      citaId: text(value(row, ['cita_id'])) ?? '',
+      modalidad: maritimeMode(text(value(row, ['cod_negocio']))),
+      fechaCita: dateText(value(row, ['fecha'])),
+      horaCita: text(value(row, ['hora'])),
+      volante: text(value(row, ['cod_volante'])),
+      fechaAtencion: dateText(value(row, ['fecha_atencion'])),
+      fechaHoraTarja: dateText(value(row, ['fecha_hora_tarja'])),
+      fechaSalida: dateText(value(row, ['fecha_salida'])),
+      fechaEscaneoSalida: dateText(value(row, ['fecha_escaneo_salida'])),
+      fastSalida: text(value(row, ['fast_salida']))
     }));
   } finally { await pool.close(); }
 }
