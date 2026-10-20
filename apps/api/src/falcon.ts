@@ -45,7 +45,31 @@ export interface FalconCitaDetail {
   registrosTransporte: FalconTransportRecord[];
   historialTransporte: FalconTransportRecord[];
   controlesSalida: FalconControlSalida[];
+  trazaLogistica: FalconLogisticTrace | null;
   message: string;
+}
+
+/** Eventos de la carga relacionados por id_master e id_hijo; se exponen con su origen explícito. */
+export interface FalconLogisticTrace {
+  idMaster: string | null;
+  idHijo: string | null;
+  estadoCita: string | null;
+  registroCita: string | null;
+  ingresoLocal: string | null;
+  fechaLlegadaMaster: string | null;
+  terminoDescarga: string | null;
+  fechaDescarga: string | null;
+  cierreTarja: string | null;
+  fechaHoraTarja: string | null;
+  fechaSalida: string | null;
+  escaneoSalida: string | null;
+  fechaEscaneoSalida: string | null;
+  preRetiroAlIngreso: string | null;
+  fastSalida: string | null;
+  fechaFastSalida: string | null;
+  ticketSalida: string | null;
+  respuestaFastSalida: string | null;
+  flagSalida: string | null;
 }
 
 export interface FalconTransportRecord {
@@ -503,7 +527,7 @@ export async function vistaPreviaFalcon(limit = 15): Promise<FalconPreview> {
 
 export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetail> {
   const empty = (message: string, connected = false): FalconCitaDetail => ({
-    enabled: enabled(), connected, citaId, cita: null, registrosTransporte: [], historialTransporte: [], controlesSalida: [], message
+    enabled: enabled(), connected, citaId, cita: null, registrosTransporte: [], historialTransporte: [], controlesSalida: [], trazaLogistica: null, message
   });
   if (!enabled()) return empty('Falcon está desactivado.');
   if (!configured()) return empty('Faltan datos de conexión de Falcon.');
@@ -512,7 +536,7 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
   try {
     const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
     try {
-      const [citas, transportes, historial, controles] = await Promise.all([
+      const [citas, transportes, historial, controles, logistica] = await Promise.all([
         previewTableByValue(pool, 'citas_programadas', 'id', citaId),
         pool.request().input('citaId', sql.Int, Number(citaId)).query<SourceRow>(`
           SELECT TOP (20) id, fecha_registro, des_placa, des_conductor, des_transportista
@@ -536,6 +560,22 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
           LEFT JOIN dbo.control_salida_carga_detalle d ON d.id_control_salida = c.id
           WHERE c.id_cita = @citaId
           ORDER BY c.fecha_registro ASC, d.fecha_registro ASC, d.id ASC;
+        `),
+        pool.request().input('citaId', sql.Int, Number(citaId)).query<SourceRow>(`
+          SELECT TOP (1)
+            c.id_master, c.id_hijo,
+            v.cita_estado, v.registro AS registro_cita,
+            m.ingreso_local, m.fecha_llegada AS fecha_llegada_master,
+            m.termino_descarga, m.fecha_descarga, m.cierre_tarja,
+            h.fecha_hora_tarja, h.fecha_salida, h.escaneo_salida,
+            h.fecha_escaneo_salida, h.pre_retiro_al_ingreso, h.fast_salida,
+            h.fecha_fast_salida, h.ticket_salida, h.respuesta_fast_salida,
+            h.ws_flag_salida
+          FROM dbo.citas_programadas c
+          LEFT JOIN dbo.hijos_m h ON h.id_hijo = c.id_hijo
+          LEFT JOIN dbo.masters_m m ON m.id_master = c.id_master
+          LEFT JOIN dbo.VW_LISTADO_CITAS_GENERAL v ON v.id = c.id
+          WHERE c.id = @citaId;
         `)
       ]);
 
@@ -576,6 +616,27 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
         registrosTransporte: transportes.recordset.map(toTransport),
         historialTransporte: historial.recordset.map(toTransport),
         controlesSalida: [...controls.values()],
+        trazaLogistica: logistica.recordset[0] ? {
+          idMaster: text(value(logistica.recordset[0], ['id_master'])),
+          idHijo: text(value(logistica.recordset[0], ['id_hijo'])),
+          estadoCita: text(value(logistica.recordset[0], ['cita_estado'])),
+          registroCita: text(value(logistica.recordset[0], ['registro_cita'])),
+          ingresoLocal: dateText(value(logistica.recordset[0], ['ingreso_local'])),
+          fechaLlegadaMaster: dateText(value(logistica.recordset[0], ['fecha_llegada_master'])),
+          terminoDescarga: dateText(value(logistica.recordset[0], ['termino_descarga'])),
+          fechaDescarga: dateText(value(logistica.recordset[0], ['fecha_descarga'])),
+          cierreTarja: dateText(value(logistica.recordset[0], ['cierre_tarja'])),
+          fechaHoraTarja: dateText(value(logistica.recordset[0], ['fecha_hora_tarja'])),
+          fechaSalida: dateText(value(logistica.recordset[0], ['fecha_salida'])),
+          escaneoSalida: text(value(logistica.recordset[0], ['escaneo_salida'])),
+          fechaEscaneoSalida: dateText(value(logistica.recordset[0], ['fecha_escaneo_salida'])),
+          preRetiroAlIngreso: text(value(logistica.recordset[0], ['pre_retiro_al_ingreso'])),
+          fastSalida: text(value(logistica.recordset[0], ['fast_salida'])),
+          fechaFastSalida: dateText(value(logistica.recordset[0], ['fecha_fast_salida'])),
+          ticketSalida: text(value(logistica.recordset[0], ['ticket_salida'])),
+          respuestaFastSalida: text(value(logistica.recordset[0], ['respuesta_fast_salida'])),
+          flagSalida: text(value(logistica.recordset[0], ['ws_flag_salida']))
+        } : null,
         message: 'Traza de solo lectura. Los registros de transporte no se interpretan como llegada a garita.'
       };
     } finally {
