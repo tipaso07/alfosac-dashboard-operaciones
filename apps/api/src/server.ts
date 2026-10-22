@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { diagnosticarGits, listarCandidatosOperativosGits } from './gits.js';
+import { diagnosticarGits, listarCandidatosOperativosGits, obtenerMuestrasFlujoGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -70,6 +70,17 @@ app.get('/api/integrations/gits/schema-candidates', async (_request, response) =
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo inspeccionar el catálogo de GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/flow-samples', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Muestra técnica de hasta 12 filas por origen para validar llaves entre volante, movimiento de balanza y salida. Consulta de solo lectura.',
+      samples: await obtenerMuestrasFlujoGits()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudieron consultar las muestras de GITS.' });
   }
 });
 

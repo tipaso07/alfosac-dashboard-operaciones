@@ -16,6 +16,12 @@ export interface GitsSchemaCandidate {
   columns: string[];
 }
 
+export interface GitsFlowSamples {
+  movementBalance: Record<string, unknown>[];
+  agencyTickets: Record<string, unknown>[];
+  warehouseExits: Record<string, unknown>[];
+}
+
 function enabled() { return process.env.GITS_SYNC_ENABLED === 'true'; }
 
 function configured() {
@@ -125,6 +131,61 @@ export async function listarCandidatosOperativosGits(): Promise<GitsSchemaCandid
       candidates.set(key, candidate);
     }
     return [...candidates.values()];
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Muestra técnica y acotada para validar cómo se enlazan volante, garita y salida.
+ * Solo utiliza SELECT TOP: no modifica ni sincroniza información de GITS.
+ */
+export async function obtenerMuestrasFlujoGits(): Promise<GitsFlowSamples> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const [movementBalance, agencyTickets, warehouseExits] = await Promise.all([
+      pool.request().query(`
+        SELECT TOP (12)
+          MOVBAL_C_NUMERO AS movimiento,
+          MOVBAL_D_FECHA_INGRESO AS fecha_ingreso,
+          MOVBAL_D_FECHA_SALIDA AS fecha_salida,
+          CAMION_C_PLACA AS placa,
+          MOVBAL_C_CONTENEDOR AS contenedor_movimiento,
+          CONTEN_C_CODIGO AS contenedor,
+          MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarja
+        FROM dbo.AUDTV_MOVIMIENTO_BALANZA
+        ORDER BY MOVBAL_D_FECHA_INGRESO DESC;
+      `),
+      pool.request().query(`
+        SELECT TOP (12)
+          AGMOTI_C_NROVOLANTE AS volante,
+          CAMION_C_PLACA AS placa,
+          AGMOTI_D_FECHA_HORA_APROX_INGRESO AS fecha_aproximada_ingreso,
+          AGMOTI_N_CONTENEDOR AS cantidad_contenedores
+        FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET
+        ORDER BY AGMOTI_C_NROVOLANTE DESC;
+      `),
+      pool.request().query(`
+        SELECT TOP (12)
+          WSRESAL_C_NUMERO AS registro_salida,
+          MOVBAL_C_NUMERO AS movimiento,
+          CAMION_C_PLACA AS placa,
+          CONTEN_C_CODIGO AS contenedor,
+          WSRESAL_D_FECHA_SALIDA_ALMACEN AS fecha_salida_almacen,
+          WSRESAL_C_ESTADO AS estado
+        FROM dbo.ADUTV_WS_REGISTRO_SALIDA_ALMACEN
+        ORDER BY WSRESAL_D_FECHA_SALIDA_ALMACEN DESC;
+      `)
+    ]);
+
+    return {
+      movementBalance: movementBalance.recordset,
+      agencyTickets: agencyTickets.recordset,
+      warehouseExits: warehouseExits.recordset
+    };
   } finally {
     await pool.close();
   }
