@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { catalogoTecnicoFlujoGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
+import { catalogoEnlacesGits, catalogoTecnicoFlujoGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -119,6 +119,17 @@ app.get('/api/integrations/gits/flow-objects', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudieron consultar los objetos de GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/bridge-catalog', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Catálogo de las tablas puente entre volante, autorización de retiro, balanza y documento. Consulta de metadatos; no lee ni modifica operaciones.',
+      catalog: await catalogoEnlacesGits()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo de enlaces de GITS.' });
   }
 });
 

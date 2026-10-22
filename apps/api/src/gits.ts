@@ -49,6 +49,17 @@ const flowTables = [
   'AUDTV_DOCUMENTO_ORIGEN_DETALLE'
 ] as const;
 
+const flowBridgeTables = [
+  'CCTV_AGENCIA_MOVIMIENTO_TICKET_VOLANTE',
+  'CCTV_AGENCIA_MOVIMIENTO_TICKET_RETIRO',
+  'OPETV_MOVIMIENTO_BALANZA_AUTORIZACION_RETIRO',
+  'OPETV_MOVIMIENTO_BALANZA_DOCUMENTO',
+  'OPETV_MOVIMIENTO_BALANZA_ALMACEN',
+  'OPETV_MOVIMIENTO_BALANZA',
+  'OPETV_DOCUMENTO_ORIGEN',
+  'OPETV_DOCUMENTO_ORIGEN_DETALLE'
+] as const;
+
 function enabled() { return process.env.GITS_SYNC_ENABLED === 'true'; }
 
 function configured() {
@@ -345,6 +356,7 @@ export async function listarObjetosFlujoGits(): Promise<GitsFlowObject[]> {
       SELECT SCHEMA_NAME(objects.schema_id) AS schema_name, objects.name AS object_name, objects.type_desc
       FROM sys.objects objects
       WHERE objects.is_ms_shipped = 0
+        AND objects.type = 'U'
         AND (
           objects.name LIKE '%AGENCIA_MOVIMIENTO_TICKET%'
           OR objects.name LIKE '%MOVIMIENTO_BALANZA%'
@@ -354,6 +366,84 @@ export async function listarObjetosFlujoGits(): Promise<GitsFlowObject[]> {
       ORDER BY objects.name, objects.type_desc;
     `);
     return result.recordset.map((row) => ({ schema: row.schema_name, name: row.object_name, type: row.type_desc }));
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Estructura de las tablas puente que enlazan volante, autorización, balanza y documento.
+ * Solo lee catálogo de SQL Server; nunca registros operativos.
+ */
+export async function catalogoEnlacesGits(): Promise<GitsTechnicalCatalog> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const quotedTables = flowBridgeTables.map((table) => `'${table}'`).join(', ');
+    const [columnsResult, indexesResult, relationshipsResult] = await Promise.all([
+      pool.request().query<{ schema_name: string; table_name: string; column_name: string }>(`
+        SELECT TABLE_SCHEMA AS schema_name, TABLE_NAME AS table_name, COLUMN_NAME AS column_name
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME IN (${quotedTables})
+        ORDER BY TABLE_NAME, ORDINAL_POSITION;
+      `),
+      pool.request().query<{ schema_name: string; table_name: string; index_name: string; is_primary_key: boolean; column_name: string }>(`
+        SELECT
+          SCHEMA_NAME(objects.schema_id) AS schema_name,
+          objects.name AS table_name,
+          indexes.name AS index_name,
+          indexes.is_primary_key,
+          columns.name AS column_name
+        FROM sys.indexes indexes
+        INNER JOIN sys.index_columns indexColumns
+          ON indexColumns.object_id = indexes.object_id AND indexColumns.index_id = indexes.index_id
+        INNER JOIN sys.columns columns
+          ON columns.object_id = indexColumns.object_id AND columns.column_id = indexColumns.column_id
+        INNER JOIN sys.objects objects ON objects.object_id = indexes.object_id
+        WHERE SCHEMA_NAME(objects.schema_id) = 'dbo'
+          AND objects.name IN (${quotedTables})
+          AND indexes.index_id > 0
+        ORDER BY objects.name, indexes.name, indexColumns.key_ordinal;
+      `),
+      pool.request().query<{ source_table: string; source_column: string; target_table: string; target_column: string }>(`
+        SELECT
+          OBJECT_SCHEMA_NAME(foreignKeys.parent_object_id) + '.' + OBJECT_NAME(foreignKeys.parent_object_id) AS source_table,
+          parentColumns.name AS source_column,
+          OBJECT_SCHEMA_NAME(foreignKeys.referenced_object_id) + '.' + OBJECT_NAME(foreignKeys.referenced_object_id) AS target_table,
+          referencedColumns.name AS target_column
+        FROM sys.foreign_key_columns foreignKeyColumns
+        INNER JOIN sys.foreign_keys foreignKeys ON foreignKeys.object_id = foreignKeyColumns.constraint_object_id
+        INNER JOIN sys.columns parentColumns
+          ON parentColumns.object_id = foreignKeyColumns.parent_object_id AND parentColumns.column_id = foreignKeyColumns.parent_column_id
+        INNER JOIN sys.columns referencedColumns
+          ON referencedColumns.object_id = foreignKeyColumns.referenced_object_id AND referencedColumns.column_id = foreignKeyColumns.referenced_column_id
+        WHERE OBJECT_NAME(foreignKeys.parent_object_id) IN (${quotedTables})
+           OR OBJECT_NAME(foreignKeys.referenced_object_id) IN (${quotedTables})
+        ORDER BY source_table, source_column;
+      `)
+    ]);
+
+    const tableMap = new Map<string, { schema: string; table: string; columns: string[] }>();
+    for (const row of columnsResult.recordset) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      const table = tableMap.get(key) ?? { schema: row.schema_name, table: row.table_name, columns: [] };
+      table.columns.push(row.column_name);
+      tableMap.set(key, table);
+    }
+    const indexMap = new Map<string, { schema: string; table: string; index: string; primary: boolean; columns: string[] }>();
+    for (const row of indexesResult.recordset) {
+      const key = `${row.schema_name}.${row.table_name}.${row.index_name}`;
+      const index = indexMap.get(key) ?? { schema: row.schema_name, table: row.table_name, index: row.index_name, primary: row.is_primary_key, columns: [] };
+      index.columns.push(row.column_name);
+      indexMap.set(key, index);
+    }
+    return {
+      tables: [...tableMap.values()],
+      indexes: [...indexMap.values()],
+      relationships: relationshipsResult.recordset.map((row) => ({ source: row.source_table, sourceColumn: row.source_column, target: row.target_table, targetColumn: row.target_column }))
+    };
   } finally {
     await pool.close();
   }
