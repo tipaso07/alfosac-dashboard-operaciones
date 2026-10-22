@@ -26,6 +26,9 @@ type Resumen = {
   noCompletadas: number;
 };
 
+type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaSalidaAlmacen: string | null };
+type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' };
+
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 const rotationMs = 15_000;
 const nombres: Record<Modalidad, string> = {
@@ -46,6 +49,7 @@ function App() {
   const tv = window.location.pathname === '/tv';
   const [resumen, setResumen] = useState<Resumen[]>(demoResumen);
   const [operaciones, setOperaciones] = useState<Operacion[]>([]);
+  const [grupos, setGrupos] = useState<GrupoFlujo[]>([]);
   const [pendientes, setPendientes] = useState<Operacion[]>([]);
   const [updatedAt, setUpdatedAt] = useState(new Date().toISOString());
   const [reportDate, setReportDate] = useState<string | null>(null);
@@ -55,14 +59,16 @@ function App() {
   useEffect(() => {
     const cargar = async () => {
       try {
-        const respuestas = await Promise.all([fetch('/api/dashboard/summary'), fetch('/api/dashboard/operations'), fetch('/api/dashboard/pending-arrivals')]);
-        if (!respuestas[0].ok || !respuestas[1].ok || !respuestas[2].ok) return;
+        const respuestas = await Promise.all([fetch('/api/dashboard/summary'), fetch('/api/dashboard/operations'), fetch('/api/dashboard/pending-arrivals'), fetch('/api/dashboard/flow')]);
+        if (!respuestas.every((response) => response.ok)) return;
         const summaryData = await respuestas[0].json() as { mode: 'demo' | 'reportes'; summary: Resumen[]; updatedAt: string; reportDate: string | null };
         const operationsData = await respuestas[1].json() as { operations: Operacion[]; reportDate: string | null };
         const pendingData = await respuestas[2].json() as { operations: Operacion[] };
+        const flowData = await respuestas[3].json() as { groups: GrupoFlujo[] };
         setResumen(summaryData.summary);
         setOperaciones(operationsData.operations);
         setPendientes(pendingData.operations);
+        setGrupos(flowData.groups);
         setUpdatedAt(summaryData.updatedAt);
         setReportDate(summaryData.reportDate ?? operationsData.reportDate ?? null);
         setDataMode(summaryData.mode);
@@ -84,11 +90,11 @@ function App() {
 
   const modalidad = orden[indice];
   const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen[indice];
-  const detalle = useMemo(() => crearDetalle(operaciones.filter((item) => item.modalidad === modalidad), reportDate), [modalidad, operaciones, reportDate]);
+  const detalle = useMemo(() => crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate), [modalidad, grupos, reportDate]);
 
   return tv
     ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} />
-    : <InternalScreen resumen={resumen} operaciones={operaciones} pendientes={pendientes} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
+    : <InternalScreen resumen={resumen} operaciones={operaciones} grupos={grupos} pendientes={pendientes} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
 function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }: {
@@ -160,12 +166,13 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
   );
 }
 
-function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; operaciones: Operacion[]; pendientes: Operacion[]; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
+function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; operaciones: Operacion[]; grupos: GrupoFlujo[]; pendientes: Operacion[]; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
-  const [seleccionada, setSeleccionada] = useState<Operacion | null>(null);
+  const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
   const operacionesFiltradas = filtro === 'TODAS' ? operaciones : operaciones.filter((item) => item.modalidad === filtro);
-  const resumenHora = crearDetalle(operacionesFiltradas, reportDate);
+  const gruposFiltrados = filtro === 'TODAS' ? grupos : grupos.filter((group) => group.modalidad === filtro);
+  const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate);
   const totales = resumen.reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
@@ -198,7 +205,7 @@ function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDat
             <p className="brand">OPERACIONES</p>
             <h2>Seguimiento operativo</h2>
           </div>
-          <p>{operacionesFiltradas.length} registro(s)</p>
+          <p>{gruposFiltrados.length} volante(s)</p>
         </div>
 
         <div className="toolbar-row">
@@ -225,27 +232,23 @@ function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDat
           </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
-                <th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante / A.R.</th>
-                <th>Placa</th>
-                <th>Registro garita</th><th>Espera</th><th>Ingreso</th><th>Despacho</th>
+                <th>Volante / A.R.</th><th>Modalidad</th><th>Citas</th><th>Movimientos en garita</th>
+                <th>Último registro físico</th><th>Relación</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {operacionesFiltradas.length > 0 ? operacionesFiltradas.map((item) => (
-                <tr key={item.id}>
-                  <td>{fechaOperacionEnReporte(item, reportDate) ? new Intl.DateTimeFormat('es-PE', { dateStyle: 'short', timeZone: 'America/Lima' }).format(new Date(fechaOperacionEnReporte(item, reportDate)!)) : '—'}</td>
-                  <td>{fechaOperacionEnReporte(item, reportDate) ? formatHour(fechaOperacionEnReporte(item, reportDate)!) : '—'}</td>
-                  <td>{nombres[item.modalidad]}</td>
-                  <td><strong>{item.volante}</strong></td>
-                  <td>{item.unidad}</td>
-                  <td>{item.fechaGarita ? formatHour(item.fechaGarita) : '—'}</td>
-                  <td>{difference(item.fechaCita, item.fechaGarita)}</td>
-                  <td>{item.fechaIngresoDespacho ? formatHour(item.fechaIngresoDespacho) : '—'}</td>
-                  <td>{item.fechaCompletado ? formatHour(item.fechaCompletado) : '—'}</td>
-                  <td><button className="detail-button" onClick={() => setSeleccionada(item)}>Ver detalle</button></td>
+              {gruposFiltrados.length > 0 ? gruposFiltrados.map((group) => (
+                <tr key={group.volante}>
+                  <td><strong>{group.volante}</strong></td>
+                  <td>{group.modalidad ? nombres[group.modalidad] : 'Sin cita vinculada'}</td>
+                  <td>{group.citas.length}</td>
+                  <td>{group.movimientos.length}</td>
+                  <td>{group.movimientos.at(-1)?.fechaGarita ? formatDateTime(group.movimientos.at(-1)!.fechaGarita!) : '—'}</td>
+                  <td><span className="state-badge">{group.tipo === 'UNICO' ? 'Vínculo único' : group.tipo === 'MULTIPLE' ? 'Múltiples movimientos' : 'Sin cita'}</span></td>
+                  <td><button className="detail-button" onClick={() => setSeleccionado(group)}>Ver detalle</button></td>
                 </tr>
-              )) : <tr><td colSpan={6} className="empty">No hay operaciones para este filtro.</td></tr>}
+              )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}
             </tbody>
           </table>}
         </div>
@@ -256,7 +259,7 @@ function InternalScreen({ resumen, operaciones, pendientes, updatedAt, reportDat
         {pendientes.length ? <div className="pending-list">{pendientes.map((item) => <article key={item.id}><strong>{item.volante}</strong><span>{nombres[item.modalidad]} · Cita: {item.fechaCita ? formatDateTime(item.fechaCita) : '—'}</span></article>)}</div> : <p>No hay citas vencidas pendientes de registro en garita.</p>}
       </section>
 
-      {seleccionada && <OperationModal operacion={seleccionada} onClose={() => setSeleccionada(null)} />}
+      {seleccionado && <FlowModal group={seleccionado} onClose={() => setSeleccionado(null)} />}
     </main>
   );
 }
@@ -334,6 +337,18 @@ function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose:
   );
 }
 
+function FlowModal({ group, onClose }: { group: GrupoFlujo; onClose: () => void }) {
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
+      <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
+      <h3>Citas Falcon ({group.citas.length})</h3>
+      {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
+      <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
+      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Garita: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
+    </section>
+  </div>;
+}
+
 function Kpi({ label, value }: { label: string; value: number }) {
   return <article className="tv-kpi"><span>{label}</span><strong>{value}</strong></article>;
 }
@@ -356,6 +371,23 @@ function crearDetalle(operaciones: Operacion[], reportDate: string | null): Deta
     add(item.fechaIngresoDespacho, 'ingreso', item.estado === 'NO_COMPLETADA');
     add(item.fechaCompletado, 'despacho', item.estado === 'NO_COMPLETADA');
   });
+  return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
+}
+
+function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null): DetalleHora[] {
+  const citas = grupos.flatMap((group) => group.citas);
+  const physical = grupos.flatMap((group) => group.movimientos.map((movement) => ({
+    id: movement.movimiento, modalidad: group.modalidad, fechaGarita: movement.fechaGarita
+  }))).filter((item): item is { id: string; modalidad: Modalidad; fechaGarita: string | null } => Boolean(item.modalidad));
+  const data = new Map<string, DetalleHora>();
+  const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>) => {
+    if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
+    const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, critical: false };
+    row[field] += 1; data.set(hora, row);
+  };
+  citas.forEach((cita) => { add(cita.fechaCita, 'citas'); add(cita.fechaIngresoDespacho, 'ingreso'); add(cita.fechaCompletado, 'despacho'); });
+  physical.forEach((movement) => add(movement.fechaGarita, 'garita'));
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
 }
 

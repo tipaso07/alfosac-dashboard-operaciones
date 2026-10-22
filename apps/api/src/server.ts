@@ -1,6 +1,7 @@
 import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
+import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
@@ -17,6 +18,19 @@ function fechaReporteConfigurada() {
 let lastFalconSyncAt: string | null = null;
 let lastFalconSyncError: string | null = null;
 let syncRunning = false;
+let flowCache: { date: string; expiresAt: number; groups: ReturnType<typeof crearFlujoOperativo>; summary: ReturnType<typeof resumenDeFlujo> } | null = null;
+
+async function cargarFlujoDashboard() {
+  const date = fechaReporteActual();
+  if (flowCache && flowCache.date === date && flowCache.expiresAt > Date.now()) return flowCache;
+  const citas = await listarOperaciones();
+  let movements: Awaited<ReturnType<typeof consultarFlujoDiarioGits>> = [];
+  if (process.env.GITS_SYNC_ENABLED === 'true') {
+    try { movements = await consultarFlujoDiarioGits(date, 1_000); } catch { /* Conserva Falcon si GITS se encuentra temporalmente no disponible. */ }
+  }
+  flowCache = { date, expiresAt: Date.now() + 25_000, groups: crearFlujoOperativo(citas, movements), summary: resumenDeFlujo(citas, crearFlujoOperativo(citas, movements), date) };
+  return flowCache;
+}
 
 async function enriquecerMaritimasConGits(maritimas: Awaited<ReturnType<typeof leerOperacionesMaritimas>>) {
   if (process.env.GITS_ENRICH_FALCON_ENABLED !== 'true') return maritimas;
@@ -256,16 +270,21 @@ app.get('/api/integrations/falcon/citas/:citaId', async (request, response) => {
 });
 
 app.get('/api/dashboard/summary', (_request, response) => {
-  listarOperaciones().then((stored) => response.json({
-    mode: stored.length > 0 ? 'reportes' : 'demo',
+  cargarFlujoDashboard().then((flow) => response.json({
+    mode: 'reportes',
     updatedAt: new Date().toISOString(),
     reportDate: fechaReporteConfigurada(),
     sources: {
       falcon: process.env.FALCON_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA',
       gits: process.env.GITS_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA'
     },
-    summary: crearResumen(stored.length > 0 ? stored : operacionesDemo, fechaReporteActual())
+    summary: flow.summary
   })).catch(() => response.json({ mode: 'demo', updatedAt: new Date().toISOString(), reportDate: fechaReporteConfigurada(), sources: {}, summary: crearResumen(operacionesDemo, fechaReporteActual()) }));
+});
+
+app.get('/api/dashboard/flow', (_request, response) => {
+  cargarFlujoDashboard().then((flow) => response.json({ reportDate: flow.date, groups: flow.groups }))
+    .catch((error) => response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo cargar el flujo operativo.' }));
 });
 
 app.get('/api/dashboard/operations', (_request, response) => {
