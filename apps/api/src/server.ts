@@ -103,7 +103,7 @@ app.get('/api/integrations/gits/trace', async (request, response) => {
   }
   try {
     response.json({
-      message: 'Primera etapa de la traza: tickets por volante. Consulta de solo lectura y sin uniones costosas.',
+      message: 'Historial físico por volante: balanza, ingreso a almacén y salida. Consulta de solo lectura; un volante puede tener varios movimientos.',
       trace: await trazarVolanteGits(volante)
     });
   } catch (error) {

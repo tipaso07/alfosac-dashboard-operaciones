@@ -30,9 +30,15 @@ export interface GitsTechnicalCatalog {
 
 export interface GitsVolanteTrace {
   volante: string;
-  tickets: Record<string, unknown>[];
-  documents: Record<string, unknown>[];
-  documentDetails: Record<string, unknown>[];
+  events: Array<{
+    empresa: string;
+    movimiento: string | null;
+    placa: string | null;
+    contenedor: string | null;
+    fechaGarita: string | null;
+    fechaIngresoAlmacen: string | null;
+    fechaSalidaAlmacen: string | null;
+  }>;
 }
 
 export interface GitsFlowObject {
@@ -75,6 +81,10 @@ function enabled() { return process.env.GITS_SYNC_ENABLED === 'true'; }
 
 function configured() {
   return Boolean(process.env.GITS_DB_HOST && process.env.GITS_DB_NAME && process.env.GITS_DB_USER && process.env.GITS_DB_PASSWORD);
+}
+
+function empresaGits() {
+  return process.env.GITS_EMPRESA_CODE?.trim() || '00001';
 }
 
 function connection(): sql.config {
@@ -326,8 +336,9 @@ export async function catalogoTecnicoFlujoGits(): Promise<GitsTechnicalCatalog> 
 }
 
 /**
- * Primera etapa de la traza: consulta exclusivamente tickets por volante.
- * Las vistas de documento y detalle se mantienen fuera para no forzar uniones costosas.
+ * Traza física de un volante utilizando exclusivamente las tablas base y sus
+ * llaves indexadas. Un volante puede tener varios movimientos de balanza;
+ * se devuelven como historial y nunca se cuentan como operaciones distintas.
  */
 export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTrace> {
   if (!enabled()) throw new Error('GITS está desactivado.');
@@ -335,22 +346,79 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
 
   const pool = await new sql.ConnectionPool(connection()).connect();
   try {
-    const input = (request: sql.Request) => request.input('volante', sql.VarChar(30), volante);
-    const tickets = await input(pool.request()).query(`
-      SELECT TOP (10)
-        AGMOTI_C_NROVOLANTE AS volante,
-        AGMOTI_D_FECHA_HORA_EMISION AS fecha_emision,
-        AGMOTI_D_FECHA_HORA_LLAMADA AS fecha_llamada,
-        AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion,
-        AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion,
-        CAMION_C_PLACA AS placa,
-        AGMOTI_C_ESTADO_FINALIZADO_CON_ATENCION AS finalizado_con_atencion,
-        AGMOTI_C_ESTADO_FINALIZADO_SIN_ATENCION AS finalizado_sin_atencion
-      FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET
-      WHERE AGMOTI_C_NROVOLANTE = @volante
-         OR AGMOTI_C_NROVOLANTE = RIGHT(REPLICATE('0', 15) + @volante, 15);
+    const result = await pool.request()
+      .input('empresa', sql.VarChar(10), empresaGits())
+      .input('volante', sql.VarChar(30), volante)
+      .query<{
+        empresa: string;
+        movimiento: string | null;
+        placa: string | null;
+        contenedor: string | null;
+        fecha_garita: Date | null;
+        fecha_ingreso_almacen: Date | null;
+        fecha_salida_almacen: Date | null;
+      }>(`
+      SELECT TOP (100)
+        origen.EMPRES_C_CODIGO AS empresa,
+        balanza.MOVBAL_C_NUMERO AS movimiento,
+        balanza.CAMION_C_PLACA AS placa,
+        COALESCE(detalle.CONTEN_C_CODIGO, balanza.CONTEN_C_CODIGO) AS contenedor,
+        balanza.MOVBAL_D_FECHA_INGRESO AS fecha_garita,
+        almacen.fecha_ingreso_almacen,
+        salida.fecha_salida_almacen
+      FROM dbo.OPETV_DOCUMENTO_ORIGEN origen
+      INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN_DETALLE detalle
+        ON detalle.EMPRES_C_CODIGO = origen.EMPRES_C_CODIGO
+        AND detalle.NAVE_C_CODIGO = origen.NAVE_C_CODIGO
+        AND detalle.NAVIRU_C_VIAJE = origen.NAVIRU_C_VIAJE
+        AND detalle.RUMBO_C_CODIGO = origen.RUMBO_C_CODIGO
+        AND detalle.OPERAC_C_CODIGO = origen.OPERAC_C_CODIGO
+        AND detalle.PUERTO_C_CODIGO_ORIGEN = origen.PUERTO_C_CODIGO_ORIGEN
+        AND detalle.PUERTO_C_CODIGO_EMBARQUE = origen.PUERTO_C_CODIGO_EMBARQUE
+        AND detalle.DOCORI_C_NUMERO = origen.DOCORI_C_NUMERO
+      LEFT JOIN dbo.OPETV_MOVIMIENTO_BALANZA_DOCUMENTO enlace
+        ON enlace.EMPRES_C_CODIGO = detalle.EMPRES_C_CODIGO
+        AND enlace.NAVE_C_CODIGO = detalle.NAVE_C_CODIGO
+        AND enlace.NAVIRU_C_VIAJE = detalle.NAVIRU_C_VIAJE
+        AND enlace.RUMBO_C_CODIGO = detalle.RUMBO_C_CODIGO
+        AND enlace.OPERAC_C_CODIGO = detalle.OPERAC_C_CODIGO
+        AND enlace.PUERTO_C_CODIGO_ORIGEN = detalle.PUERTO_C_CODIGO_ORIGEN
+        AND enlace.PUERTO_C_CODIGO_EMBARQUE = detalle.PUERTO_C_CODIGO_EMBARQUE
+        AND enlace.DOCORI_C_NUMERO = detalle.DOCORI_C_NUMERO
+        AND enlace.DOORDE_C_NUMERO_DETALLE = detalle.DOORDE_C_NUMERO_DETALLE
+      LEFT JOIN dbo.OPETV_MOVIMIENTO_BALANZA balanza
+        ON balanza.EMPRES_C_CODIGO = detalle.EMPRES_C_CODIGO
+        AND balanza.MOVBAL_C_NUMERO = enlace.MOVBAL_C_NUMERO
+      OUTER APPLY (
+        SELECT TOP (1) movimientoAlmacen.MOBAAL_D_FECHA AS fecha_ingreso_almacen
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA_ALMACEN movimientoAlmacen
+        WHERE movimientoAlmacen.EMPRES_C_CODIGO = detalle.EMPRES_C_CODIGO
+          AND movimientoAlmacen.MOVBAL_C_NUMERO = enlace.MOVBAL_C_NUMERO
+        ORDER BY movimientoAlmacen.MOBAAL_D_FECHA ASC
+      ) almacen
+      OUTER APPLY (
+        SELECT TOP (1) registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN AS fecha_salida_almacen
+        FROM dbo.ADUTV_WS_REGISTRO_SALIDA_ALMACEN registroSalida
+        WHERE registroSalida.EMPRES_C_CODIGO = detalle.EMPRES_C_CODIGO
+          AND registroSalida.MOVBAL_C_NUMERO = enlace.MOVBAL_C_NUMERO
+        ORDER BY registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN ASC
+      ) salida
+      WHERE origen.EMPRES_C_CODIGO = @empresa
+        AND origen.DOCORI_C_NUMERO_VOLANTE = RIGHT(REPLICATE('0', 15) + @volante, 15)
+      ORDER BY balanza.MOVBAL_D_FECHA_INGRESO ASC;
     `);
-    return { volante, tickets: tickets.recordset, documents: [], documentDetails: [] };
+    return {
+      volante,
+      events: result.recordset.map((row) => ({
+        empresa: row.empresa,
+        movimiento: row.movimiento?.trim() || null,
+        placa: row.placa?.trim() || null,
+        contenedor: row.contenedor?.trim() || null,
+        fechaGarita: row.fecha_garita?.toISOString() ?? null,
+        fechaIngresoAlmacen: row.fecha_ingreso_almacen?.toISOString() ?? null,
+        fechaSalidaAlmacen: row.fecha_salida_almacen?.toISOString() ?? null
+      }))
+    };
   } finally {
     await pool.close();
   }
