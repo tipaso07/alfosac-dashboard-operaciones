@@ -31,6 +31,7 @@ type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operaci
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 const rotationMs = 15_000;
+const tvPageRows = 8;
 const nombres: Record<Modalidad, string> = {
   FCL: 'FCL importación',
   LCL: 'LCL importación',
@@ -105,6 +106,17 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
   reportDate: string | null;
   indice: number;
 }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(detalle.length / tvPageRows));
+  const visibleRows = detalle.slice(page * tvPageRows, (page + 1) * tvPageRows);
+
+  useEffect(() => { setPage(0); }, [modalidad]);
+  useEffect(() => {
+    if (pageCount <= 1) return;
+    const interval = window.setInterval(() => setPage((current) => (current + 1) % pageCount), 7_500);
+    return () => window.clearInterval(interval);
+  }, [pageCount]);
+
   return (
     <main className="tv-screen">
       <header className="tv-header">
@@ -116,6 +128,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
         <div className="tv-clock">
           <strong>{formatHour(new Date().toISOString())}</strong>
           <span>Actualizado {formatHour(updatedAt)}</span>
+          <a className="exit-tv" href="/">Salir TV</a>
         </div>
       </header>
 
@@ -142,7 +155,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
             </tr>
           </thead>
           <tbody>
-            {detalle.length > 0 ? detalle.map((item) => (
+            {visibleRows.length > 0 ? visibleRows.map((item) => (
               <tr key={item.hora} className={item.critical ? 'critical-row' : undefined}>
                 <td>{item.hora}</td>
                 <td>{item.citas}</td>
@@ -160,7 +173,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
         <div className="rotation" aria-label="Rotación de operaciones">
           {orden.map((item, position) => <span className={position === indice ? 'active' : ''} key={item}>{nombres[item]}</span>)}
         </div>
-        <p>Cambio automático cada 15 segundos</p>
+        <p>{pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos</p>
       </footer>
     </main>
   );
@@ -189,7 +202,7 @@ function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, r
           <h1>Dashboard operativo</h1>
           {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
-        <p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p>
+        <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a><p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
       </header>
 
       <section className="internal-kpis" aria-label="Resumen general">
@@ -351,6 +364,10 @@ function FlowModal({ group, onClose }: { group: GrupoFlujo; onClose: () => void 
 
 function Kpi({ label, value }: { label: string; value: number }) {
   return <article className="tv-kpi"><span>{label}</span><strong>{value}</strong></article>;
+}
+
+function TvIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/></svg>;
 }
 
 type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; critical: boolean };
