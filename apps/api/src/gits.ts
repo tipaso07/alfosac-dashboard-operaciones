@@ -10,6 +10,12 @@ export interface GitsDiagnostic {
   message: string;
 }
 
+export interface GitsSchemaCandidate {
+  schema: string;
+  table: string;
+  columns: string[];
+}
+
 function enabled() { return process.env.GITS_SYNC_ENABLED === 'true'; }
 
 function configured() {
@@ -67,5 +73,59 @@ export async function diagnosticarGits(): Promise<GitsDiagnostic> {
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Error desconocido al conectar con GITS.';
     return { enabled: true, configured: true, connected: false, database: null, accessibleDatabases: [], message: `No se pudo validar GITS: ${detail}` };
+  }
+}
+
+/**
+ * Revisa solo metadatos para encontrar las tablas candidatas del flujo operativo.
+ * No devuelve registros de operaciones ni realiza cambios en GITS.
+ */
+export async function listarCandidatosOperativosGits(): Promise<GitsSchemaCandidate[]> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const result = await pool.request().query<{
+      schema_name: string;
+      table_name: string;
+      column_name: string;
+    }>(`
+      SELECT TOP (200)
+        TABLE_SCHEMA AS schema_name,
+        TABLE_NAME AS table_name,
+        COLUMN_NAME AS column_name
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+        AND (
+          UPPER(TABLE_NAME) LIKE '%CITA%'
+          OR UPPER(TABLE_NAME) LIKE '%DESPACH%'
+          OR UPPER(TABLE_NAME) LIKE '%INGRES%'
+          OR UPPER(TABLE_NAME) LIKE '%SALIDA%'
+          OR UPPER(TABLE_NAME) LIKE '%TARJA%'
+          OR UPPER(TABLE_NAME) LIKE '%OPERAC%'
+          OR UPPER(TABLE_NAME) LIKE '%CONTEN%'
+          OR UPPER(COLUMN_NAME) LIKE '%CITA%'
+          OR UPPER(COLUMN_NAME) LIKE '%DESPACH%'
+          OR UPPER(COLUMN_NAME) LIKE '%INGRES%'
+          OR UPPER(COLUMN_NAME) LIKE '%SALIDA%'
+          OR UPPER(COLUMN_NAME) LIKE '%TARJA%'
+          OR UPPER(COLUMN_NAME) LIKE '%CONTEN%'
+          OR UPPER(COLUMN_NAME) LIKE '%PLACA%'
+          OR UPPER(COLUMN_NAME) LIKE '%VOLANTE%'
+        )
+      ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION;
+    `);
+
+    const candidates = new Map<string, GitsSchemaCandidate>();
+    for (const row of result.recordset) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      const candidate = candidates.get(key) ?? { schema: row.schema_name, table: row.table_name, columns: [] };
+      candidate.columns.push(row.column_name);
+      candidates.set(key, candidate);
+    }
+    return [...candidates.values()];
+  } finally {
+    await pool.close();
   }
 }

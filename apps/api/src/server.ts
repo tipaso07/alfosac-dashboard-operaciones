@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { diagnosticarGits } from './gits.js';
+import { diagnosticarGits, listarCandidatosOperativosGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -60,6 +60,17 @@ app.get('/api/integrations/falcon', async (_request, response) => {
 
 app.get('/api/integrations/gits', async (_request, response) => {
   response.json(await diagnosticarGits());
+});
+
+app.get('/api/integrations/gits/schema-candidates', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Catálogo limitado de tablas y campos candidatos para citas, garita y despacho. Consulta de metadatos: no lee operaciones ni modifica GITS.',
+      candidates: await listarCandidatosOperativosGits()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo inspeccionar el catálogo de GITS.' });
+  }
 });
 
 app.get('/api/integrations/falcon/preview', async (request, response) => {
