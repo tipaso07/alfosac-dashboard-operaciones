@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { catalogoEnlacesGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
+import { catalogoEnlacesGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -18,15 +18,34 @@ let lastFalconSyncAt: string | null = null;
 let lastFalconSyncError: string | null = null;
 let syncRunning = false;
 
+async function enriquecerMaritimasConGits(maritimas: Awaited<ReturnType<typeof leerOperacionesMaritimas>>) {
+  if (process.env.GITS_ENRICH_FALCON_ENABLED !== 'true') return maritimas;
+  const events = await consultarFlujoDiarioGits(fechaReporteActual(), 1_000);
+  return maritimas.map((cita) => {
+    const correlation = correlacionSeguraGits({
+      volante: cita.volante,
+      placa: cita.unidad,
+      contenedor: cita.contenedor
+    }, events);
+    if (!correlation) return cita;
+    return {
+      ...cita,
+      unidad: correlation.event.placa ?? cita.unidad,
+      fechaGarita: correlation.event.fechaGarita ?? cita.fechaGarita
+    };
+  });
+}
+
 async function importarFalcon() {
-  const [maritimas, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
+  const [maritimasSource, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
+  const maritimas = await enriquecerMaritimasConGits(maritimasSource);
   const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
     id: item.id, modalidad: item.modalidad, estado: item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
     volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
     fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
   });
   await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
-  return { maritime: maritimas.length, aereo: aereas.length };
+  return { maritime: maritimas.length, aereo: aereas.length, gitsEnrichment: process.env.GITS_ENRICH_FALCON_ENABLED === 'true' };
 }
 
 async function syncFalconIfEnabled() {

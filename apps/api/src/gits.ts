@@ -58,6 +58,17 @@ export interface GitsDailyFlowItem {
   fechaSalidaAlmacen: string | null;
 }
 
+export interface GitsCorrelationInput {
+  volante: string | null;
+  placa: string | null;
+  contenedor: string | null;
+}
+
+export interface GitsCorrelation {
+  event: GitsDailyFlowItem;
+  matchedBy: 'CONTENEDOR' | 'PLACA';
+}
+
 const flowTables = [
   'AUDTV_AGENCIA_MOVIMIENTO_TICKET',
   'AUDTV_MOVIMIENTO_BALANZA',
@@ -85,6 +96,47 @@ function configured() {
 
 function empresaGits() {
   return process.env.GITS_EMPRESA_CODE?.trim() || '00001';
+}
+
+function normalizar(value: string | null | undefined, eliminarCeros = false) {
+  const normalized = value?.trim().toUpperCase().replace(/\s+/g, '') || '';
+  if (!normalized) return null;
+  return eliminarCeros ? normalized.replace(/^0+(?=\d)/, '') : normalized;
+}
+
+/**
+ * SQL Server devuelve datetime sin zona. Se preserva como hora Perú para que
+ * Postgres y el navegador no lo desplacen al día anterior al serializar JSON.
+ */
+export function fechaGitsPeru(value: Date | null) {
+  if (!value) return null;
+  const part = (number: number) => String(number).padStart(2, '0');
+  return `${value.getUTCFullYear()}-${part(value.getUTCMonth() + 1)}-${part(value.getUTCDate())}T${part(value.getUTCHours())}:${part(value.getUTCMinutes())}:${part(value.getUTCSeconds())}-05:00`;
+}
+
+/**
+ * Correlación deliberadamente conservadora. El volante no identifica por sí
+ * solo una cita: puede reutilizarse en diferentes días o movimientos. Con
+ * contenedor exacto se elige el primer ingreso; sin contenedor, la placa debe
+ * ser el único candidato físico de ese volante en el día.
+ */
+export function correlacionSeguraGits(cita: GitsCorrelationInput, events: GitsDailyFlowItem[]): GitsCorrelation | null {
+  const volante = normalizar(cita.volante, true);
+  if (!volante) return null;
+  const related = events.filter((event) => normalizar(event.volante, true) === volante);
+  const ordenarPorGarita = (left: GitsDailyFlowItem, right: GitsDailyFlowItem) =>
+    (left.fechaGarita ?? '').localeCompare(right.fechaGarita ?? '');
+
+  const contenedor = normalizar(cita.contenedor);
+  if (contenedor) {
+    const matches = related.filter((event) => normalizar(event.contenedor) === contenedor).sort(ordenarPorGarita);
+    return matches[0] ? { event: matches[0], matchedBy: 'CONTENEDOR' } : null;
+  }
+
+  const placa = normalizar(cita.placa);
+  if (!placa) return null;
+  const matches = related.filter((event) => normalizar(event.placa) === placa);
+  return matches.length === 1 ? { event: matches[0], matchedBy: 'PLACA' } : null;
 }
 
 function connection(): sql.config {
@@ -414,9 +466,9 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         movimiento: row.movimiento?.trim() || null,
         placa: row.placa?.trim() || null,
         contenedor: row.contenedor?.trim() || null,
-        fechaGarita: row.fecha_garita?.toISOString() ?? null,
-        fechaIngresoAlmacen: row.fecha_ingreso_almacen?.toISOString() ?? null,
-        fechaSalidaAlmacen: row.fecha_salida_almacen?.toISOString() ?? null
+        fechaGarita: fechaGitsPeru(row.fecha_garita),
+        fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
+        fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen)
       }))
     };
   } finally {
@@ -601,9 +653,9 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
       volante: row.volante,
       placa: row.placa?.trim() || null,
       contenedor: row.contenedor?.trim() || null,
-      fechaGarita: row.fecha_garita?.toISOString() ?? null,
-      fechaIngresoAlmacen: row.fecha_ingreso_almacen?.toISOString() ?? null,
-      fechaSalidaAlmacen: row.fecha_salida_almacen?.toISOString() ?? null
+      fechaGarita: fechaGitsPeru(row.fecha_garita),
+      fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
+      fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen)
     }));
   } finally {
     await pool.close();

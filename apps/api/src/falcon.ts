@@ -125,6 +125,7 @@ export interface FalconMaritimeOperation {
   modalidad: Modalidad;
   volante: string;
   unidad: string;
+  contenedor: string | null;
   fechaCita: string | null;
   fechaGarita: string | null;
   fechaIngresoDespacho: string | null;
@@ -715,7 +716,7 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
     const citasRequest = pool.request().input('limit', sql.Int, limit);
     if (date) citasRequest.input('reportDate', sql.Date, date);
     const citasResult = await citasRequest.query<SourceRow>(`
-      SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa
+      SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa, des_contenedor
       FROM dbo.citas_programadas
       WHERE cod_negocio IN (3, 4, 5)
         AND fecha >= ${dayStart}
@@ -733,6 +734,7 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
         id, modalidad,
         volante: text(value(row, ['cod_volante'])) ?? previous?.volante ?? id,
         unidad: text(value(row, ['des_placa'])) ?? previous?.unidad ?? '-',
+        contenedor: text(value(row, ['des_contenedor'])) ?? previous?.contenedor ?? null,
         fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])) ?? previous?.fechaCita ?? null,
         // El preregistro de transportista no se debe interpretar como garita.
         fechaGarita: null,
@@ -759,7 +761,7 @@ export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritime
       return [{
         id: `AR-${id}`, modalidad: 'AEREO',
         volante: text(value(row, ['cpa_volante', 'cpa_lista_retiro'])) ?? id,
-        unidad: '-', fechaCita: null,
+        unidad: '-', contenedor: null, fechaCita: null,
         fechaGarita: null,
         fechaIngresoDespacho: dateText(value(row, ['cpa_fecha_atencion']))
       }];
