@@ -28,6 +28,13 @@ export interface GitsTechnicalCatalog {
   relationships: Array<{ source: string; sourceColumn: string; target: string; targetColumn: string }>;
 }
 
+export interface GitsVolanteTrace {
+  volante: string;
+  tickets: Record<string, unknown>[];
+  documents: Record<string, unknown>[];
+  documentDetails: Record<string, unknown>[];
+}
+
 const flowTables = [
   'AUDTV_AGENCIA_MOVIMIENTO_TICKET',
   'AUDTV_MOVIMIENTO_BALANZA',
@@ -285,6 +292,73 @@ export async function catalogoTecnicoFlujoGits(): Promise<GitsTechnicalCatalog> 
         targetColumn: row.target_column
       }))
     };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Traza el volante de una sola operación hasta sus documentos y contenedores.
+ * Es una consulta puntual de validación; no consulta la tabla masiva de balanza.
+ */
+export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTrace> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const input = (request: sql.Request) => request.input('volante', sql.VarChar(30), volante);
+    const [tickets, documents, documentDetails] = await Promise.all([
+      input(pool.request()).query(`
+        SELECT TOP (10)
+          AGMOTI_C_NROVOLANTE AS volante,
+          AGMOTI_D_FECHA_HORA_EMISION AS fecha_emision,
+          AGMOTI_D_FECHA_HORA_LLAMADA AS fecha_llamada,
+          AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion,
+          AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion,
+          CAMION_C_PLACA AS placa,
+          AGMOTI_C_ESTADO_FINALIZADO_CON_ATENCION AS finalizado_con_atencion,
+          AGMOTI_C_ESTADO_FINALIZADO_SIN_ATENCION AS finalizado_sin_atencion
+        FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET
+        WHERE AGMOTI_C_NROVOLANTE = @volante
+           OR AGMOTI_C_NROVOLANTE = RIGHT(REPLICATE('0', 15) + @volante, 15);
+      `),
+      input(pool.request()).query(`
+        SELECT TOP (10)
+          DOCORI_C_NUMERO AS documento,
+          DOCORI_C_NUMERO_VOLANTE AS volante,
+          DOCORI_D_FECHA_VOLANTE AS fecha_volante,
+          DOCORI_D_FECHA AS fecha_documento,
+          DOCORI_C_ESTADO AS estado
+        FROM dbo.AUDTV_DOCUMENTO_ORIGEN
+        WHERE DOCORI_C_NUMERO_VOLANTE = @volante
+           OR DOCORI_C_NUMERO_VOLANTE = RIGHT(REPLICATE('0', 15) + @volante, 15);
+      `),
+      input(pool.request()).query(`
+        SELECT TOP (30)
+          origen.DOCORI_C_NUMERO AS documento,
+          origen.DOCORI_C_NUMERO_VOLANTE AS volante,
+          detalle.DOORDE_C_NUMERO_DETALLE AS detalle,
+          detalle.CONTEN_C_CODIGO AS contenedor,
+          detalle.DOORDE_D_FECHA_INGRESO AS fecha_ingreso,
+          detalle.DOORDE_C_ULTIMA_TARJA_CARGA_SUELTA AS ultima_tarja_carga_suelta,
+          detalle.DOORDE_N_CANTIDAD_DESPACHADO AS cantidad_despachada,
+          detalle.DOORDE_N_PESO_DESPACHADO AS peso_despachado
+        FROM dbo.AUDTV_DOCUMENTO_ORIGEN origen
+        INNER JOIN dbo.AUDTV_DOCUMENTO_ORIGEN_DETALLE detalle
+          ON detalle.EMPRES_C_CODIGO = origen.EMPRES_C_CODIGO
+          AND detalle.NAVE_C_CODIGO = origen.NAVE_C_CODIGO
+          AND detalle.NAVIRU_C_VIAJE = origen.NAVIRU_C_VIAJE
+          AND detalle.RUMBO_C_CODIGO = origen.RUMBO_C_CODIGO
+          AND detalle.OPERAC_C_CODIGO = origen.OPERAC_C_CODIGO
+          AND detalle.PUERTO_C_CODIGO_ORIGEN = origen.PUERTO_C_CODIGO_ORIGEN
+          AND detalle.PUERTO_C_CODIGO_EMBARQUE = origen.PUERTO_C_CODIGO_EMBARQUE
+          AND detalle.DOCORI_C_NUMERO = origen.DOCORI_C_NUMERO
+        WHERE origen.DOCORI_C_NUMERO_VOLANTE = @volante
+           OR origen.DOCORI_C_NUMERO_VOLANTE = RIGHT(REPLICATE('0', 15) + @volante, 15);
+      `)
+    ]);
+    return { volante, tickets: tickets.recordset, documents: documents.recordset, documentDetails: documentDetails.recordset };
   } finally {
     await pool.close();
   }

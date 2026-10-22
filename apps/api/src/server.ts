@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { catalogoTecnicoFlujoGits, diagnosticarGits, listarCandidatosOperativosGits, obtenerMuestrasFlujoGits } from './gits.js';
+import { catalogoTecnicoFlujoGits, diagnosticarGits, listarCandidatosOperativosGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -92,6 +92,22 @@ app.get('/api/integrations/gits/flow-catalog', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo técnico de GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/trace', async (request, response) => {
+  const volante = String(request.query.volante ?? '').trim();
+  if (!/^\d{1,30}$/.test(volante)) {
+    response.status(400).json({ message: 'Indica un volante numérico: ?volante=123456.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Traza puntual del volante hacia tickets, documento y detalle. Consulta de solo lectura; no incluye balanza ni sincronización.',
+      trace: await trazarVolanteGits(volante)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo trazar el volante en GITS.' });
   }
 });
 
