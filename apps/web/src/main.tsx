@@ -31,6 +31,7 @@ type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operaci
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 const rotationMs = 15_000;
+const alertRotationMs = 25_000;
 const tvPageRows = 8;
 const nombres: Record<Modalidad, string> = {
   FCL: 'FCL importación',
@@ -56,6 +57,7 @@ function App() {
   const [reportDate, setReportDate] = useState<string | null>(null);
   const [dataMode, setDataMode] = useState<'demo' | 'reportes'>('demo');
   const [indice, setIndice] = useState(0);
+  const [alertIndex, setAlertIndex] = useState(0);
 
   useEffect(() => {
     const cargar = async () => {
@@ -83,36 +85,58 @@ function App() {
     return () => window.clearInterval(refresh);
   }, []);
 
+  const detallesTv = useMemo(() => Object.fromEntries(orden.map((item) => [
+    item,
+    crearDetalleFlujo(grupos.filter((group) => group.modalidad === item), reportDate)
+  ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate]);
+  const modalidadesConAlerta = useMemo(() => orden.filter((item) => detallesTv[item].some((row) => row.critical)), [detallesTv]);
+
   useEffect(() => {
     if (!tv) return;
+    if (modalidadesConAlerta.length > 0) {
+      setAlertIndex(0);
+      setIndice(orden.indexOf(modalidadesConAlerta[0]));
+      const rotateAlerts = window.setInterval(() => {
+        setAlertIndex((current) => {
+          const next = (current + 1) % modalidadesConAlerta.length;
+          setIndice(orden.indexOf(modalidadesConAlerta[next]));
+          return next;
+        });
+      }, alertRotationMs);
+      return () => window.clearInterval(rotateAlerts);
+    }
     const rotate = window.setInterval(() => setIndice((actual) => (actual + 1) % orden.length), rotationMs);
     return () => window.clearInterval(rotate);
-  }, [tv]);
+  }, [tv, modalidadesConAlerta]);
 
   const modalidad = orden[indice];
   const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen[indice];
-  const detalle = useMemo(() => crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate), [modalidad, grupos, reportDate]);
+  const detalle = detallesTv[modalidad];
+  const alertaActiva = modalidadesConAlerta.includes(modalidad);
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} />
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} />
     : <InternalScreen resumen={resumen} operaciones={operaciones} grupos={grupos} pendientes={pendientes} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }: {
+function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice, alertaActiva }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
   updatedAt: string;
   reportDate: string | null;
   indice: number;
+  alertaActiva: boolean;
 }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(detalle.length / tvPageRows));
   const visibleRows = detalle.slice(page * tvPageRows, (page + 1) * tvPageRows);
+  const alertRow = detalle.findIndex((item) => item.critical);
+  const alertPage = alertRow >= 0 ? Math.floor(alertRow / tvPageRows) : 0;
 
-  useEffect(() => { setPage(0); }, [modalidad]);
+  useEffect(() => { setPage(alertaActiva ? alertPage : 0); }, [modalidad, alertaActiva, alertPage]);
   useEffect(() => {
-    if (pageCount <= 1) return;
+    if (alertaActiva || pageCount <= 1) return;
     const interval = window.setInterval(() => setPage((current) => (current + 1) % pageCount), 7_500);
     return () => window.clearInterval(interval);
   }, [pageCount]);
@@ -173,7 +197,7 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice }
         <div className="rotation" aria-label="Rotación de operaciones">
           {orden.map((item, position) => <span className={position === indice ? 'active' : ''} key={item}>{nombres[item]}</span>)}
         </div>
-        <p>{pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos</p>
+        <p>{alertaActiva ? 'Alerta prioritaria · visible 25 segundos' : `${pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos`}</p>
       </footer>
     </main>
   );
@@ -397,13 +421,18 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null): Det
     id: movement.movimiento, modalidad: group.modalidad, fechaGarita: movement.fechaGarita
   }))).filter((item): item is { id: string; modalidad: Modalidad; fechaGarita: string | null } => Boolean(item.modalidad));
   const data = new Map<string, DetalleHora>();
-  const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>) => {
+  const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
     const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, critical: false };
-    row[field] += 1; data.set(hora, row);
+    row[field] += 1; row.critical ||= critical; data.set(hora, row);
   };
-  citas.forEach((cita) => { add(cita.fechaCita, 'citas'); add(cita.fechaIngresoDespacho, 'ingreso'); add(cita.fechaCompletado, 'despacho'); });
+  citas.forEach((cita) => {
+    const critical = cita.estado === 'NO_COMPLETADA';
+    add(cita.fechaCita, 'citas', critical);
+    add(cita.fechaIngresoDespacho, 'ingreso', critical);
+    add(cita.fechaCompletado, 'despacho', critical);
+  });
   physical.forEach((movement) => add(movement.fechaGarita, 'garita'));
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
 }

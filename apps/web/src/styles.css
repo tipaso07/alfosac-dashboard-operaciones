@@ -28,9 +28,9 @@ table { width: 100%; border-collapse: collapse; font-size: clamp(1rem, 1.75vw, 2
 th { background: #000059; color: #ffffff; text-transform: uppercase; font-size: .7em; letter-spacing: .03em; }
 th, td { border: 1px solid #329AD6; padding: 1.3vh 1vw; text-align: center; }
 td:first-child { font-weight: 700; }
-.critical-row td { font-weight: 700; }
+.critical-row td { background: #fff1f2; color: #9f1d2d; font-weight: 700; }
 .status { display: inline-block; border: 1px solid #329AD6; color: #000059; padding: .35em .8em; border-radius: 999px; font-size: .7em; font-weight: 700; }
-.status-alert { background: #000059; color: #ffffff; border-color: #000059; }
+.status-alert { background: #c83f4b; color: #ffffff; border-color: #c83f4b; }
 .empty { color: #000059; opacity: .65; padding: 4vh; }
 .tv-footer { display: flex; justify-content: space-between; gap: 20px; margin-top: 2.2vh; color: #000059; font-size: clamp(.8rem, 1.25vw, 1.2rem); }
 .tv-footer p { margin: 0; }
