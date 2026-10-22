@@ -41,6 +41,17 @@ export interface GitsFlowObject {
   type: string;
 }
 
+export interface GitsDailyFlowItem {
+  empresa: string;
+  movimiento: string;
+  volante: string | null;
+  placa: string | null;
+  contenedor: string | null;
+  fechaGarita: string | null;
+  fechaIngresoAlmacen: string | null;
+  fechaSalidaAlmacen: string | null;
+}
+
 const flowTables = [
   'AUDTV_AGENCIA_MOVIMIENTO_TICKET',
   'AUDTV_MOVIMIENTO_BALANZA',
@@ -444,6 +455,88 @@ export async function catalogoEnlacesGits(): Promise<GitsTechnicalCatalog> {
       indexes: [...indexMap.values()],
       relationships: relationshipsResult.recordset.map((row) => ({ source: row.source_table, sourceColumn: row.source_column, target: row.target_table, targetColumn: row.target_column }))
     };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Consulta diaria y acotada del flujo marítimo desde las tablas base indexadas.
+ * No sincroniza ni escribe datos; se usa únicamente para validar la semántica de eventos.
+ */
+export async function consultarFlujoDiarioGits(date: string, limit = 50): Promise<GitsDailyFlowItem[]> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const result = await pool.request()
+      .input('fromDate', sql.Date, date)
+      .input('limit', sql.Int, limit)
+      .query<{
+        empresa: string;
+        movimiento: string;
+        volante: string | null;
+        placa: string | null;
+        contenedor: string | null;
+        fecha_garita: Date | null;
+        fecha_ingreso_almacen: Date | null;
+        fecha_salida_almacen: Date | null;
+      }>(`
+        SELECT TOP (@limit)
+          balanza.EMPRES_C_CODIGO AS empresa,
+          balanza.MOVBAL_C_NUMERO AS movimiento,
+          documento.volante,
+          balanza.CAMION_C_PLACA AS placa,
+          balanza.CONTEN_C_CODIGO AS contenedor,
+          balanza.MOVBAL_D_FECHA_INGRESO AS fecha_garita,
+          almacen.fecha_ingreso_almacen,
+          salida.fecha_salida_almacen
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA balanza
+        OUTER APPLY (
+          SELECT TOP (1) origen.DOCORI_C_NUMERO_VOLANTE AS volante
+          FROM dbo.OPETV_MOVIMIENTO_BALANZA_DOCUMENTO enlace
+          INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN origen
+            ON origen.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO
+            AND origen.NAVE_C_CODIGO = enlace.NAVE_C_CODIGO
+            AND origen.NAVIRU_C_VIAJE = enlace.NAVIRU_C_VIAJE
+            AND origen.RUMBO_C_CODIGO = enlace.RUMBO_C_CODIGO
+            AND origen.OPERAC_C_CODIGO = enlace.OPERAC_C_CODIGO
+            AND origen.PUERTO_C_CODIGO_ORIGEN = enlace.PUERTO_C_CODIGO_ORIGEN
+            AND origen.PUERTO_C_CODIGO_EMBARQUE = enlace.PUERTO_C_CODIGO_EMBARQUE
+            AND origen.DOCORI_C_NUMERO = enlace.DOCORI_C_NUMERO
+          WHERE enlace.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
+            AND enlace.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
+        ) documento
+        OUTER APPLY (
+          SELECT TOP (1) movimientoAlmacen.MOBAAL_D_FECHA AS fecha_ingreso_almacen
+          FROM dbo.OPETV_MOVIMIENTO_BALANZA_ALMACEN movimientoAlmacen
+          WHERE movimientoAlmacen.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
+            AND movimientoAlmacen.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
+          ORDER BY movimientoAlmacen.MOBAAL_D_FECHA ASC
+        ) almacen
+        OUTER APPLY (
+          SELECT TOP (1) registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN AS fecha_salida_almacen
+          FROM dbo.ADUTV_WS_REGISTRO_SALIDA_ALMACEN registroSalida
+          WHERE registroSalida.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
+            AND registroSalida.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
+          ORDER BY registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN ASC
+        ) salida
+        WHERE balanza.MOVBAL_D_FECHA_INGRESO >= @fromDate
+          AND balanza.MOVBAL_D_FECHA_INGRESO < DATEADD(day, 1, @fromDate)
+        ORDER BY balanza.MOVBAL_D_FECHA_INGRESO ASC;
+      `);
+
+    return result.recordset.map((row) => ({
+      empresa: row.empresa,
+      movimiento: row.movimiento,
+      volante: row.volante,
+      placa: row.placa?.trim() || null,
+      contenedor: row.contenedor?.trim() || null,
+      fechaGarita: row.fecha_garita?.toISOString() ?? null,
+      fechaIngresoAlmacen: row.fecha_ingreso_almacen?.toISOString() ?? null,
+      fechaSalidaAlmacen: row.fecha_salida_almacen?.toISOString() ?? null
+    }));
   } finally {
     await pool.close();
   }

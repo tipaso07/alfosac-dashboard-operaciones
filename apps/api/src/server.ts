@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { catalogoEnlacesGits, catalogoTecnicoFlujoGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
+import { catalogoEnlacesGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -130,6 +130,25 @@ app.get('/api/integrations/gits/bridge-catalog', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo de enlaces de GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/daily-flow', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    response.status(400).json({ message: 'Indica la fecha con ?date=AAAA-MM-DD.' });
+    return;
+  }
+  try {
+    const items = await consultarFlujoDiarioGits(date);
+    response.json({
+      date,
+      count: items.length,
+      message: 'Muestra diaria desde balanza y sus enlaces a documento, almacén y salida. Consulta de solo lectura; no sincroniza datos.',
+      items
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el flujo diario de GITS.' });
   }
 });
 
