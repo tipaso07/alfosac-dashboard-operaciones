@@ -23,6 +23,11 @@ function fechaLima(value: string | null) {
   return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
+function keyFecha(value: unknown) {
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === 'string' ? value : '';
+}
+
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
 export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
   const citasPorVolante = new Map<string, Operacion[]>();
@@ -51,7 +56,10 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
       tipo: citasDelVolante.length === 0 ? 'SIN_CITA' : citasDelVolante.length === 1 && movimientosDelVolante.length === 1 ? 'UNICO' : 'MULTIPLE'
     };
   });
-  return groups.sort((a, b) => (b.movimientos.at(-1)?.fechaGarita ?? b.citas.at(-1)?.fechaCita ?? '').localeCompare(a.movimientos.at(-1)?.fechaGarita ?? a.citas.at(-1)?.fechaCita ?? ''));
+  return groups.sort((a, b) =>
+    keyFecha(b.movimientos.at(-1)?.fechaGarita ?? b.citas.at(-1)?.fechaCita)
+      .localeCompare(keyFecha(a.movimientos.at(-1)?.fechaGarita ?? a.citas.at(-1)?.fechaCita))
+  );
 }
 
 export function resumenDeFlujo(citas: Operacion[], groups: GrupoFlujoOperativo[], reportDate: string): ResumenModalidad[] {

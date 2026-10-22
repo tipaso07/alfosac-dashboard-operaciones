@@ -17,3 +17,8 @@ test('marca como único solamente una cita y un movimiento del mismo volante', (
   const group = crearFlujoOperativo([cita('1')], [movimiento('a')])[0];
   assert.equal(group.tipo, 'UNICO');
 });
+
+test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
+  const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
+  assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');
+});
