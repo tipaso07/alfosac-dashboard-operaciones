@@ -6,6 +6,7 @@ export interface GitsDiagnostic {
   configured: boolean;
   connected: boolean;
   database: string | null;
+  accessibleDatabases: string[];
   message: string;
 }
 
@@ -35,19 +36,36 @@ function connection(): sql.config {
   };
 }
 
-/** Solo abre la conexión y consulta el nombre de base. No lee tablas ni escribe datos. */
+/**
+ * Solo valida el acceso y enumera bases a las que el usuario ya tiene permiso.
+ * No consulta tablas operativas ni escribe datos en GITS.
+ */
 export async function diagnosticarGits(): Promise<GitsDiagnostic> {
-  if (!enabled()) return { enabled: false, configured: configured(), connected: false, database: null, message: 'GITS está desactivado hasta validar su acceso de solo lectura y mapeo.' };
-  if (!configured()) return { enabled: true, configured: false, connected: false, database: null, message: 'Faltan datos de conexión de GITS.' };
+  if (!enabled()) return { enabled: false, configured: configured(), connected: false, database: null, accessibleDatabases: [], message: 'GITS está desactivado hasta validar su acceso de solo lectura y mapeo.' };
+  if (!configured()) return { enabled: true, configured: false, connected: false, database: null, accessibleDatabases: [], message: 'Faltan datos de conexión de GITS.' };
   try {
     const pool = await new sql.ConnectionPool(connection()).connect();
     try {
       const result = await pool.request().query<{ database_name: string }>('SELECT DB_NAME() AS database_name;');
       const database = result.recordset[0]?.database_name ?? null;
-      return { enabled: true, configured: true, connected: true, database, message: 'Conexión de solo lectura a GITS validada. Aún no se consultan ni sincronizan operaciones.' };
+      const databases = await pool.request().query<{ name: string }>(`
+        SELECT name
+        FROM sys.databases
+        WHERE HAS_DBACCESS(name) = 1
+        ORDER BY name;
+      `);
+      const accessibleDatabases = databases.recordset.map((row) => row.name);
+      return {
+        enabled: true,
+        configured: true,
+        connected: true,
+        database,
+        accessibleDatabases,
+        message: 'Conexión de solo lectura a GITS validada. Aún no se consultan ni sincronizan operaciones.'
+      };
     } finally { await pool.close(); }
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'Error desconocido al conectar con GITS.';
-    return { enabled: true, configured: true, connected: false, database: null, message: `No se pudo validar GITS: ${detail}` };
+    return { enabled: true, configured: true, connected: false, database: null, accessibleDatabases: [], message: `No se pudo validar GITS: ${detail}` };
   }
 }
