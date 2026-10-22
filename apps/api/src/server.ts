@@ -46,11 +46,11 @@ async function syncFalconIfEnabled() {
 app.use(cors());
 app.use(express.json());
 
-app.get('/api/health', (_request, response) => {
+app.get('/api/health', async (_request, response) => {
   response.json({
     status: 'ok', timestamp: new Date().toISOString(), reportDate: fechaReporteActual(),
     falcon: { autoSync: process.env.FALCON_AUTO_SYNC_ENABLED === 'true', lastSyncAt: lastFalconSyncAt, lastError: lastFalconSyncError },
-    gits: diagnosticarGits()
+    gits: await diagnosticarGits()
   });
 });
 
@@ -58,8 +58,8 @@ app.get('/api/integrations/falcon', async (_request, response) => {
   response.json({ ...(await diagnosticarFalcon()), autoSync: process.env.FALCON_AUTO_SYNC_ENABLED === 'true', lastSyncAt: lastFalconSyncAt, lastError: lastFalconSyncError });
 });
 
-app.get('/api/integrations/gits', (_request, response) => {
-  response.json(diagnosticarGits());
+app.get('/api/integrations/gits', async (_request, response) => {
+  response.json(await diagnosticarGits());
 });
 
 app.get('/api/integrations/falcon/preview', async (request, response) => {
