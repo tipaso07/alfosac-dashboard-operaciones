@@ -157,7 +157,7 @@ export async function obtenerMuestrasFlujoGits(): Promise<GitsFlowSamples> {
           CONTEN_C_CODIGO AS contenedor,
           MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarja
         FROM dbo.AUDTV_MOVIMIENTO_BALANZA
-        ORDER BY MOVBAL_D_FECHA_INGRESO DESC;
+        ;
       `),
       pool.request().query(`
         SELECT TOP (12)
@@ -166,7 +166,7 @@ export async function obtenerMuestrasFlujoGits(): Promise<GitsFlowSamples> {
           AGMOTI_D_FECHA_HORA_APROX_INGRESO AS fecha_aproximada_ingreso,
           AGMOTI_N_CONTENEDOR AS cantidad_contenedores
         FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET
-        ORDER BY AGMOTI_C_NROVOLANTE DESC;
+        ;
       `),
       pool.request().query(`
         SELECT TOP (12)
@@ -177,7 +177,7 @@ export async function obtenerMuestrasFlujoGits(): Promise<GitsFlowSamples> {
           WSRESAL_D_FECHA_SALIDA_ALMACEN AS fecha_salida_almacen,
           WSRESAL_C_ESTADO AS estado
         FROM dbo.ADUTV_WS_REGISTRO_SALIDA_ALMACEN
-        ORDER BY WSRESAL_D_FECHA_SALIDA_ALMACEN DESC;
+        ;
       `)
     ]);
 
