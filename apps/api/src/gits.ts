@@ -39,6 +39,8 @@ export interface GitsVolanteTrace {
     fechaSalidaBalanza: string | null;
     fechaIngresoAlmacen: string | null;
     fechaSalidaAlmacen: string | null;
+    fechaAtencionTicket: string | null;
+    fechaFinalizacionTicket: string | null;
     pesoInicial: number | null;
     pesoFinal: number | null;
     pesoNetoBalanza: number | null;
@@ -431,6 +433,8 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         fecha_salida_balanza: Date | null;
         fecha_ingreso_almacen: Date | null;
         fecha_salida_almacen: Date | null;
+        fecha_atencion_ticket: Date | null;
+        fecha_finalizacion_ticket: Date | null;
         peso_inicial: number | null;
         peso_final: number | null;
         peso_neto_balanza: number | null;
@@ -449,6 +453,8 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         detalle.DOORDE_N_PESO_MANIFESTADO AS peso_mercaderia_declarado,
         almacen.fecha_ingreso_almacen,
         salida.fecha_salida_almacen
+        , ticket.fecha_atencion_ticket
+        , ticket.fecha_finalizacion_ticket
       FROM dbo.OPETV_DOCUMENTO_ORIGEN origen
       INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN_DETALLE detalle
         ON detalle.EMPRES_C_CODIGO = origen.EMPRES_C_CODIGO
@@ -486,6 +492,15 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
           AND registroSalida.MOVBAL_C_NUMERO = enlace.MOVBAL_C_NUMERO
         ORDER BY registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN ASC
       ) salida
+      OUTER APPLY (
+        SELECT TOP (1)
+          atencion.AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion_ticket,
+          atencion.AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion_ticket
+        FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET atencion
+        WHERE atencion.EMPRES_C_CODIGO = origen.EMPRES_C_CODIGO
+          AND atencion.AGMOTI_C_NROVOLANTE = origen.DOCORI_C_NUMERO_VOLANTE
+        ORDER BY COALESCE(atencion.AGMOTI_D_FECHA_HORA_FINALIZACION, atencion.AGMOTI_D_FECHA_HORA_ATENCION, atencion.AGMOTI_D_FECHA_HORA_EMISION) DESC
+      ) ticket
       WHERE origen.EMPRES_C_CODIGO = @empresa
         AND origen.DOCORI_C_NUMERO_VOLANTE = RIGHT(REPLICATE('0', 15) + @volante, 15)
       ORDER BY balanza.MOVBAL_D_FECHA_INGRESO ASC;
@@ -501,6 +516,8 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         fechaSalidaBalanza: fechaGitsPeru(row.fecha_salida_balanza),
         fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
         fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
+        fechaAtencionTicket: fechaGitsPeru(row.fecha_atencion_ticket),
+        fechaFinalizacionTicket: fechaGitsPeru(row.fecha_finalizacion_ticket),
         pesoInicial: numero(row.peso_inicial),
         pesoFinal: numero(row.peso_final),
         pesoNetoBalanza: numero(row.peso_neto_balanza),
