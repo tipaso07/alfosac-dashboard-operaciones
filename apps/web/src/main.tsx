@@ -411,7 +411,7 @@ function FlowModal({ group, onClose }: { group: GrupoFlujo; onClose: () => void 
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
       <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
-      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Garita: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Ingreso a despacho: {movement.fechaIngresoAlmacen ? formatDateTime(movement.fechaIngresoAlmacen) : 'Pendiente'} · Salida: {movement.fechaSalidaAlmacen ? formatDateTime(movement.fechaSalidaAlmacen) : 'Pendiente'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería declarada: {formatWeight(movement.pesoMercaderiaDeclarado)}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
+      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Garita: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Ingreso a despacho: {movement.fechaIngresoAlmacen ? formatDateTime(movement.fechaIngresoAlmacen) : 'Pendiente'} · Salida por balanza: {movement.fechaSalidaBalanza ? formatDateTime(movement.fechaSalidaBalanza) : 'Pendiente'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería declarada: {formatWeight(movement.pesoMercaderiaDeclarado)}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
 }
@@ -504,7 +504,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       const minutosRetraso = Math.max(0, Math.floor((now.getTime() - new Date(cita.fechaCita!).getTime()) / 60_000));
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
-      if (llegoGarita && movimientoUnico?.fechaIngresoAlmacen && !movimientoUnico.fechaSalidaAlmacen) {
+      if (llegoGarita && movimientoUnico?.fechaIngresoAlmacen && !movimientoUnico.fechaSalidaBalanza) {
         fechaReferencia = movimientoUnico.fechaIngresoAlmacen;
         const minutosDespacho = Math.max(0, Math.floor((now.getTime() - new Date(fechaReferencia).getTime()) / 60_000));
         if (minutosDespacho >= minutosAlertaDespacho) estado = 'DESPACHO_DEMORADO';
