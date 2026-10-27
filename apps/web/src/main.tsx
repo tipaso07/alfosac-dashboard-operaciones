@@ -193,9 +193,10 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
             <tr>
               <th>Hora</th>
               <th>{modalidad === 'AEREO' ? 'A.R.' : 'Citas'}</th>
-              <th>Garita</th>
+              <th>{modalidad === 'AEREO' ? 'Garita' : 'Llegaron'}</th>
               <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Por vencer'}</th>
               <th>{modalidad === 'AEREO' ? 'Despacho' : 'Pendientes'}</th>
+              {modalidad !== 'AEREO' && <th>Por revisar</th>}
               <th>Estado</th>
             </tr>
           </thead>
@@ -207,9 +208,10 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
                 <td>{item.garita}</td>
                 <td>{modalidad === 'AEREO' ? item.ingreso : item.proximas}</td>
                 <td>{modalidad === 'AEREO' ? item.despacho : item.pendientes}</td>
-                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes} PENDIENTE${item.pendientes === 1 ? '' : 'S'}` : item.warning ? `${item.proximas} POR VENCER` : 'OPERATIVO'}</span></td>
+                {modalidad !== 'AEREO' && <td>{item.revisar}</td>}
+                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes} PENDIENTE${item.pendientes === 1 ? '' : 'S'}` : item.warning ? `${item.proximas} POR VENCER` : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
               </tr>
-            )) : <tr><td colSpan={6} className="empty">Sin operaciones para mostrar</td></tr>}
+            )) : <tr><td colSpan={modalidad === 'AEREO' ? 6 : 7} className="empty">Sin operaciones para mostrar</td></tr>}
           </tbody>
         </table>
       </section>
@@ -288,10 +290,10 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
-            <thead><tr><th>Hora</th><th>Citas / A.R.</th><th>Registro en garita</th><th>Por vencer</th><th>Pendientes</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>Llegaron</th><th>Por vencer</th><th>Pendientes</th><th>Por revisar</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
-              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.proximas}</td><td>{item.pendientes}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Pendiente' : item.warning ? 'Por vencer' : 'Operativo'}</span></td></tr>
-            )) : <tr><td colSpan={6} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
+              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.proximas}</td><td>{item.pendientes}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Pendiente' : item.warning ? 'Por vencer' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
+            )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
           </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
@@ -420,14 +422,14 @@ function TvIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/></svg>;
 }
 
-type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; critical: boolean; warning: boolean };
+type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; revisar: number; critical: boolean; warning: boolean };
 
 function crearDetalle(operaciones: Operacion[], reportDate: string | null): DetalleHora[] {
   const data = new Map<string, DetalleHora>();
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
-    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, critical: false, warning: false };
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, revisar: 0, critical: false, warning: false };
     row[field] += 1;
     row.critical ||= critical;
     data.set(hora, row);
@@ -451,23 +453,34 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false, warning = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
-    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, critical: false, warning: false };
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, revisar: 0, critical: false, warning: false };
     row[field] += 1;
     row.critical ||= critical;
     row.warning ||= warning;
     if (warning) row.proximas += 1;
     if (critical) row.pendientes += 1;
     data.set(hora, row);
+    return row;
   };
-  citas.forEach((cita) => {
-    const estado = seguimientoPorCita.get(cita.id)?.estado;
-    const critical = estado === 'PENDIENTE_LLEGADA';
-    const warning = estado === 'PROXIMA_A_VENCER';
-    add(cita.fechaCita, 'citas', critical, warning);
-    add(cita.fechaIngresoDespacho, 'ingreso');
-    add(cita.fechaCompletado, 'despacho');
-  });
-  physical.forEach((movement) => add(movement.fechaGarita, 'garita'));
+  if (seguimiento.length > 0) {
+    citas.forEach((cita) => {
+      const estado = seguimientoPorCita.get(cita.id)?.estado;
+      const critical = estado === 'PENDIENTE_LLEGADA';
+      const warning = estado === 'PROXIMA_A_VENCER';
+      const row = add(cita.fechaCita, 'citas', critical, warning);
+      if (!row) return;
+      if (estado === 'EN_GARITA') row.garita += 1;
+      if (estado === 'VINCULO_PENDIENTE') row.revisar += 1;
+    });
+  } else {
+    citas.forEach((cita) => {
+      const critical = cita.estado === 'NO_COMPLETADA';
+      add(cita.fechaCita, 'citas', critical);
+      add(cita.fechaIngresoDespacho, 'ingreso');
+      add(cita.fechaCompletado, 'despacho');
+    });
+    physical.forEach((movement) => add(movement.fechaGarita, 'garita'));
+  }
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
 }
 
