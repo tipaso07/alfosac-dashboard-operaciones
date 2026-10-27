@@ -28,6 +28,9 @@ type Resumen = {
 
 type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaSalidaAlmacen: string | null };
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' };
+type EstadoSeguimiento = 'PROGRAMADA' | 'EN_ESPERA' | 'PROXIMA_A_VENCER' | 'PENDIENTE_LLEGADA' | 'EN_GARITA' | 'VINCULO_PENDIENTE';
+type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number };
+type ResumenSeguimiento = { proximas: number; pendientes: number };
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 const rotationMs = 15_000;
@@ -85,11 +88,13 @@ function App() {
     return () => window.clearInterval(refresh);
   }, []);
 
-  const detallesTv = useMemo(() => Object.fromEntries(orden.map((item) => [
-    item,
-    crearDetalleFlujo(grupos.filter((group) => group.modalidad === item), reportDate)
-  ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate]);
-  const modalidadesConAlerta = useMemo(() => orden.filter((item) => detallesTv[item].some((row) => row.critical)), [detallesTv]);
+  const seguimiento = useMemo(() => crearSeguimientoLlegadas(grupos, reportDate, new Date()), [grupos, reportDate, updatedAt]);
+  const detallesTv = useMemo(() => Object.fromEntries(orden.map((modalidad) => [
+    modalidad,
+    crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate, seguimiento.filter((item) => item.modalidad === modalidad))
+  ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate, seguimiento]);
+  const modalidadesConAlerta = useMemo(() => orden.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && alerta.estado === 'PENDIENTE_LLEGADA')), [seguimiento]);
+  const resumenSeguimiento = useMemo(() => crearResumenSeguimiento(seguimiento), [seguimiento]);
 
   useEffect(() => {
     if (!tv) return;
@@ -113,16 +118,19 @@ function App() {
   const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen[indice];
   const detalle = detallesTv[modalidad];
   const alertaActiva = modalidadesConAlerta.includes(modalidad);
+  const seguimientoModalidad = seguimiento.filter((item) => item.modalidad === modalidad);
+  const resumenModalidad = resumenSeguimiento[modalidad];
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} />
-    : <InternalScreen resumen={resumen} operaciones={operaciones} grupos={grupos} pendientes={pendientes} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} />
+    : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice, alertaActiva }: {
+function TvScreen({ modalidad, summary, detalle, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
+  resumenSeguimiento: ResumenSeguimiento;
   updatedAt: string;
   reportDate: string | null;
   indice: number;
@@ -156,37 +164,44 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice, 
         </div>
       </header>
 
-      {summary.noCompletadas > 0 && <p className="tv-alert">Atención: {summary.noCompletadas} operación(es) no completada(s)</p>}
+      {resumenSeguimiento.pendientes > 0 && <p className="tv-alert">Atención requerida: {resumenSeguimiento.pendientes} unidad(es) pendiente(s) de llegada</p>}
 
       <section className="tv-kpis" aria-label="Resumen de la operación">
-        <Kpi label={modalidad === 'AEREO' ? 'A.R.' : 'Citas agendadas'} value={summary.agendadas} />
-        <Kpi label="Registro en garita" value={summary.garita} />
-        <Kpi label="Ingreso a despacho" value={summary.despacho} />
-        <Kpi label="Completadas" value={summary.completadas} />
+        {modalidad === 'AEREO' ? <>
+          <Kpi label="A.R. atendidos" value={summary.despacho} />
+          <Kpi label="Registro en garita" value="N/A" />
+          <Kpi label="Seguimiento de llegada" value="N/A" />
+          <Kpi label="Cierre validado" value="—" />
+        </> : <>
+          <Kpi label="Citas programadas" value={summary.agendadas} />
+          <Kpi label="Registro en garita" value={summary.garita} />
+          <Kpi label="Próximas a vencer" value={resumenSeguimiento.proximas} />
+          <Kpi label="Pendientes de llegada" value={resumenSeguimiento.pendientes} />
+        </>}
       </section>
 
       <section className="tv-table-wrap">
-        <h2>Movimiento por horario</h2>
+        <h2>{modalidad === 'AEREO' ? 'Actividad por horario' : 'Seguimiento por horario'}</h2>
         <table>
           <thead>
             <tr>
               <th>Hora</th>
               <th>{modalidad === 'AEREO' ? 'A.R.' : 'Citas'}</th>
               <th>Garita</th>
-              <th>Ingreso</th>
-              <th>Despacho</th>
+              <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Por vencer'}</th>
+              <th>{modalidad === 'AEREO' ? 'Despacho' : 'Pendientes'}</th>
               <th>Estado</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.length > 0 ? visibleRows.map((item) => (
-              <tr key={item.hora} className={item.critical ? 'critical-row' : undefined}>
+              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}>
                 <td>{item.hora}</td>
                 <td>{item.citas}</td>
                 <td>{item.garita}</td>
-                <td>{item.ingreso}</td>
-                <td>{item.despacho}</td>
-                <td><span className={item.critical ? 'status status-alert' : 'status'}>{item.critical ? 'REVISAR' : 'OPERATIVO'}</span></td>
+                <td>{modalidad === 'AEREO' ? item.ingreso : item.proximas}</td>
+                <td>{modalidad === 'AEREO' ? item.despacho : item.pendientes}</td>
+                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? 'PENDIENTE' : item.warning ? 'POR VENCER' : 'OPERATIVO'}</span></td>
               </tr>
             )) : <tr><td colSpan={6} className="empty">Sin operaciones para mostrar</td></tr>}
           </tbody>
@@ -203,13 +218,14 @@ function TvScreen({ modalidad, summary, detalle, updatedAt, reportDate, indice, 
   );
 }
 
-function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; operaciones: Operacion[]; grupos: GrupoFlujo[]; pendientes: Operacion[]; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
+function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
-  const operacionesFiltradas = filtro === 'TODAS' ? operaciones : operaciones.filter((item) => item.modalidad === filtro);
   const gruposFiltrados = filtro === 'TODAS' ? grupos : grupos.filter((group) => group.modalidad === filtro);
-  const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate);
+  const seguimientoFiltrado = filtro === 'TODAS' ? seguimiento : seguimiento.filter((item) => item.modalidad === filtro);
+  const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
+  const alertas = seguimientoFiltrado.filter((item) => item.estado === 'PENDIENTE_LLEGADA' || item.estado === 'PROXIMA_A_VENCER');
   const totales = resumen.reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
@@ -217,6 +233,10 @@ function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, r
     completadas: acumulado.completadas + item.completadas,
     noCompletadas: acumulado.noCompletadas + item.noCompletadas
   }), { agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 });
+  const seguimientoTotal = orden.reduce((total, modalidad) => ({
+    proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
+    pendientes: total.pendientes + resumenSeguimiento[modalidad].pendientes
+  }), { proximas: 0, pendientes: 0 });
 
   return (
     <main className="internal-screen">
@@ -232,8 +252,8 @@ function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, r
       <section className="internal-kpis" aria-label="Resumen general">
         <Kpi label="Citas / A.R." value={totales.agendadas} />
         <Kpi label="Registro en garita" value={totales.garita} />
-        <Kpi label="Ingreso a despacho" value={totales.despacho} />
-        <Kpi label="Completadas" value={totales.completadas} />
+        <Kpi label="Próximas a vencer" value={seguimientoTotal.proximas} />
+        <Kpi label="Pendientes de llegada" value={seguimientoTotal.pendientes} />
       </section>
 
       <section className="operations-panel">
@@ -262,9 +282,9 @@ function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, r
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
-            <thead><tr><th>Hora</th><th>Citas / A.R.</th><th>Registro en garita</th><th>Ingreso</th><th>Despacho</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Hora</th><th>Citas / A.R.</th><th>Registro en garita</th><th>Por vencer</th><th>Pendientes</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
-              <tr key={item.hora}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td><span className="state-badge">{item.critical ? 'Revisar' : 'Operativo'}</span></td></tr>
+              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.proximas}</td><td>{item.pendientes}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Pendiente' : item.warning ? 'Por vencer' : 'Operativo'}</span></td></tr>
             )) : <tr><td colSpan={6} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
           </table> : <table className="operations-table detail-list">
             <thead>
@@ -292,8 +312,8 @@ function InternalScreen({ resumen, operaciones, grupos, pendientes, updatedAt, r
       </section>
 
       <section className="pending-panel">
-        <div><p className="brand">SEGUIMIENTO</p><h2>Pendientes de llegada</h2></div>
-        {pendientes.length ? <div className="pending-list">{pendientes.map((item) => <article key={item.id}><strong>{item.volante}</strong><span>{nombres[item.modalidad]} · Cita: {item.fechaCita ? formatDateTime(item.fechaCita) : '—'}</span></article>)}</div> : <p>No hay citas vencidas pendientes de registro en garita.</p>}
+        <div><p className="brand">SEGUIMIENTO EN VIVO</p><h2>Unidades que requieren atención</h2></div>
+        {alertas.length ? <div className="pending-list">{alertas.map((item) => <article className={item.estado === 'PENDIENTE_LLEGADA' ? 'pending-critical' : 'pending-warning'} key={item.id}><strong>{item.volante}</strong><span>{nombres[item.modalidad]} · Cita: {formatDateTime(item.fechaCita)} · {item.placa ?? 'Sin placa'} · {etiquetaSeguimiento(item)}</span></article>)}</div> : <p>No hay unidades próximas a vencer ni pendientes de llegada.</p>}
       </section>
 
       {seleccionado && <FlowModal group={seleccionado} onClose={() => setSeleccionado(null)} />}
@@ -386,7 +406,7 @@ function FlowModal({ group, onClose }: { group: GrupoFlujo; onClose: () => void 
   </div>;
 }
 
-function Kpi({ label, value }: { label: string; value: number }) {
+function Kpi({ label, value }: { label: string; value: number | string }) {
   return <article className="tv-kpi"><span>{label}</span><strong>{value}</strong></article>;
 }
 
@@ -394,14 +414,14 @@ function TvIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/></svg>;
 }
 
-type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; critical: boolean };
+type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; critical: boolean; warning: boolean };
 
 function crearDetalle(operaciones: Operacion[], reportDate: string | null): DetalleHora[] {
   const data = new Map<string, DetalleHora>();
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
-    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, critical: false };
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, critical: false, warning: false };
     row[field] += 1;
     row.critical ||= critical;
     data.set(hora, row);
@@ -415,26 +435,82 @@ function crearDetalle(operaciones: Operacion[], reportDate: string | null): Deta
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
 }
 
-function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null): DetalleHora[] {
+function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, seguimiento: SeguimientoLlegada[] = []): DetalleHora[] {
   const citas = grupos.flatMap((group) => group.citas);
   const physical = grupos.flatMap((group) => group.movimientos.map((movement) => ({
     id: movement.movimiento, modalidad: group.modalidad, fechaGarita: movement.fechaGarita
   }))).filter((item): item is { id: string; modalidad: Modalidad; fechaGarita: string | null } => Boolean(item.modalidad));
   const data = new Map<string, DetalleHora>();
-  const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false) => {
+  const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
+  const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false, warning = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
-    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, critical: false };
-    row[field] += 1; row.critical ||= critical; data.set(hora, row);
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, critical: false, warning: false };
+    row[field] += 1;
+    row.critical ||= critical;
+    row.warning ||= warning;
+    if (warning) row.proximas += 1;
+    if (critical) row.pendientes += 1;
+    data.set(hora, row);
   };
   citas.forEach((cita) => {
-    const critical = cita.estado === 'NO_COMPLETADA';
-    add(cita.fechaCita, 'citas', critical);
-    add(cita.fechaIngresoDespacho, 'ingreso', critical);
-    add(cita.fechaCompletado, 'despacho', critical);
+    const estado = seguimientoPorCita.get(cita.id)?.estado;
+    const critical = estado === 'PENDIENTE_LLEGADA';
+    const warning = estado === 'PROXIMA_A_VENCER';
+    add(cita.fechaCita, 'citas', critical, warning);
+    add(cita.fechaIngresoDespacho, 'ingreso');
+    add(cita.fechaCompletado, 'despacho');
   });
   physical.forEach((movement) => add(movement.fechaGarita, 'garita'));
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
+}
+
+/**
+ * La alerta de llegada se calcula únicamente para el día operativo actual.
+ * GITS confirma presencia física en garita; no inferimos todavía atención o cierre.
+ */
+function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | null, now: Date): SeguimientoLlegada[] {
+  const hoy = fechaLima(now.toISOString());
+  if (!reportDate || reportDate !== hoy) return [];
+
+  return grupos.flatMap((grupo) => grupo.citas
+    .filter((cita) => cita.modalidad !== 'AEREO' && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate)
+    .map((cita) => {
+      const hayMovimientoHoy = grupo.movimientos.some((movimiento) => movimiento.fechaGarita && fechaLima(movimiento.fechaGarita) === reportDate);
+      const llegoGarita = grupo.tipo === 'UNICO' && hayMovimientoHoy;
+      const minutosRetraso = Math.max(0, Math.floor((now.getTime() - new Date(cita.fechaCita!).getTime()) / 60_000));
+      let estado: EstadoSeguimiento;
+      if (llegoGarita) estado = 'EN_GARITA';
+      else if (hayMovimientoHoy) estado = 'VINCULO_PENDIENTE';
+      else if (new Date(cita.fechaCita!).getTime() > now.getTime()) estado = 'PROGRAMADA';
+      else if (minutosRetraso >= 30) estado = 'PENDIENTE_LLEGADA';
+      else if (minutosRetraso >= 15) estado = 'PROXIMA_A_VENCER';
+      else estado = 'EN_ESPERA';
+
+      return {
+        id: cita.id,
+        volante: cita.volante,
+        modalidad: cita.modalidad,
+        fechaCita: cita.fechaCita!,
+        placa: grupo.movimientos.find((movimiento) => movimiento.fechaGarita)?.placa ?? cita.unidad ?? null,
+        estado,
+        minutosRetraso
+      };
+    }));
+}
+
+function crearResumenSeguimiento(seguimiento: SeguimientoLlegada[]): Record<Modalidad, ResumenSeguimiento> {
+  const resumen = Object.fromEntries(orden.map((modalidad) => [modalidad, { proximas: 0, pendientes: 0 }])) as Record<Modalidad, ResumenSeguimiento>;
+  for (const item of seguimiento) {
+    if (item.estado === 'PROXIMA_A_VENCER') resumen[item.modalidad].proximas += 1;
+    if (item.estado === 'PENDIENTE_LLEGADA') resumen[item.modalidad].pendientes += 1;
+  }
+  return resumen;
+}
+
+function etiquetaSeguimiento(item: SeguimientoLlegada) {
+  if (item.estado === 'PENDIENTE_LLEGADA') return `Pendiente de llegada · ${item.minutosRetraso} min de retraso`;
+  return `Próxima a vencer · ${item.minutosRetraso} min sin garita`;
 }
 
 function formatHour(value: string) {
