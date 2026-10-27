@@ -15,6 +15,25 @@ function fechaReporteConfigurada() {
   return fechaReporteActual();
 }
 
+type ModalidadIncidente = 'FCL' | 'LCL' | 'BB' | 'AEREO';
+
+/**
+ * Permite declarar una incidencia conocida sin convertir cada cita afectada
+ * en una alerta individual. Solo se aplica a la fecha indicada explícitamente.
+ */
+function incidenciasOperativas() {
+  if (process.env.DASHBOARD_INCIDENT_DATE !== fechaReporteActual()) return [];
+  const modalidades = (process.env.DASHBOARD_INCIDENT_MODALITIES ?? '')
+    .split(',')
+    .map((item) => item.trim().toUpperCase())
+    .filter((item): item is ModalidadIncidente => ['FCL', 'LCL', 'BB', 'AEREO'].includes(item));
+  if (!modalidades.length) return [];
+  return [{
+    modalidades,
+    message: process.env.DASHBOARD_INCIDENT_MESSAGE?.trim() || 'Incidencia operativa en seguimiento manual.'
+  }];
+}
+
 let lastFalconSyncAt: string | null = null;
 let lastFalconSyncError: string | null = null;
 let syncRunning = false;
@@ -283,7 +302,7 @@ app.get('/api/dashboard/summary', (_request, response) => {
 });
 
 app.get('/api/dashboard/flow', (_request, response) => {
-  cargarFlujoDashboard().then((flow) => response.json({ reportDate: flow.date, groups: flow.groups }))
+  cargarFlujoDashboard().then((flow) => response.json({ reportDate: flow.date, groups: flow.groups, incidents: incidenciasOperativas() }))
     .catch((error) => response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo cargar el flujo operativo.' }));
 });
 

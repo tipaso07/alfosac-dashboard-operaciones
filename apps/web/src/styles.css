@@ -24,6 +24,8 @@ h1 { margin-bottom: 0; font-size: clamp(2rem, 4.2vw, 4.5rem); line-height: 1; }
 .tv-alert { margin: .8vh 0 0; padding: .65vh 1vw; background: #000059; color: #ffffff; font-size: clamp(.75rem, 1vw, 1rem); }
 .tv-alert strong, .tv-alert span { display: inline-block; }
 .tv-alert span { margin-left: 1.2vw; opacity: .92; }
+.incident-notice { margin: .8vh 0; padding: .65vh 1vw; border: 1px solid #329AD6; background: #edf8ff; color: #000059; font-size: clamp(.75rem, 1vw, 1rem); }
+.incident-notice p { margin: 0; }
 .tv-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .8vw; margin: .9vh 0; }
 .tv-kpi { min-height: 8.5vh; border: 1px solid #329AD6; border-top-width: 5px; padding: .65vh .7vw; display: flex; flex-direction: column; justify-content: center; text-align: center; }
 .tv-kpi span { color: #000059; font-size: clamp(.62rem, .85vw, .85rem); font-weight: 700; text-transform: uppercase; }

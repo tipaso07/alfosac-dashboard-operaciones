@@ -28,7 +28,8 @@ type Resumen = {
 
 type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null };
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' };
-type EstadoSeguimiento = 'PROGRAMADA' | 'EN_ESPERA' | 'PROXIMA_A_VENCER' | 'PENDIENTE_LLEGADA' | 'EN_GARITA' | 'VINCULO_PENDIENTE' | 'PROXIMO_DESPACHO' | 'DESPACHO_DEMORADO';
+type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
+type EstadoSeguimiento = 'PROGRAMADA' | 'EN_ESPERA' | 'PROXIMA_A_VENCER' | 'PENDIENTE_LLEGADA' | 'EN_GARITA' | 'VINCULO_PENDIENTE' | 'PROXIMO_DESPACHO' | 'DESPACHO_DEMORADO' | 'INCIDENCIA_OPERATIVA';
 type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string };
 type ResumenSeguimiento = { proximasLlegada: number; pendientesLlegada: number; proximosDespacho: number; despachoDemorado: number };
 
@@ -66,6 +67,7 @@ function App() {
   const [dataMode, setDataMode] = useState<'demo' | 'reportes'>('demo');
   const [indice, setIndice] = useState(0);
   const [alertaPriorizada, setAlertaPriorizada] = useState<string | null>(null);
+  const [incidentes, setIncidentes] = useState<IncidenteOperativo[]>([]);
 
   useEffect(() => {
     const cargar = async () => {
@@ -75,11 +77,12 @@ function App() {
         const summaryData = await respuestas[0].json() as { mode: 'demo' | 'reportes'; summary: Resumen[]; updatedAt: string; reportDate: string | null };
         const operationsData = await respuestas[1].json() as { operations: Operacion[]; reportDate: string | null };
         const pendingData = await respuestas[2].json() as { operations: Operacion[] };
-        const flowData = await respuestas[3].json() as { groups: GrupoFlujo[] };
+        const flowData = await respuestas[3].json() as { groups: GrupoFlujo[]; incidents?: IncidenteOperativo[] };
         setResumen(summaryData.summary);
         setOperaciones(operationsData.operations);
         setPendientes(pendingData.operations);
         setGrupos(flowData.groups);
+        setIncidentes(flowData.incidents ?? []);
         setUpdatedAt(summaryData.updatedAt);
         setReportDate(summaryData.reportDate ?? operationsData.reportDate ?? null);
         setDataMode(summaryData.mode);
@@ -93,7 +96,8 @@ function App() {
     return () => window.clearInterval(refresh);
   }, []);
 
-  const seguimiento = useMemo(() => crearSeguimientoLlegadas(grupos, reportDate, new Date()), [grupos, reportDate, updatedAt]);
+  const modalidadesEnIncidencia = useMemo(() => new Set(incidentes.flatMap((item) => item.modalidades)), [incidentes]);
+  const seguimiento = useMemo(() => crearSeguimientoLlegadas(grupos, reportDate, new Date(), modalidadesEnIncidencia), [grupos, reportDate, updatedAt, modalidadesEnIncidencia]);
   const detallesTv = useMemo(() => Object.fromEntries(orden.map((modalidad) => [
     modalidad,
     crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate, seguimiento.filter((item) => item.modalidad === modalidad))
@@ -123,11 +127,11 @@ function App() {
   const resumenModalidad = resumenSeguimiento[modalidad];
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} />
-    : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
+    : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva, prioridadAlerta }: {
+function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva, prioridadAlerta, incidentes }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
@@ -138,6 +142,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
   indice: number;
   alertaActiva: boolean;
   prioridadAlerta: boolean;
+  incidentes: IncidenteOperativo[];
 }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(detalle.length / tvPageRows));
@@ -172,6 +177,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
       </header>
 
       <section className="tv-summary">
+        <IncidentNotice incidentes={incidentes} />
         {resumenSeguimiento.pendientesLlegada + resumenSeguimiento.despachoDemorado > 0 && <div className="tv-alert"><strong>Atención requerida: {resumenSeguimiento.pendientesLlegada + resumenSeguimiento.despachoDemorado} alerta(s) operativa(s)</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${etiquetaSeguimiento(item)}`).join('   |   ')}</span></div>}
         <section className="tv-kpis" aria-label="Resumen de la operación">
         {modalidad === 'AEREO' ? <>
@@ -211,7 +217,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
                 <td>{modalidad === 'AEREO' ? item.ingreso : item.pendientes}</td>
                 <td>{modalidad === 'AEREO' ? item.despacho : item.despachoDemorado}</td>
                 {modalidad !== 'AEREO' && <td>{item.revisar}</td>}
-                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes + item.despachoDemorado} ALERTA${item.pendientes + item.despachoDemorado === 1 ? '' : 'S'}` : item.warning ? 'PRÓXIMA ALERTA' : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
+                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes + item.despachoDemorado} ALERTA${item.pendientes + item.despachoDemorado === 1 ? '' : 'S'}` : item.warning ? 'PRÓXIMA ALERTA' : item.incidencias ? 'INCIDENCIA GENERAL' : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
               </tr>
             )) : <tr><td colSpan={modalidad === 'AEREO' ? 6 : 7} className="empty">Sin operaciones para mostrar</td></tr>}
           </tbody>
@@ -228,7 +234,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
   );
 }
 
-function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes' }) {
+function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode, incidentes }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes'; incidentes: IncidenteOperativo[] }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
@@ -266,6 +272,8 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         <Kpi label="Despacho +45 min" value={seguimientoTotal.despachoDemorado} />
       </section>
 
+      <IncidentNotice incidentes={incidentes} />
+
       <section className="operations-panel">
         <div className="panel-heading">
           <div>
@@ -294,7 +302,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           {vista === 'RESUMEN' ? <table className="operations-table">
             <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>Llegaron</th><th>Sin llegar +35</th><th>Despacho +45</th><th>Por revisar</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
-              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.pendientes}</td><td>{item.despachoDemorado}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Alerta' : item.warning ? 'Próxima alerta' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
+              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.pendientes}</td><td>{item.despachoDemorado}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Alerta' : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
             )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
           </table> : <table className="operations-table detail-list">
             <thead>
@@ -420,18 +428,25 @@ function Kpi({ label, value }: { label: string; value: number | string }) {
   return <article className="tv-kpi"><span>{label}</span><strong>{value}</strong></article>;
 }
 
+function IncidentNotice({ incidentes }: { incidentes: IncidenteOperativo[] }) {
+  if (!incidentes.length) return null;
+  return <div className="incident-notice" role="status">
+    {incidentes.map((incidente) => <p key={`${incidente.modalidades.join('|')}-${incidente.message}`}><strong>Incidencia {incidente.modalidades.join(' / ')}</strong> · {incidente.message}</p>)}
+  </div>;
+}
+
 function TvIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/></svg>;
 }
 
-type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; despachoDemorado: number; revisar: number; critical: boolean; warning: boolean };
+type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; despachoDemorado: number; incidencias: number; revisar: number; critical: boolean; warning: boolean };
 
 function crearDetalle(operaciones: Operacion[], reportDate: string | null): DetalleHora[] {
   const data = new Map<string, DetalleHora>();
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
-    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, despachoDemorado: 0, revisar: 0, critical: false, warning: false };
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, despachoDemorado: 0, incidencias: 0, revisar: 0, critical: false, warning: false };
     row[field] += 1;
     row.critical ||= critical;
     data.set(hora, row);
@@ -455,7 +470,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false, warning = false) => {
     if (!date || (reportDate && fechaLima(date) !== reportDate)) return;
     const hora = new Intl.DateTimeFormat('es-PE', { hour: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(date)) + ':00';
-    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, despachoDemorado: 0, revisar: 0, critical: false, warning: false };
+    const row = data.get(hora) ?? { hora, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, despachoDemorado: 0, incidencias: 0, revisar: 0, critical: false, warning: false };
     row[field] += 1;
     row.critical ||= critical;
     row.warning ||= warning;
@@ -474,6 +489,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       if (estado === 'EN_GARITA') row.garita += 1;
       if (estado === 'VINCULO_PENDIENTE') row.revisar += 1;
       if (estado === 'DESPACHO_DEMORADO') row.despachoDemorado += 1;
+      if (estado === 'INCIDENCIA_OPERATIVA') row.incidencias += 1;
     });
   } else {
     citas.forEach((cita) => {
@@ -491,7 +507,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
  * Las alertas se calculan únicamente para el día operativo actual.
  * GITS confirma la llegada física, el ingreso a despacho y la salida de almacén.
  */
-function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | null, now: Date): SeguimientoLlegada[] {
+function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | null, now: Date, modalidadesEnIncidencia: Set<Modalidad>): SeguimientoLlegada[] {
   const hoy = fechaLima(now.toISOString());
   if (!reportDate || reportDate !== hoy) return [];
 
@@ -510,6 +526,9 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         if (minutosDespacho >= minutosAlertaDespacho) estado = 'DESPACHO_DEMORADO';
         else if (minutosDespacho >= minutosAvisoDespacho) estado = 'PROXIMO_DESPACHO';
         else estado = 'EN_GARITA';
+        if (modalidadesEnIncidencia.has(cita.modalidad) && (estado === 'DESPACHO_DEMORADO' || estado === 'PROXIMO_DESPACHO')) {
+          estado = 'INCIDENCIA_OPERATIVA';
+        }
         return {
           id: cita.id, volante: cita.volante, modalidad: cita.modalidad, fechaCita: cita.fechaCita!,
           placa: movimientoUnico.placa ?? cita.unidad ?? null, estado, minutosRetraso: minutosDespacho, fechaReferencia
@@ -521,6 +540,10 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       else if (minutosRetraso >= minutosAlertaLlegada) estado = 'PENDIENTE_LLEGADA';
       else if (minutosRetraso >= minutosAvisoLlegada) estado = 'PROXIMA_A_VENCER';
       else estado = 'EN_ESPERA';
+
+      if (modalidadesEnIncidencia.has(cita.modalidad) && (estado === 'PENDIENTE_LLEGADA' || estado === 'PROXIMA_A_VENCER')) {
+        estado = 'INCIDENCIA_OPERATIVA';
+      }
 
       return {
         id: cita.id,
@@ -547,6 +570,7 @@ function crearResumenSeguimiento(seguimiento: SeguimientoLlegada[]): Record<Moda
 }
 
 function etiquetaSeguimiento(item: SeguimientoLlegada) {
+  if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
   if (item.estado === 'PENDIENTE_LLEGADA') return `Llamar a agente de aduana · ${item.minutosRetraso} min sin llegar`;
   if (item.estado === 'PROXIMA_A_VENCER') return `Sin llegada · ${item.minutosRetraso} min (alerta a los ${minutosAlertaLlegada})`;
   if (item.estado === 'DESPACHO_DEMORADO') return `Despacho demorado · ${item.minutosRetraso} min desde ingreso`;
