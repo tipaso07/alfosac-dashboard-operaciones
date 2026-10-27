@@ -36,8 +36,13 @@ export interface GitsVolanteTrace {
     placa: string | null;
     contenedor: string | null;
     fechaGarita: string | null;
+    fechaSalidaBalanza: string | null;
     fechaIngresoAlmacen: string | null;
     fechaSalidaAlmacen: string | null;
+    pesoInicial: number | null;
+    pesoFinal: number | null;
+    pesoNetoBalanza: number | null;
+    pesoMercaderiaDeclarado: number | null;
   }>;
 }
 
@@ -54,8 +59,15 @@ export interface GitsDailyFlowItem {
   placa: string | null;
   contenedor: string | null;
   fechaGarita: string | null;
+  fechaSalidaBalanza: string | null;
   fechaIngresoAlmacen: string | null;
   fechaSalidaAlmacen: string | null;
+  /** Primer/segundo pesaje y diferencia registrados por balanza. */
+  pesoInicial: number | null;
+  pesoFinal: number | null;
+  pesoNetoBalanza: number | null;
+  /** Peso manifestado de la mercadería vinculada; se muestra solo como referencia. */
+  pesoMercaderiaDeclarado: number | null;
 }
 
 export interface GitsCorrelationInput {
@@ -102,6 +114,15 @@ function normalizar(value: string | null | undefined, eliminarCeros = false) {
   const normalized = value?.trim().toUpperCase().replace(/\s+/g, '') || '';
   if (!normalized) return null;
   return eliminarCeros ? normalized.replace(/^0+(?=\d)/, '') : normalized;
+}
+
+function numero(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 /**
@@ -407,8 +428,13 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         placa: string | null;
         contenedor: string | null;
         fecha_garita: Date | null;
+        fecha_salida_balanza: Date | null;
         fecha_ingreso_almacen: Date | null;
         fecha_salida_almacen: Date | null;
+        peso_inicial: number | null;
+        peso_final: number | null;
+        peso_neto_balanza: number | null;
+        peso_mercaderia_declarado: number | null;
       }>(`
       SELECT TOP (100)
         origen.EMPRES_C_CODIGO AS empresa,
@@ -416,6 +442,11 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         balanza.CAMION_C_PLACA AS placa,
         COALESCE(detalle.CONTEN_C_CODIGO, balanza.CONTEN_C_CODIGO) AS contenedor,
         balanza.MOVBAL_D_FECHA_INGRESO AS fecha_garita,
+        balanza.MOVBAL_D_FECHA_SALIDA AS fecha_salida_balanza,
+        balanza.MOVBAL_N_PRIMER_PESO AS peso_inicial,
+        balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
+        balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
+        detalle.DOORDE_N_PESO_MANIFESTADO AS peso_mercaderia_declarado,
         almacen.fecha_ingreso_almacen,
         salida.fecha_salida_almacen
       FROM dbo.OPETV_DOCUMENTO_ORIGEN origen
@@ -467,8 +498,13 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         placa: row.placa?.trim() || null,
         contenedor: row.contenedor?.trim() || null,
         fechaGarita: fechaGitsPeru(row.fecha_garita),
+        fechaSalidaBalanza: fechaGitsPeru(row.fecha_salida_balanza),
         fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
-        fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen)
+        fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
+        pesoInicial: numero(row.peso_inicial),
+        pesoFinal: numero(row.peso_final),
+        pesoNetoBalanza: numero(row.peso_neto_balanza),
+        pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado)
       }))
     };
   } finally {
@@ -600,8 +636,13 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
         placa: string | null;
         contenedor: string | null;
         fecha_garita: Date | null;
+        fecha_salida_balanza: Date | null;
         fecha_ingreso_almacen: Date | null;
         fecha_salida_almacen: Date | null;
+        peso_inicial: number | null;
+        peso_final: number | null;
+        peso_neto_balanza: number | null;
+        peso_mercaderia_declarado: number | null;
       }>(`
         SELECT TOP (@limit)
           balanza.EMPRES_C_CODIGO AS empresa,
@@ -610,11 +651,18 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
           balanza.CAMION_C_PLACA AS placa,
           balanza.CONTEN_C_CODIGO AS contenedor,
           balanza.MOVBAL_D_FECHA_INGRESO AS fecha_garita,
+          balanza.MOVBAL_D_FECHA_SALIDA AS fecha_salida_balanza,
+          balanza.MOVBAL_N_PRIMER_PESO AS peso_inicial,
+          balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
+          balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
+          documento.peso_mercaderia_declarado,
           almacen.fecha_ingreso_almacen,
           salida.fecha_salida_almacen
         FROM dbo.OPETV_MOVIMIENTO_BALANZA balanza
         OUTER APPLY (
-          SELECT TOP (1) origen.DOCORI_C_NUMERO_VOLANTE AS volante
+          SELECT TOP (1)
+            origen.DOCORI_C_NUMERO_VOLANTE AS volante,
+            detalle.DOORDE_N_PESO_MANIFESTADO AS peso_mercaderia_declarado
           FROM dbo.OPETV_MOVIMIENTO_BALANZA_DOCUMENTO enlace
           INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN origen
             ON origen.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO
@@ -625,6 +673,16 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
             AND origen.PUERTO_C_CODIGO_ORIGEN = enlace.PUERTO_C_CODIGO_ORIGEN
             AND origen.PUERTO_C_CODIGO_EMBARQUE = enlace.PUERTO_C_CODIGO_EMBARQUE
             AND origen.DOCORI_C_NUMERO = enlace.DOCORI_C_NUMERO
+          LEFT JOIN dbo.OPETV_DOCUMENTO_ORIGEN_DETALLE detalle
+            ON detalle.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO
+            AND detalle.NAVE_C_CODIGO = enlace.NAVE_C_CODIGO
+            AND detalle.NAVIRU_C_VIAJE = enlace.NAVIRU_C_VIAJE
+            AND detalle.RUMBO_C_CODIGO = enlace.RUMBO_C_CODIGO
+            AND detalle.OPERAC_C_CODIGO = enlace.OPERAC_C_CODIGO
+            AND detalle.PUERTO_C_CODIGO_ORIGEN = enlace.PUERTO_C_CODIGO_ORIGEN
+            AND detalle.PUERTO_C_CODIGO_EMBARQUE = enlace.PUERTO_C_CODIGO_EMBARQUE
+            AND detalle.DOCORI_C_NUMERO = enlace.DOCORI_C_NUMERO
+            AND detalle.DOORDE_C_NUMERO_DETALLE = enlace.DOORDE_C_NUMERO_DETALLE
           WHERE enlace.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
             AND enlace.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
         ) documento
@@ -654,8 +712,13 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
       placa: row.placa?.trim() || null,
       contenedor: row.contenedor?.trim() || null,
       fechaGarita: fechaGitsPeru(row.fecha_garita),
+      fechaSalidaBalanza: fechaGitsPeru(row.fecha_salida_balanza),
       fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
-      fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen)
+      fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
+      pesoInicial: numero(row.peso_inicial),
+      pesoFinal: numero(row.peso_final),
+      pesoNetoBalanza: numero(row.peso_neto_balanza),
+      pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado)
     }));
   } finally {
     await pool.close();
