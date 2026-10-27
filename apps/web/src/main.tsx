@@ -60,7 +60,7 @@ function App() {
   const [reportDate, setReportDate] = useState<string | null>(null);
   const [dataMode, setDataMode] = useState<'demo' | 'reportes'>('demo');
   const [indice, setIndice] = useState(0);
-  const [alertIndex, setAlertIndex] = useState(0);
+  const [alertaPriorizada, setAlertaPriorizada] = useState<string | null>(null);
 
   useEffect(() => {
     const cargar = async () => {
@@ -95,24 +95,20 @@ function App() {
   ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate, seguimiento]);
   const modalidadesConAlerta = useMemo(() => orden.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && alerta.estado === 'PENDIENTE_LLEGADA')), [seguimiento]);
   const resumenSeguimiento = useMemo(() => crearResumenSeguimiento(seguimiento), [seguimiento]);
+  const claveAlertas = modalidadesConAlerta.join('|');
+  const prioridadActiva = Boolean(tv && claveAlertas && alertaPriorizada !== claveAlertas);
 
   useEffect(() => {
     if (!tv) return;
-    if (modalidadesConAlerta.length > 0) {
-      setAlertIndex(0);
+    if (claveAlertas && alertaPriorizada !== claveAlertas) {
       setIndice(orden.indexOf(modalidadesConAlerta[0]));
-      const rotateAlerts = window.setInterval(() => {
-        setAlertIndex((current) => {
-          const next = (current + 1) % modalidadesConAlerta.length;
-          setIndice(orden.indexOf(modalidadesConAlerta[next]));
-          return next;
-        });
-      }, alertRotationMs);
-      return () => window.clearInterval(rotateAlerts);
+      const prioridad = window.setTimeout(() => setAlertaPriorizada(claveAlertas), alertRotationMs);
+      return () => window.clearTimeout(prioridad);
     }
+    if (!claveAlertas && alertaPriorizada !== null) setAlertaPriorizada(null);
     const rotate = window.setInterval(() => setIndice((actual) => (actual + 1) % orden.length), rotationMs);
     return () => window.clearInterval(rotate);
-  }, [tv, modalidadesConAlerta]);
+  }, [tv, claveAlertas, alertaPriorizada, modalidadesConAlerta]);
 
   const modalidad = orden[indice];
   const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen[indice];
@@ -122,11 +118,11 @@ function App() {
   const resumenModalidad = resumenSeguimiento[modalidad];
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} />
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} />
     : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva }: {
+function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva, prioridadAlerta }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
@@ -136,6 +132,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
   reportDate: string | null;
   indice: number;
   alertaActiva: boolean;
+  prioridadAlerta: boolean;
 }) {
   const [page, setPage] = useState(0);
   const pageCount = Math.max(1, Math.ceil(detalle.length / tvPageRows));
@@ -147,12 +144,12 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
     .sort((a, b) => b.minutosRetraso - a.minutosRetraso)
     .slice(0, 3);
 
-  useEffect(() => { setPage(alertaActiva ? alertPage : 0); }, [modalidad, alertaActiva, alertPage]);
+  useEffect(() => { setPage(prioridadAlerta ? alertPage : 0); }, [modalidad, prioridadAlerta, alertPage]);
   useEffect(() => {
-    if (alertaActiva || pageCount <= 1) return;
+    if (prioridadAlerta || pageCount <= 1) return;
     const interval = window.setInterval(() => setPage((current) => (current + 1) % pageCount), 7_500);
     return () => window.clearInterval(interval);
-  }, [pageCount]);
+  }, [pageCount, prioridadAlerta]);
 
   return (
     <main className="tv-screen">
@@ -220,7 +217,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
         <div className="rotation" aria-label="Rotación de operaciones">
           {orden.map((item, position) => <span className={position === indice ? 'active' : ''} key={item}>{nombres[item]}</span>)}
         </div>
-        <p>{alertaActiva ? 'Alerta prioritaria · visible 25 segundos' : `${pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos`}</p>
+        <p>{prioridadAlerta ? 'Alerta prioritaria · visible 25 segundos' : `${pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos`}</p>
       </footer>
     </main>
   );
