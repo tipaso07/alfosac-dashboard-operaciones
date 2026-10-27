@@ -17,7 +17,9 @@ h1 { margin-bottom: 0; font-size: clamp(2rem, 4.2vw, 4.5rem); line-height: 1; }
 .tv-clock strong, .tv-clock span { display: block; }
 .tv-clock strong { font-size: clamp(1.7rem, 3vw, 3.6rem); line-height: 1; }
 .tv-clock span { color: #000059; opacity: .7; margin-top: 8px; font-size: clamp(.85rem, 1.35vw, 1.25rem); }
-.tv-alert { margin: 2vh 0 0; padding: 1.2vh 1.5vw; background: #000059; color: #ffffff; font-size: clamp(1rem, 1.5vw, 1.5rem); font-weight: 700; }
+.tv-alert { margin: 1.4vh 0 0; padding: 1.1vh 1.5vw; background: #000059; color: #ffffff; font-size: clamp(.95rem, 1.3vw, 1.35rem); }
+.tv-alert strong, .tv-alert span { display: inline-block; }
+.tv-alert span { margin-left: 1.2vw; opacity: .92; }
 .tv-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.2vw; margin: 2.5vh 0; }
 .tv-kpi { min-height: 14vh; border: 2px solid #329AD6; border-top-width: 8px; padding: 1.8vh 1.5vw; display: flex; flex-direction: column; justify-content: center; text-align: center; }
 .tv-kpi span { color: #000059; font-size: clamp(.85rem, 1.35vw, 1.25rem); font-weight: 700; text-transform: uppercase; }
@@ -28,8 +30,10 @@ table { width: 100%; border-collapse: collapse; font-size: clamp(1rem, 1.75vw, 2
 th { background: #000059; color: #ffffff; text-transform: uppercase; font-size: .7em; letter-spacing: .03em; }
 th, td { border: 1px solid #329AD6; padding: 1.3vh 1vw; text-align: center; }
 td:first-child { font-weight: 700; }
-.critical-row td { background: #fff1f2; color: #9f1d2d; font-weight: 700; }
-.warning-row td { background: #fff8e7; color: #8a5a00; font-weight: 700; }
+.critical-row td { font-weight: 700; }
+.critical-row td:first-child { box-shadow: inset 6px 0 #c83f4b; color: #9f1d2d; }
+.warning-row td { font-weight: 700; }
+.warning-row td:first-child { box-shadow: inset 6px 0 #e5ad28; color: #8a5a00; }
 .status { display: inline-block; border: 1px solid #329AD6; color: #000059; padding: .35em .8em; border-radius: 999px; font-size: .7em; font-weight: 700; }
 .status-alert { background: #c83f4b; color: #ffffff; border-color: #c83f4b; }
 .status-warning { background: #fff0bf; color: #8a5a00; border-color: #e5ad28; }

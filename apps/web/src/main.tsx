@@ -122,14 +122,15 @@ function App() {
   const resumenModalidad = resumenSeguimiento[modalidad];
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} />
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} />
     : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva }: {
+function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
+  seguimiento: SeguimientoLlegada[];
   resumenSeguimiento: ResumenSeguimiento;
   updatedAt: string;
   reportDate: string | null;
@@ -141,6 +142,10 @@ function TvScreen({ modalidad, summary, detalle, resumenSeguimiento, updatedAt, 
   const visibleRows = detalle.slice(page * tvPageRows, (page + 1) * tvPageRows);
   const alertRow = detalle.findIndex((item) => item.critical);
   const alertPage = alertRow >= 0 ? Math.floor(alertRow / tvPageRows) : 0;
+  const pendientesPrioritarios = seguimiento
+    .filter((item) => item.estado === 'PENDIENTE_LLEGADA')
+    .sort((a, b) => b.minutosRetraso - a.minutosRetraso)
+    .slice(0, 3);
 
   useEffect(() => { setPage(alertaActiva ? alertPage : 0); }, [modalidad, alertaActiva, alertPage]);
   useEffect(() => {
@@ -164,9 +169,9 @@ function TvScreen({ modalidad, summary, detalle, resumenSeguimiento, updatedAt, 
         </div>
       </header>
 
-      {resumenSeguimiento.pendientes > 0 && <p className="tv-alert">Atención requerida: {resumenSeguimiento.pendientes} unidad(es) pendiente(s) de llegada</p>}
-
-      <section className="tv-kpis" aria-label="Resumen de la operación">
+      <section className="tv-summary">
+        {resumenSeguimiento.pendientes > 0 && <div className="tv-alert"><strong>Atención requerida: {resumenSeguimiento.pendientes} pendiente(s) de llegada</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${formatHourShort(item.fechaCita)} · ${item.minutosRetraso} min`).join('   |   ')}</span></div>}
+        <section className="tv-kpis" aria-label="Resumen de la operación">
         {modalidad === 'AEREO' ? <>
           <Kpi label="A.R. atendidos" value={summary.despacho} />
           <Kpi label="Registro en garita" value="N/A" />
@@ -178,6 +183,7 @@ function TvScreen({ modalidad, summary, detalle, resumenSeguimiento, updatedAt, 
           <Kpi label="Próximas a vencer" value={resumenSeguimiento.proximas} />
           <Kpi label="Pendientes de llegada" value={resumenSeguimiento.pendientes} />
         </>}
+        </section>
       </section>
 
       <section className="tv-table-wrap">
@@ -201,7 +207,7 @@ function TvScreen({ modalidad, summary, detalle, resumenSeguimiento, updatedAt, 
                 <td>{item.garita}</td>
                 <td>{modalidad === 'AEREO' ? item.ingreso : item.proximas}</td>
                 <td>{modalidad === 'AEREO' ? item.despacho : item.pendientes}</td>
-                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? 'PENDIENTE' : item.warning ? 'POR VENCER' : 'OPERATIVO'}</span></td>
+                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes} PENDIENTE${item.pendientes === 1 ? '' : 'S'}` : item.warning ? `${item.proximas} POR VENCER` : 'OPERATIVO'}</span></td>
               </tr>
             )) : <tr><td colSpan={6} className="empty">Sin operaciones para mostrar</td></tr>}
           </tbody>
@@ -516,6 +522,12 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
 function formatHour(value: string) {
   return new Intl.DateTimeFormat('es-PE', {
     hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Lima'
+  }).format(new Date(value));
+}
+
+function formatHourShort(value: string) {
+  return new Intl.DateTimeFormat('es-PE', {
+    hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Lima'
   }).format(new Date(value));
 }
 
