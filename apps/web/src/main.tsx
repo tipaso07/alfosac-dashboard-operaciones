@@ -187,9 +187,9 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
           <Kpi label="Cierre validado" value="—" />
         </> : <>
           <Kpi label="Citas programadas" value={summary.agendadas} />
-          <Kpi label="Registro en garita" value={summary.garita} />
-          <Kpi label="Sin llegar +35 min" value={resumenSeguimiento.pendientesLlegada} />
-          <Kpi label="Despacho +45 min" value={resumenSeguimiento.despachoDemorado} />
+          <Kpi label="Ingreso a balanza" value={summary.garita} />
+          <Kpi label="Sin ingreso a balanza +35 min" value={resumenSeguimiento.pendientesLlegada} />
+          <Kpi label="En operación +45 min" value={resumenSeguimiento.despachoDemorado} />
         </>}
         </section>
       </section>
@@ -201,9 +201,9 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
             <tr>
               <th>Hora</th>
               <th>{modalidad === 'AEREO' ? 'A.R.' : 'Citas'}</th>
-              <th>{modalidad === 'AEREO' ? 'Garita' : 'Llegaron'}</th>
-              <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Sin llegar +35'}</th>
-              <th>{modalidad === 'AEREO' ? 'Despacho' : 'Despacho +45'}</th>
+              <th>{modalidad === 'AEREO' ? 'Garita' : 'En balanza'}</th>
+              <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Sin ingreso a balanza +35'}</th>
+              <th>{modalidad === 'AEREO' ? 'Despacho' : 'En operación +45'}</th>
               {modalidad !== 'AEREO' && <th>Por revisar</th>}
               <th>Estado</th>
             </tr>
@@ -267,9 +267,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
       <section className="internal-kpis" aria-label="Resumen general">
         <Kpi label="Citas / A.R." value={totales.agendadas} />
-        <Kpi label="Registro en garita" value={totales.garita} />
-        <Kpi label="Sin llegar +35 min" value={seguimientoTotal.pendientesLlegada} />
-        <Kpi label="Despacho +45 min" value={seguimientoTotal.despachoDemorado} />
+        <Kpi label="Ingreso a balanza" value={totales.garita} />
+        <Kpi label="Sin ingreso a balanza +35 min" value={seguimientoTotal.pendientesLlegada} />
+        <Kpi label="En operación +45 min" value={seguimientoTotal.despachoDemorado} />
       </section>
 
       <IncidentNotice incidentes={incidentes} />
@@ -300,7 +300,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
-            <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>Llegaron</th><th>Sin llegar +35</th><th>Despacho +45</th><th>Por revisar</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>En balanza</th><th>Sin ingreso a balanza +35</th><th>En operación +45</th><th>Por revisar</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
               <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.pendientes}</td><td>{item.despachoDemorado}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Alerta' : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
             )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
@@ -366,7 +366,7 @@ function fechaOperacionEnReporte(operation: Operacion, reportDate: string | null
 function StateBadge({ estado }: { estado: Estado }) {
   const labels: Record<Estado, string> = {
     AGENDADA: 'Agendada',
-    EN_GARITA: 'En garita',
+    EN_GARITA: 'En balanza',
     EN_DESPACHO: 'En despacho',
     COMPLETADA: 'Completada',
     NO_COMPLETADA: 'No completada'
@@ -377,8 +377,8 @@ function StateBadge({ estado }: { estado: Estado }) {
 function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose: () => void }) {
   const events = [
     ['Cita / A.R.', operacion.fechaCita],
-    ['Registro en garita', operacion.fechaGarita],
-    ['Ingreso a despacho', operacion.fechaIngresoDespacho],
+    ['Ingreso a balanza / primer pesaje', operacion.fechaGarita],
+    ['Movimiento interno de almacén', operacion.fechaIngresoDespacho],
     ['Despacho / completado', operacion.fechaCompletado]
   ];
 
@@ -419,7 +419,7 @@ function FlowModal({ group, onClose }: { group: GrupoFlujo; onClose: () => void 
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
       <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
-      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Garita: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Ingreso a despacho: {movement.fechaIngresoAlmacen ? formatDateTime(movement.fechaIngresoAlmacen) : 'Pendiente'} · Salida por balanza: {movement.fechaSalidaBalanza ? formatDateTime(movement.fechaSalidaBalanza) : 'Pendiente'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería declarada: {formatWeight(movement.pesoMercaderiaDeclarado)}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
+      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {movement.fechaSalidaBalanza ? formatDateTime(movement.fechaSalidaBalanza) : 'Pendiente'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería declarada: {formatWeight(movement.pesoMercaderiaDeclarado)}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
 }
@@ -505,7 +505,8 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
 
 /**
  * Las alertas se calculan únicamente para el día operativo actual.
- * GITS confirma la llegada física, el ingreso a despacho y la salida de almacén.
+ * GITS confirma el primer pesaje y la salida por balanza. El tiempo operativo
+ * se mide entre ambos hitos, tal como opera LCL.
  */
 function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | null, now: Date, modalidadesEnIncidencia: Set<Modalidad>): SeguimientoLlegada[] {
   const hoy = fechaLima(now.toISOString());
@@ -516,12 +517,12 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
     .map((cita) => {
       const movimientoUnico = grupo.tipo === 'UNICO' ? grupo.movimientos[0] : undefined;
       const hayMovimientoHoy = grupo.movimientos.some((movimiento) => movimiento.fechaGarita && fechaLima(movimiento.fechaGarita) === reportDate);
-      const llegoGarita = Boolean(movimientoUnico?.fechaGarita && fechaLima(movimientoUnico.fechaGarita) === reportDate);
+      const ingresoBalanza = Boolean(movimientoUnico?.fechaGarita && fechaLima(movimientoUnico.fechaGarita) === reportDate);
       const minutosRetraso = Math.max(0, Math.floor((now.getTime() - new Date(cita.fechaCita!).getTime()) / 60_000));
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
-      if (llegoGarita && movimientoUnico?.fechaIngresoAlmacen && !movimientoUnico.fechaSalidaBalanza) {
-        fechaReferencia = movimientoUnico.fechaIngresoAlmacen;
+      if (ingresoBalanza && movimientoUnico?.fechaGarita && !movimientoUnico.fechaSalidaBalanza) {
+        fechaReferencia = movimientoUnico.fechaGarita;
         const minutosDespacho = Math.max(0, Math.floor((now.getTime() - new Date(fechaReferencia).getTime()) / 60_000));
         if (minutosDespacho >= minutosAlertaDespacho) estado = 'DESPACHO_DEMORADO';
         else if (minutosDespacho >= minutosAvisoDespacho) estado = 'PROXIMO_DESPACHO';
@@ -534,7 +535,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
           placa: movimientoUnico.placa ?? cita.unidad ?? null, estado, minutosRetraso: minutosDespacho, fechaReferencia
         };
       }
-      if (llegoGarita) estado = 'EN_GARITA';
+      if (ingresoBalanza) estado = 'EN_GARITA';
       else if (hayMovimientoHoy) estado = 'VINCULO_PENDIENTE';
       else if (new Date(cita.fechaCita!).getTime() > now.getTime()) estado = 'PROGRAMADA';
       else if (minutosRetraso >= minutosAlertaLlegada) estado = 'PENDIENTE_LLEGADA';
@@ -571,10 +572,10 @@ function crearResumenSeguimiento(seguimiento: SeguimientoLlegada[]): Record<Moda
 
 function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
-  if (item.estado === 'PENDIENTE_LLEGADA') return `Llamar a agente de aduana · ${item.minutosRetraso} min sin llegar`;
-  if (item.estado === 'PROXIMA_A_VENCER') return `Sin llegada · ${item.minutosRetraso} min (alerta a los ${minutosAlertaLlegada})`;
-  if (item.estado === 'DESPACHO_DEMORADO') return `Despacho demorado · ${item.minutosRetraso} min desde ingreso`;
-  return `En despacho · ${item.minutosRetraso} min (alerta a los ${minutosAlertaDespacho})`;
+  if (item.estado === 'PENDIENTE_LLEGADA') return `Llamar a agente de aduana · ${item.minutosRetraso} min sin ingreso a balanza`;
+  if (item.estado === 'PROXIMA_A_VENCER') return `Sin ingreso a balanza · ${item.minutosRetraso} min (alerta a los ${minutosAlertaLlegada})`;
+  if (item.estado === 'DESPACHO_DEMORADO') return `Operación demorada · ${item.minutosRetraso} min desde el primer pesaje`;
+  return `En operación · ${item.minutosRetraso} min desde el primer pesaje (alerta a los ${minutosAlertaDespacho})`;
 }
 
 function formatHour(value: string) {
