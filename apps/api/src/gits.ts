@@ -16,6 +16,11 @@ export interface GitsSchemaCandidate {
   columns: string[];
 }
 
+export interface GitsGateCatalog {
+  tables: GitsSchemaCandidate[];
+  relationships: Array<{ source: string; sourceColumn: string; target: string; targetColumn: string }>;
+}
+
 export interface GitsFlowSamples {
   movementBalance: Record<string, unknown>[];
   agencyTickets: Record<string, unknown>[];
@@ -265,6 +270,69 @@ export async function listarCandidatosOperativosGits(): Promise<GitsSchemaCandid
       candidates.set(key, candidate);
     }
     return [...candidates.values()];
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Revisa el modelo técnico de vigilancia asociado al movimiento de balanza.
+ * Es una consulta de metadatos: no lee filas operativas ni modifica GITS.
+ */
+export async function catalogoGaritaGits(): Promise<GitsGateCatalog> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const tableNames = [
+    'AUDTV_MOVIMIENTO_BALANZA_VIGILANCIA',
+    'OPETV_MOVIMIENTO_BALANZA_VIGILANCIA',
+    'OPETV_MOVIMIENTO_BALANZA_VIGILANCIA_EMBARQUE',
+    'OPETV_TARJA'
+  ];
+  const quotedTables = tableNames.map((table) => `'${table}'`).join(', ');
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const [columnsResult, relationsResult] = await Promise.all([
+      pool.request().query<{ schema_name: string; table_name: string; column_name: string }>(`
+        SELECT TABLE_SCHEMA AS schema_name, TABLE_NAME AS table_name, COLUMN_NAME AS column_name
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME IN (${quotedTables})
+        ORDER BY TABLE_NAME, ORDINAL_POSITION;
+      `),
+      pool.request().query<{ source_table: string; source_column: string; target_table: string; target_column: string }>(`
+        SELECT
+          OBJECT_SCHEMA_NAME(foreignKeys.parent_object_id) + '.' + OBJECT_NAME(foreignKeys.parent_object_id) AS source_table,
+          parentColumns.name AS source_column,
+          OBJECT_SCHEMA_NAME(foreignKeys.referenced_object_id) + '.' + OBJECT_NAME(foreignKeys.referenced_object_id) AS target_table,
+          referencedColumns.name AS target_column
+        FROM sys.foreign_key_columns foreignKeyColumns
+        INNER JOIN sys.foreign_keys foreignKeys ON foreignKeys.object_id = foreignKeyColumns.constraint_object_id
+        INNER JOIN sys.columns parentColumns
+          ON parentColumns.object_id = foreignKeyColumns.parent_object_id AND parentColumns.column_id = foreignKeyColumns.parent_column_id
+        INNER JOIN sys.columns referencedColumns
+          ON referencedColumns.object_id = foreignKeyColumns.referenced_object_id AND referencedColumns.column_id = foreignKeyColumns.referenced_column_id
+        WHERE OBJECT_NAME(foreignKeys.parent_object_id) IN (${quotedTables})
+           OR OBJECT_NAME(foreignKeys.referenced_object_id) IN (${quotedTables})
+        ORDER BY source_table, source_column;
+      `)
+    ]);
+
+    const tableMap = new Map<string, GitsSchemaCandidate>();
+    for (const row of columnsResult.recordset) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      const table = tableMap.get(key) ?? { schema: row.schema_name, table: row.table_name, columns: [] };
+      table.columns.push(row.column_name);
+      tableMap.set(key, table);
+    }
+    return {
+      tables: [...tableMap.values()],
+      relationships: relationsResult.recordset.map((row) => ({
+        source: row.source_table,
+        sourceColumn: row.source_column,
+        target: row.target_table,
+        targetColumn: row.target_column
+      }))
+    };
   } finally {
     await pool.close();
   }
