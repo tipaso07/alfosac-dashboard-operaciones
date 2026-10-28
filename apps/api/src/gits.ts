@@ -496,9 +496,15 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         SELECT TOP (1)
           atencion.AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion_ticket,
           atencion.AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion_ticket
-        FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET atencion
-        WHERE atencion.EMPRES_C_CODIGO = origen.EMPRES_C_CODIGO
-          AND atencion.AGMOTI_C_NROVOLANTE = origen.DOCORI_C_NUMERO_VOLANTE
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA_AUTORIZACION_RETIRO autorizacion
+        INNER JOIN dbo.CCTV_AGENCIA_MOVIMIENTO_TICKET_RETIRO ticketRetiro
+          ON ticketRetiro.EMPRES_C_CODIGO = autorizacion.EMPRES_C_CODIGO
+          AND ticketRetiro.AUTRET_C_NUMERO = autorizacion.AUTRET_C_NUMERO
+        INNER JOIN dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET atencion
+          ON atencion.EMPRES_C_CODIGO = ticketRetiro.EMPRES_C_CODIGO
+          AND atencion.AGMOTI_C_CORRELATIVO = ticketRetiro.AGMOTI_C_CORRELATIVO
+        WHERE autorizacion.EMPRES_C_CODIGO = detalle.EMPRES_C_CODIGO
+          AND autorizacion.MOVBAL_C_NUMERO = enlace.MOVBAL_C_NUMERO
         ORDER BY COALESCE(atencion.AGMOTI_D_FECHA_HORA_FINALIZACION, atencion.AGMOTI_D_FECHA_HORA_ATENCION, atencion.AGMOTI_D_FECHA_HORA_EMISION) DESC
       ) ticket
       WHERE origen.EMPRES_C_CODIGO = @empresa
