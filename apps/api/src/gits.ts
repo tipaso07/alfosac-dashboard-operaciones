@@ -21,6 +21,26 @@ export interface GitsGateCatalog {
   relationships: Array<{ source: string; sourceColumn: string; target: string; targetColumn: string }>;
 }
 
+export interface GitsGateTrace {
+  movimiento: string;
+  vigilancia: Array<{
+    origen: 'AUDTV' | 'OPETV';
+    fechaLectura: string | null;
+    fechaValida: string | null;
+    minutosBalanza: number | null;
+    observacion: string | null;
+    fechaAuditoria: string | null;
+  }>;
+  tarjas: Array<{
+    numero: string | null;
+    fecha: string | null;
+    movimiento: string | null;
+    placa: string | null;
+    peso: number | null;
+    fechaAuditoria: string | null;
+  }>;
+}
+
 export interface GitsFlowSamples {
   movementBalance: Record<string, unknown>[];
   agencyTickets: Record<string, unknown>[];
@@ -331,6 +351,85 @@ export async function catalogoGaritaGits(): Promise<GitsGateCatalog> {
         sourceColumn: row.source_column,
         target: row.target_table,
         targetColumn: row.target_column
+      }))
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Muestra las marcas de vigilancia y tarja de un movimiento concreto. Sirve
+ * para comprobar con operaciones si alguna representa el registro de garita.
+ * Todas las consultas son SELECT acotadas por la llave del movimiento.
+ */
+export async function trazarGaritaGits(movimiento: string): Promise<GitsGateTrace> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const request = () => pool.request()
+      .input('empresa', sql.VarChar(10), empresaGits())
+      .input('movimiento', sql.VarChar(30), movimiento);
+    const [vigilanciaResult, tarjaResult] = await Promise.all([
+      request().query<{
+        origen: 'AUDTV' | 'OPETV'; fecha_lectura: Date | null; fecha_valida: Date | null;
+        minutos_balanza: number | null; observacion: string | null; fecha_auditoria: Date | null;
+      }>(`
+        SELECT 'AUDTV' AS origen,
+          MOBVIG_D_FECHA_LECTURA AS fecha_lectura,
+          MOBVIG_D_FECHA_VALIDA AS fecha_valida,
+          MOBVIG_N_MINUTOS_BALANZA AS minutos_balanza,
+          MOBVIG_C_OBSERVACION AS observacion,
+          AUDITORIA_D_USUARIO_FECHA AS fecha_auditoria
+        FROM dbo.AUDTV_MOVIMIENTO_BALANZA_VIGILANCIA
+        WHERE EMPRES_C_CODIGO = @empresa AND MOVBAL_C_NUMERO = @movimiento
+        UNION ALL
+        SELECT 'OPETV' AS origen,
+          MOBVIG_D_FECHA_LECTURA AS fecha_lectura,
+          MOBVIG_D_FECHA_VALIDA AS fecha_valida,
+          MOBVIG_N_MINUTOS_BALANZA AS minutos_balanza,
+          MOBVIG_C_OBSERVACION AS observacion,
+          AUDITORIA_D_USUARIO_FECHA AS fecha_auditoria
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA_VIGILANCIA
+        WHERE EMPRES_C_CODIGO = @empresa AND MOVBAL_C_NUMERO = @movimiento
+        ORDER BY fecha_lectura;
+      `),
+      request().query<{
+        numero: string | null; fecha: Date | null; movimiento: string | null; placa: string | null;
+        peso: number | null; fecha_auditoria: Date | null;
+      }>(`
+        SELECT TOP (50)
+          TARJA_C_NUMERO AS numero,
+          TARJA_D_FECHA AS fecha,
+          TARJA_C_MOVIMIENTO AS movimiento,
+          CAMION_C_PLACA AS placa,
+          TARJA_N_PESO AS peso,
+          AUDITORIA_D_USUARIO_FECHA AS fecha_auditoria
+        FROM dbo.OPETV_TARJA
+        WHERE EMPRES_C_CODIGO = @empresa AND MOVBAL_C_NUMERO = @movimiento
+        ORDER BY TARJA_D_FECHA;
+      `)
+    ]);
+
+    return {
+      movimiento,
+      vigilancia: vigilanciaResult.recordset.map((row) => ({
+        origen: row.origen,
+        fechaLectura: fechaGitsPeru(row.fecha_lectura),
+        fechaValida: fechaGitsPeru(row.fecha_valida),
+        minutosBalanza: numero(row.minutos_balanza),
+        observacion: row.observacion,
+        fechaAuditoria: fechaGitsPeru(row.fecha_auditoria)
+      })),
+      tarjas: tarjaResult.recordset.map((row) => ({
+        numero: row.numero,
+        fecha: fechaGitsPeru(row.fecha),
+        movimiento: row.movimiento,
+        placa: row.placa,
+        peso: numero(row.peso),
+        fechaAuditoria: fechaGitsPeru(row.fecha_auditoria)
       }))
     };
   } finally {

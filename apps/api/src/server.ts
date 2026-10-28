@@ -5,7 +5,7 @@ import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarVolanteGits } from './gits.js';
+import { catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -133,6 +133,22 @@ app.get('/api/integrations/gits/gate-catalog', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo de garita en GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/gate-trace', async (request, response) => {
+  const movimiento = String(request.query.movimiento ?? '').trim();
+  if (!/^\d{1,30}$/.test(movimiento)) {
+    response.status(400).json({ message: 'Indica el número de movimiento GITS: ?movimiento=000000000341741.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Marcas de vigilancia y tarja asociadas a un movimiento de balanza. Consulta de solo lectura para validar el registro de garita.',
+      trace: await trazarGaritaGits(movimiento)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo trazar vigilancia y tarja en GITS.' });
   }
 });
 
