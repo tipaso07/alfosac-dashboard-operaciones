@@ -177,6 +177,19 @@ export interface FalconAnnulmentAudit {
   }>;
 }
 
+export interface FalconAppointmentHistoryItem {
+  origen: 'ACTIVA' | 'ANULADA';
+  id: string;
+  citaOriginalId: string | null;
+  fecha: string | null;
+  hora: string | null;
+  modalidad: Modalidad | 'OTRA';
+  flagCita: string | null;
+  fechaAtencion: string | null;
+  fechaAnulacion: string | null;
+  placa: string | null;
+}
+
 export interface FalconEventCandidate {
   schema: string;
   table: string;
@@ -333,6 +346,34 @@ export async function auditarAnulacionesFalcon(date: string, modalidad: Modalida
         flagCita: text(value(row, ['flag_cita'])), fechaAtencion: dateText(value(row, ['fecha_atencion'])), placa: text(value(row, ['des_placa']))
       }))
     };
+  } finally { await pool.close(); }
+}
+
+/** Historial por volante para distinguir una anulación de una reprogramación posterior. */
+export async function historialCitasPorVolanteFalcon(volante: string): Promise<FalconAppointmentHistoryItem[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().input('volante', sql.NVarChar, volante).query<SourceRow>(`
+      SELECT TOP (100) * FROM (
+        SELECT 'ACTIVA' AS origen, CONVERT(nvarchar(50), id) AS id, CAST(NULL AS nvarchar(50)) AS cita_original_id,
+          fecha, hora, cod_negocio, flag_cita, fecha_atencion, CAST(NULL AS datetime) AS fecha_anulacion, des_placa
+        FROM dbo.citas_programadas WHERE cod_volante = @volante
+        UNION ALL
+        SELECT 'ANULADA' AS origen, CONVERT(nvarchar(50), id) AS id, CONVERT(nvarchar(50), id_cita) AS cita_original_id,
+          fecha, hora, cod_negocio, flag_cita, CAST(NULL AS datetime) AS fecha_atencion, fecha_registro_anulacion, des_placa
+        FROM dbo.citas_programadas_anuladas WHERE cod_volante = @volante
+      ) historial
+      ORDER BY fecha ASC, hora ASC, id ASC;
+    `);
+    return result.recordset.map((row) => ({
+      origen: text(value(row, ['origen'])) === 'ANULADA' ? 'ANULADA' : 'ACTIVA',
+      id: text(value(row, ['id'])) ?? '', citaOriginalId: text(value(row, ['cita_original_id'])),
+      fecha: dateText(value(row, ['fecha'])), hora: text(value(row, ['hora'])),
+      modalidad: maritimeMode(text(value(row, ['cod_negocio']))), flagCita: text(value(row, ['flag_cita'])),
+      fechaAtencion: dateText(value(row, ['fecha_atencion'])), fechaAnulacion: dateText(value(row, ['fecha_anulacion'])),
+      placa: text(value(row, ['des_placa']))
+    }));
   } finally { await pool.close(); }
 }
 
