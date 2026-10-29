@@ -82,6 +82,31 @@ export async function listarOperaciones() {
   }));
 }
 
+/** Lee el período solicitado desde la base propia del dashboard. */
+export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL', fecha: string) {
+  const fechaEvento = 'COALESCE(fecha_cita, fecha_garita, fecha_ingreso_despacho, fecha_completado)';
+  const condition = periodo === 'DIARIO'
+    ? `${fechaEvento} >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND ${fechaEvento} < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')`
+    : `${fechaEvento} >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+       AND ${fechaEvento} < (((($1::date + INTERVAL '1 month'))::timestamp) AT TIME ZONE 'America/Lima')`;
+  const result = await pool.query<{
+    identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
+    volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
+    fecha_ingreso_despacho: string | null; fecha_completado: string | null; fuente_origen: Operacion['fuente'];
+  }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
+      fecha_ingreso_despacho, fecha_completado, fuente_origen
+      FROM operaciones WHERE ${condition}
+      ORDER BY fecha_cita ASC LIMIT 5000`, [fecha]);
+  return result.rows.map((row) => ({
+    id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
+    volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
+    fechaCita: row.fecha_cita, fechaGarita: row.fecha_garita,
+    fechaIngresoDespacho: row.fecha_ingreso_despacho, fechaCompletado: row.fecha_completado,
+    fuente: row.fuente_origen
+  }));
+}
+
 export async function listarPendientesLlegada() {
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado']; volante: string | null; unidad: string | null; fecha_cita: string | null; fuente_origen: Operacion['fuente'];

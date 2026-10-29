@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 type Modalidad = 'FCL' | 'LCL' | 'BB' | 'AEREO';
-type Estado = 'AGENDADA' | 'EN_GARITA' | 'EN_DESPACHO' | 'COMPLETADA' | 'NO_COMPLETADA';
+type Estado = 'AGENDADA' | 'EN_GARITA' | 'EN_DESPACHO' | 'COMPLETADA' | 'NO_COMPLETADA' | 'PENDIENTE_ANULACION' | 'ANULADA' | 'PESAJE_LIBRE';
 
 type Operacion = {
   id: string;
@@ -32,6 +32,12 @@ type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 type EstadoSeguimiento = 'PROGRAMADA' | 'EN_ESPERA' | 'PROXIMA_A_VENCER' | 'PENDIENTE_LLEGADA' | 'EN_GARITA' | 'VINCULO_PENDIENTE' | 'PROXIMO_DESPACHO' | 'DESPACHO_DEMORADO' | 'INCIDENCIA_OPERATIVA';
 type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string };
 type ResumenSeguimiento = { proximasLlegada: number; pendientesLlegada: number; proximosDespacho: number; despachoDemorado: number };
+type ReporteOperativo = {
+  periodo: 'DIARIO' | 'MENSUAL'; fecha: string; modalidad: 'TODAS' | 'FCL' | 'LCL';
+  resumen: { programadas: number; atendidas: number; noAtendidas: number; pendientesAnulacion: number; anuladas: number; pesajesLibres: number; porConfirmar: number };
+  filas: Array<{ fecha: string | null; horaCita: string | null; modalidad: Modalidad; volante: string; placa: string; estado: Estado; clasificacion: string }>;
+  nota: string;
+};
 
 const minutosAlertaLlegada = 35;
 const minutosAvisoLlegada = 25;
@@ -329,14 +335,47 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         </div>
       </section>
 
-      <section className="pending-panel">
-        <div><p className="brand">SEGUIMIENTO EN VIVO</p><h2>Unidades que requieren atención</h2></div>
-        {alertas.length ? <div className="pending-list">{alertas.map((item) => <article className={item.estado === 'PENDIENTE_LLEGADA' || item.estado === 'DESPACHO_DEMORADO' ? 'pending-critical' : 'pending-warning'} key={item.id}><strong>{item.volante}</strong><span>{nombres[item.modalidad]} · Cita: {formatDateTime(item.fechaCita)} · {item.placa ?? 'Sin placa'} · {etiquetaSeguimiento(item)}</span></article>)}</div> : <p>No hay unidades próximas a vencer ni operaciones demoradas en despacho.</p>}
-      </section>
+      <ReportesPanel reportDate={reportDate} />
 
       {seleccionado && <FlowModal group={seleccionado} onClose={() => setSeleccionado(null)} />}
     </main>
   );
+}
+
+function ReportesPanel({ reportDate }: { reportDate: string | null }) {
+  const [periodo, setPeriodo] = useState<'DIARIO' | 'MENSUAL'>('DIARIO');
+  const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
+  const [modalidad, setModalidad] = useState<'TODAS' | 'FCL' | 'LCL'>('TODAS');
+  const [reporte, setReporte] = useState<ReporteOperativo | null>(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
+  useEffect(() => {
+    const params = new URLSearchParams({ periodo, fecha, modalidad });
+    void fetch(`/api/reports/operations?${params}`)
+      .then(async (response) => response.ok ? response.json() as Promise<ReporteOperativo> : Promise.reject(await response.json()))
+      .then((value) => { setReporte(value); setError(''); })
+      .catch((reason: { message?: string }) => { setReporte(null); setError(reason.message ?? 'No se pudo generar el reporte.'); });
+  }, [periodo, fecha, modalidad]);
+
+  const params = new URLSearchParams({ periodo, fecha, modalidad });
+  return <section className="reports-panel">
+    <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar CSV</a></div>
+    <div className="reports-controls">
+      <label>Período<select value={periodo} onChange={(event) => setPeriodo(event.target.value as 'DIARIO' | 'MENSUAL')}><option value="DIARIO">Diario</option><option value="MENSUAL">Mensual</option></select></label>
+      <label>Fecha<input type={periodo === 'DIARIO' ? 'date' : 'month'} value={periodo === 'DIARIO' ? fecha : fecha.slice(0, 7)} onChange={(event) => setFecha(event.target.value)} /></label>
+      <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
+    </div>
+    {error ? <p className="empty">{error}</p> : reporte ? <>
+      <div className="report-kpis">
+        <Kpi label="Programadas" value={reporte.resumen.programadas} /><Kpi label="Atendidas" value={reporte.resumen.atendidas} />
+        <Kpi label="No atendidas" value={reporte.resumen.noAtendidas} /><Kpi label="Pendientes de anular" value={reporte.resumen.pendientesAnulacion} />
+        <Kpi label="Anuladas" value={reporte.resumen.anuladas} /><Kpi label="Pesaje libre" value={reporte.resumen.pesajesLibres} />
+      </div>
+      <p className="report-note">{reporte.nota} {reporte.resumen.porConfirmar > 0 ? `${reporte.resumen.porConfirmar} cita(s) aún por confirmar.` : ''}</p>
+      <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante</th><th>Placa</th><th>Estado</th></tr></thead><tbody>{reporte.filas.length ? reporte.filas.map((item) => <tr key={`${item.modalidad}-${item.volante}-${item.horaCita}`}><td>{item.fecha ?? '—'}</td><td>{item.horaCita ?? '—'}</td><td>{item.modalidad}</td><td>{item.volante}</td><td>{item.placa}</td><td><span className={item.clasificacion === 'NO_ATENDIDA' || item.clasificacion === 'PESAJE_LIBRE' ? 'state-badge state-alert' : 'state-badge'}>{item.clasificacion.replaceAll('_', ' ')}</span></td></tr>) : <tr><td colSpan={6} className="empty">No hay citas para este período.</td></tr>}</tbody></table></div>
+    </> : <p className="empty">Cargando reporte…</p>}
+  </section>;
 }
 
 function difference(start: string | null, end: string | null) {
@@ -369,9 +408,12 @@ function StateBadge({ estado }: { estado: Estado }) {
     EN_GARITA: 'En balanza',
     EN_DESPACHO: 'En despacho',
     COMPLETADA: 'Completada',
-    NO_COMPLETADA: 'No completada'
+    NO_COMPLETADA: 'No completada',
+    PENDIENTE_ANULACION: 'Pendiente de anular',
+    ANULADA: 'Anulada',
+    PESAJE_LIBRE: 'Pesaje libre'
   };
-  return <span className={estado === 'NO_COMPLETADA' ? 'state-badge state-alert' : 'state-badge'}>{labels[estado]}</span>;
+  return <span className={estado === 'NO_COMPLETADA' || estado === 'PESAJE_LIBRE' ? 'state-badge state-alert' : 'state-badge'}>{labels[estado]}</span>;
 }
 
 function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose: () => void }) {

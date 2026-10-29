@@ -1,5 +1,17 @@
 export type Modalidad = 'FCL' | 'LCL' | 'BB' | 'AEREO';
-export type EstadoOperacion = 'AGENDADA' | 'EN_GARITA' | 'EN_DESPACHO' | 'COMPLETADA' | 'NO_COMPLETADA';
+/**
+ * Estado de negocio de la cita. Los movimientos GITS son evidencia física,
+ * pero no cambian por sí solos una cita a atendida.
+ */
+export type EstadoOperacion =
+  | 'AGENDADA'
+  | 'EN_GARITA'
+  | 'EN_DESPACHO'
+  | 'COMPLETADA'
+  | 'NO_COMPLETADA'
+  | 'PENDIENTE_ANULACION'
+  | 'ANULADA'
+  | 'PESAJE_LIBRE';
 
 export interface Operacion {
   id: string;

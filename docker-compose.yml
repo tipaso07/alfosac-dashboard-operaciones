@@ -45,6 +45,7 @@ services:
       GITS_DB_ENCRYPT: ${GITS_DB_ENCRYPT:-false}
       GITS_DB_TRUST_CERTIFICATE: ${GITS_DB_TRUST_CERTIFICATE:-true}
       DASHBOARD_REPORT_DATE: ${DASHBOARD_REPORT_DATE:-}
+      DASHBOARD_DEMO_MODE: ${DASHBOARD_DEMO_MODE:-false}
     depends_on:
       db:
         condition: service_healthy

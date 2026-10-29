@@ -2,14 +2,20 @@ import cors from 'cors';
 import express from 'express';
 import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
-import { operacionesDemo } from './demo-source.js';
+import { movimientosDemo, operacionesDemo } from './demo-source.js';
+import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
-import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
+import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
+
+/** Modo local y reversible para presentaciones sin usar fuentes externas. */
+function modoDemostracion() {
+  return process.env.DASHBOARD_DEMO_MODE === 'true';
+}
 
 function fechaReporteConfigurada() {
   return fechaReporteActual();
@@ -41,6 +47,10 @@ let flowCache: { date: string; expiresAt: number; groups: ReturnType<typeof crea
 
 async function cargarFlujoDashboard() {
   const date = fechaReporteActual();
+  if (modoDemostracion()) {
+    const groups = crearFlujoOperativo(operacionesDemo, movimientosDemo);
+    return { date, expiresAt: Date.now() + 25_000, groups, summary: resumenDeFlujo(operacionesDemo, groups, date) };
+  }
   if (flowCache && flowCache.date === date && flowCache.expiresAt > Date.now()) return flowCache;
   const citas = await listarOperaciones();
   let movements: Awaited<ReturnType<typeof consultarFlujoDiarioGits>> = [];
@@ -217,6 +227,41 @@ app.get('/api/integrations/gits/trace', async (request, response) => {
   }
 });
 
+/**
+ * Expediente acotado para validar un caso que Operaciones ya conoce.
+ * No acepta SQL ni realiza escrituras: reúne la cita Falcon con las marcas
+ * físicas GITS y las trazas de vigilancia/tarja de sus movimientos.
+ */
+app.get('/api/investigations/case', async (request, response) => {
+  const citaId = String(request.query.citaId ?? '').trim();
+  const volante = String(request.query.volante ?? '').trim();
+  if (!/^\d{1,30}$/.test(citaId) || !/^\d{1,30}$/.test(volante)) {
+    response.status(400).json({ message: 'Indica citaId y volante numéricos, por ejemplo ?citaId=331984&volante=162866.' });
+    return;
+  }
+  try {
+    const [falcon, fisico, tickets] = await Promise.all([
+      detalleCitaFalcon(citaId),
+      trazarVolanteGits(volante),
+      trazarAtencionTicketGits(volante)
+    ]);
+    const movimientos = fisico.events
+      .map((item) => item.movimiento)
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 8);
+    const garita = await Promise.all(movimientos.map((movimiento) => trazarGaritaGits(movimiento)));
+    response.json({
+      message: 'Expediente de validación de solo lectura. No clasifica los eventos: la confirmación corresponde a Operaciones.',
+      citaId,
+      volante,
+      falcon,
+      gits: { fisico, tickets, garita }
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo reunir el expediente de investigación.' });
+  }
+});
+
 app.get('/api/integrations/gits/flow-objects', async (_request, response) => {
   try {
     response.json({
@@ -344,10 +389,10 @@ app.get('/api/integrations/falcon/citas/:citaId', async (request, response) => {
 
 app.get('/api/dashboard/summary', (_request, response) => {
   cargarFlujoDashboard().then((flow) => response.json({
-    mode: 'reportes',
+    mode: modoDemostracion() ? 'demo' : 'reportes',
     updatedAt: new Date().toISOString(),
     reportDate: fechaReporteConfigurada(),
-    sources: {
+    sources: modoDemostracion() ? { demo: 'ACTIVA' } : {
       falcon: process.env.FALCON_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA',
       gits: process.env.GITS_SYNC_ENABLED === 'true' ? 'PENDIENTE_DE_CONEXION' : 'DESACTIVADA'
     },
@@ -361,8 +406,55 @@ app.get('/api/dashboard/flow', (_request, response) => {
 });
 
 app.get('/api/dashboard/operations', (_request, response) => {
+  if (modoDemostracion()) {
+    response.json({ mode: 'demo', reportDate: fechaReporteConfigurada(), operations: operacionesDemo });
+    return;
+  }
   listarOperaciones().then((stored) => response.json({ mode: stored.length > 0 ? 'reportes' : 'demo', reportDate: fechaReporteConfigurada(), operations: stored.length > 0 ? stored : operacionesDemo }))
     .catch(() => response.json({ mode: 'demo', reportDate: fechaReporteConfigurada(), operations: operacionesDemo }));
+});
+
+app.get('/api/reports/operations', async (request, response) => {
+  const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
+  const fecha = String(request.query.fecha ?? fechaReporteActual());
+  const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
+  if (!['DIARIO', 'MENSUAL'].includes(periodo)) {
+    response.status(400).json({ message: 'Indica periodo=DIARIO o periodo=MENSUAL.' });
+    return;
+  }
+  if (!(periodo === 'DIARIO' ? /^\d{4}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}(-\d{2})?$/.test(fecha))) {
+    response.status(400).json({ message: periodo === 'DIARIO' ? 'Indica fecha=AAAA-MM-DD.' : 'Indica fecha=AAAA-MM o AAAA-MM-DD.' });
+    return;
+  }
+  if (!['TODAS', 'FCL', 'LCL'].includes(modalidad)) {
+    response.status(400).json({ message: 'Indica modalidad=TODAS, FCL o LCL.' });
+    return;
+  }
+  try {
+    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha);
+    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad));
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo generar el reporte.' });
+  }
+});
+
+app.get('/api/reports/operations.csv', async (request, response) => {
+  const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
+  const fecha = String(request.query.fecha ?? fechaReporteActual());
+  const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
+  if (!['DIARIO', 'MENSUAL'].includes(periodo) || !['TODAS', 'FCL', 'LCL'].includes(modalidad)) {
+    response.status(400).json({ message: 'Parámetros de reporte no válidos.' });
+    return;
+  }
+  try {
+    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha);
+    const report = crearReporteOperativo(operations, periodo, fecha, modalidad);
+    response.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    response.setHeader('Content-Disposition', `attachment; filename="reporte-${periodo.toLowerCase()}-${fecha}-${modalidad.toLowerCase()}.csv"`);
+    response.send(`\uFEFF${reporteACsv(report)}`);
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo descargar el reporte.' });
+  }
 });
 
 app.get('/api/dashboard/pending-arrivals', (_request, response) => {
