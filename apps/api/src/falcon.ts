@@ -164,6 +164,19 @@ export interface FalconCloseoutAudit {
   }>;
 }
 
+export interface FalconAnnulmentAudit {
+  date: string;
+  modalidad: Modalidad;
+  anuladas: Array<{
+    id: string; citaId: string | null; hora: string | null; volante: string | null;
+    fechaAnulacion: string | null; usuarioAnula: string | null; placa: string | null;
+  }>;
+  pendientes: Array<{
+    id: string; hora: string | null; volante: string | null; flagCita: string | null;
+    fechaAtencion: string | null; placa: string | null;
+  }>;
+}
+
 export interface FalconEventCandidate {
   schema: string;
   table: string;
@@ -273,6 +286,53 @@ export async function auditarCierreFalcon(date: string, modalidad: Modalidad): P
       grouped.set(key, current);
     }
     return { date, modalidad, total: items.length, grupos: [...grouped.values()], items };
+  } finally { await pool.close(); }
+}
+
+/** Compara anulaciones persistidas contra citas que siguen sin atención. */
+export async function auditarAnulacionesFalcon(date: string, modalidad: Modalidad): Promise<FalconAnnulmentAudit> {
+  const negocio = maritimeBusiness[modalidad];
+  if (!negocio) throw new Error('La auditoría de anulaciones solo está disponible para FCL, LCL y BB.');
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const base = (request: sql.Request) => request.input('reportDate', sql.Date, date).input('business', sql.Int, negocio);
+    const [anuladasResult, pendientesResult] = await Promise.all([
+      base(pool.request()).query<SourceRow>(`
+        SELECT TOP (300) id, id_cita, hora, cod_volante, fecha_registro_anulacion, user_elimina, des_placa
+        FROM dbo.citas_programadas_anuladas
+        WHERE cod_negocio = @business
+          AND fecha >= CONVERT(date, @reportDate)
+          AND fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+        ORDER BY fecha_registro_anulacion ASC, id ASC;
+      `),
+      base(pool.request()).query<SourceRow>(`
+        SELECT TOP (300) c.id, c.hora, c.cod_volante, c.flag_cita, c.fecha_atencion, c.des_placa
+        FROM dbo.citas_programadas c
+        WHERE c.cod_negocio = @business
+          AND c.fecha >= CONVERT(date, @reportDate)
+          AND c.fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+          AND c.fecha_atencion IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM dbo.citas_programadas_anuladas a
+            WHERE a.id_cita = c.id OR a.id = c.id
+          )
+        ORDER BY c.hora ASC, c.id ASC;
+      `)
+    ]);
+    return {
+      date, modalidad,
+      anuladas: anuladasResult.recordset.map((row) => ({
+        id: text(value(row, ['id'])) ?? '', citaId: text(value(row, ['id_cita'])), hora: text(value(row, ['hora'])),
+        volante: text(value(row, ['cod_volante'])), fechaAnulacion: dateText(value(row, ['fecha_registro_anulacion'])),
+        usuarioAnula: text(value(row, ['user_elimina'])), placa: text(value(row, ['des_placa']))
+      })),
+      pendientes: pendientesResult.recordset.map((row) => ({
+        id: text(value(row, ['id'])) ?? '', hora: text(value(row, ['hora'])), volante: text(value(row, ['cod_volante'])),
+        flagCita: text(value(row, ['flag_cita'])), fechaAtencion: dateText(value(row, ['fecha_atencion'])), placa: text(value(row, ['des_placa']))
+      }))
+    };
   } finally { await pool.close(); }
 }
 

@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
+import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
@@ -345,6 +345,24 @@ app.get('/api/investigations/falcon-annulment-catalog', async (_request, respons
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo buscar el catálogo de anulaciones.' });
+  }
+});
+
+app.get('/api/investigations/falcon-annulment-audit', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  const modalidad = String(request.query.modalidad ?? '').toUpperCase();
+  const allowed = ['FCL', 'LCL', 'BB'] as const;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !allowed.includes(modalidad as typeof allowed[number])) {
+    response.status(400).json({ message: 'Indica date=AAAA-MM-DD y modalidad=FCL, LCL o BB.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Comparación de anuladas persistidas y citas sin atención que no figuran anuladas. Consulta de solo lectura.',
+      audit: await auditarAnulacionesFalcon(date, modalidad as typeof allowed[number])
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo auditar las anulaciones Falcon.' });
   }
 });
 
