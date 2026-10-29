@@ -5,7 +5,7 @@ import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
+import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -144,6 +144,22 @@ app.get('/api/integrations/gits/gate-search', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo buscar referencias de garita en GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/ticket-attention-trace', async (request, response) => {
+  const volante = String(request.query.volante ?? '').trim();
+  if (!/^\d{1,30}$/.test(volante)) {
+    response.status(400).json({ message: 'Indica un volante numérico: ?volante=147797.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Marcas del módulo de tickets/atención por volante para validar una posible hora de garita. Consulta de solo lectura.',
+      trace: await trazarAtencionTicketGits(volante)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo trazar la atención del ticket en GITS.' });
   }
 });
 

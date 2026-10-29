@@ -46,6 +46,28 @@ export interface GitsGateSearch {
   truncated: boolean;
 }
 
+export interface GitsTicketAttentionTrace {
+  volante: string;
+  events: Array<{
+    origen: 'AUDTV' | 'CCTV';
+    ticket: number | null;
+    correlativo: string | null;
+    placa: string | null;
+    fechaEmision: string | null;
+    fechaLlamada: string | null;
+    fechaAtencion: string | null;
+    fechaAtencionRec: string | null;
+    fechaFinalizacion: string | null;
+    fechaAproximadaIngreso: string | null;
+    puntoInicial: string | null;
+    puntoAtencion: string | null;
+    puntoFinal: string | null;
+    codigoVigilante: string | null;
+    situacion: string | null;
+    anuladoCliente: string | null;
+  }>;
+}
+
 export interface GitsFlowSamples {
   movementBalance: Record<string, unknown>[];
   agencyTickets: Record<string, unknown>[];
@@ -414,6 +436,87 @@ export async function buscarReferenciasGaritaGits(): Promise<GitsGateSearch> {
       candidateMap.set(key, candidate);
     }
     return { candidates: [...candidateMap.values()], truncated: result.recordset.length > 500 };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Traza el módulo de tickets de agencia directamente por volante. Sus marcas
+ * de atención se comparan con un caso real antes de clasificarlas como garita.
+ * Solo consulta filas acotadas y no modifica GITS.
+ */
+export async function trazarAtencionTicketGits(volante: string): Promise<GitsTicketAttentionTrace> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const result = await pool.request()
+      .input('empresa', sql.VarChar(10), empresaGits())
+      .input('volante', sql.VarChar(30), volante)
+      .query<{
+        origen: 'AUDTV' | 'CCTV'; ticket: number | null; correlativo: string | null; placa: string | null;
+        fecha_emision: Date | null; fecha_llamada: Date | null; fecha_atencion: Date | null;
+        fecha_atencion_rec: Date | null; fecha_finalizacion: Date | null; fecha_aproximada_ingreso: Date | null;
+        punto_inicial: string | null; punto_atencion: string | null; punto_final: string | null;
+        codigo_vigilante: string | null; situacion: string | null; anulado_cliente: string | null;
+      }>(`
+        SELECT TOP (100) 'AUDTV' AS origen,
+          AGMOTI_N_NUMERO_TICKET AS ticket, AGMOTI_C_CORRELATIVO AS correlativo, CAMION_C_PLACA AS placa,
+          AGMOTI_D_FECHA_HORA_EMISION AS fecha_emision,
+          AGMOTI_D_FECHA_HORA_LLAMADA AS fecha_llamada,
+          AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion,
+          AGMOTI_D_FECHA_HORA_ATENCION_REC AS fecha_atencion_rec,
+          AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion,
+          AGMOTI_D_FECHA_HORA_APROX_INGRESO AS fecha_aproximada_ingreso,
+          PUNATE_C_CODIGO_INICIAL AS punto_inicial,
+          PUNATE_C_CODIGO_ATENCION AS punto_atencion,
+          PUNATE_C_CODIGO_FINAL AS punto_final,
+          VIGPER_C_CODIGO AS codigo_vigilante, AGMOTI_C_SITUACION AS situacion,
+          CAST(NULL AS varchar(10)) AS anulado_cliente
+        FROM dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET
+        WHERE EMPRES_C_CODIGO = @empresa AND LTRIM(RTRIM(AGMOTI_C_NROVOLANTE)) = @volante
+        UNION ALL
+        SELECT TOP (100) 'CCTV' AS origen,
+          AGMOTI_N_NUMERO_TICKET AS ticket, AGMOTI_C_CORRELATIVO AS correlativo, CAMION_C_PLACA AS placa,
+          AGMOTI_D_FECHA_HORA_EMISION AS fecha_emision,
+          AGMOTI_D_FECHA_HORA_LLAMADA AS fecha_llamada,
+          AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion,
+          AGMOTI_D_FECHA_HORA_ATENCION_REC AS fecha_atencion_rec,
+          AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion,
+          AGMOTI_D_FECHA_HORA_APROX_INGRESO AS fecha_aproximada_ingreso,
+          PUNATE_C_CODIGO_INICIAL AS punto_inicial,
+          PUNATE_C_CODIGO_ATENCION AS punto_atencion,
+          PUNATE_C_CODIGO_FINAL AS punto_final,
+          VIGPER_C_CODIGO AS codigo_vigilante, AGMOTI_C_SITUACION AS situacion,
+          AGMOTI_C_ANULADO_X_CLIENTE AS anulado_cliente
+        FROM dbo.CCTV_AGENCIA_MOVIMIENTO_TICKET
+        WHERE EMPRES_C_CODIGO = @empresa AND LTRIM(RTRIM(AGMOTI_C_NROVOLANTE)) = @volante
+        ORDER BY fecha_atencion;
+      `);
+
+    return {
+      volante,
+      events: result.recordset.map((row) => ({
+        origen: row.origen,
+        ticket: numero(row.ticket),
+        correlativo: row.correlativo,
+        placa: row.placa,
+        fechaEmision: fechaGitsPeru(row.fecha_emision),
+        fechaLlamada: fechaGitsPeru(row.fecha_llamada),
+        fechaAtencion: fechaGitsPeru(row.fecha_atencion),
+        fechaAtencionRec: fechaGitsPeru(row.fecha_atencion_rec),
+        fechaFinalizacion: fechaGitsPeru(row.fecha_finalizacion),
+        fechaAproximadaIngreso: fechaGitsPeru(row.fecha_aproximada_ingreso),
+        puntoInicial: row.punto_inicial,
+        puntoAtencion: row.punto_atencion,
+        puntoFinal: row.punto_final,
+        codigoVigilante: row.codigo_vigilante,
+        situacion: row.situacion,
+        anuladoCliente: row.anulado_cliente
+      }))
+    };
   } finally {
     await pool.close();
   }
