@@ -315,6 +315,41 @@ export async function buscarEventosOperativosFalcon(): Promise<FalconEventCandid
   } finally { await pool.close(); }
 }
 
+/**
+ * Localiza el módulo que conserva anulaciones o cancelaciones. Es un catálogo
+ * de metadatos (tablas y vistas), no una lectura de citas ni una escritura.
+ */
+export async function buscarCandidatosAnulacionFalcon(): Promise<FalconEventCandidate[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().query<{ table_schema: string; table_name: string; column_name: string }>(`
+      WITH objetos_candidatos AS (
+        SELECT DISTINCT table_schema, table_name
+        FROM information_schema.columns
+        WHERE table_schema NOT IN ('sys', 'INFORMATION_SCHEMA')
+          AND (
+            table_name LIKE '%anul%' OR table_name LIKE '%cancel%' OR table_name LIKE '%baja%'
+            OR column_name LIKE '%anul%' OR column_name LIKE '%cancel%' OR column_name LIKE '%baja%'
+            OR column_name LIKE '%motivo%' OR column_name LIKE '%vigencia%'
+          )
+      )
+      SELECT c.table_schema, c.table_name, c.column_name
+      FROM information_schema.columns c
+      INNER JOIN objetos_candidatos o ON o.table_schema = c.table_schema AND o.table_name = c.table_name
+      ORDER BY c.table_schema, c.table_name, c.ordinal_position;
+    `);
+    const tables = new Map<string, FalconEventCandidate>();
+    for (const row of result.recordset) {
+      const key = `${row.table_schema}.${row.table_name}`;
+      const candidate = tables.get(key) ?? { schema: row.table_schema, table: row.table_name, columns: [] };
+      candidate.columns.push(row.column_name);
+      tables.set(key, candidate);
+    }
+    return [...tables.values()].slice(0, 100);
+  } finally { await pool.close(); }
+}
+
 /** Citas vinculadas a un control de salida, para comparar sus eventos sin consulta libre. */
 export async function listarCitasConControlSalida(limit = 10): Promise<FalconExitControlCandidate[]> {
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
