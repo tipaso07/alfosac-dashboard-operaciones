@@ -120,6 +120,8 @@ export interface GitsDailyFlowItem {
   pesoInicial: number | null;
   pesoFinal: number | null;
   pesoNetoBalanza: number | null;
+  /** Cantidad de tarjas registradas por la balanza para el movimiento. */
+  cantidadTarjas: number | null;
   /** Peso manifestado de la mercadería vinculada; se muestra solo como referencia. */
   pesoMercaderiaDeclarado: number | null;
 }
@@ -997,6 +999,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
         peso_final: number | null;
         peso_neto_balanza: number | null;
         peso_mercaderia_declarado: number | null;
+        cantidad_tarjas: number | null;
       }>(`
         SELECT TOP (@limit)
           balanza.EMPRES_C_CODIGO AS empresa,
@@ -1009,6 +1012,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
           balanza.MOVBAL_N_PRIMER_PESO AS peso_inicial,
           balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
           balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
+          balanza.MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarjas,
           documento.peso_mercaderia_declarado,
           almacen.fecha_ingreso_almacen,
           salida.fecha_salida_almacen
@@ -1072,6 +1076,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
       pesoInicial: numero(row.peso_inicial),
       pesoFinal: numero(row.peso_final),
       pesoNetoBalanza: numero(row.peso_neto_balanza),
+      cantidadTarjas: numero(row.cantidad_tarjas),
       pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado)
     }));
   } finally {

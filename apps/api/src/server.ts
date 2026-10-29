@@ -366,6 +366,73 @@ app.get('/api/investigations/falcon-annulment-audit', async (request, response) 
   }
 });
 
+/**
+ * Busca evidencias físicas del mismo día para citas posteriormente anuladas.
+ * La coincidencia exige el mismo volante y el mismo día de primer pesaje; no
+ * usa movimientos de una reprogramación posterior. Es una ayuda diagnóstica,
+ * no una clasificación automática de "retiro vacío".
+ */
+app.get('/api/investigations/empty-withdrawal-candidates', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  const modalidad = String(request.query.modalidad ?? '').toUpperCase();
+  const allowed = ['FCL', 'LCL', 'BB'] as const;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !allowed.includes(modalidad as typeof allowed[number])) {
+    response.status(400).json({ message: 'Indica date=AAAA-MM-DD y modalidad=FCL, LCL o BB.' });
+    return;
+  }
+  try {
+    const [audit, movimientos] = await Promise.all([
+      auditarAnulacionesFalcon(date, modalidad as typeof allowed[number]),
+      consultarFlujoDiarioGits(date, 1_000)
+    ]);
+    const normalizarVolante = (value: string | null) => (value ?? '').trim().replace(/^0+(?=\d)/, '');
+    const porVolante = new Map<string, typeof movimientos>();
+    for (const movimiento of movimientos) {
+      const volante = normalizarVolante(movimiento.volante);
+      if (!volante) continue;
+      const lista = porVolante.get(volante) ?? [];
+      lista.push(movimiento);
+      porVolante.set(volante, lista);
+    }
+    const anuladas = audit.anuladas.map((cita) => {
+      const fisicos = porVolante.get(normalizarVolante(cita.volante)) ?? [];
+      return {
+        cita,
+        movimientosMismoDia: fisicos.map((movimiento) => {
+          const mayorPeso = Math.max(Math.abs(movimiento.pesoInicial ?? 0), Math.abs(movimiento.pesoFinal ?? 0));
+          const diferenciaPesajes = movimiento.pesoInicial == null || movimiento.pesoFinal == null
+            ? null
+            : Math.abs(movimiento.pesoFinal - movimiento.pesoInicial);
+          return {
+            ...movimiento,
+            diferenciaPesajes,
+            porcentajeDiferenciaPesajes: diferenciaPesajes == null || mayorPeso === 0
+              ? null
+              : Number(((diferenciaPesajes / mayorPeso) * 100).toFixed(2)),
+            indicador: diferenciaPesajes == null
+              ? 'SIN_SEGUNDO_PESAJE'
+              : mayorPeso > 0 && diferenciaPesajes / mayorPeso <= 0.03
+                ? 'PESOS_MUY_SIMILARES'
+                : movimiento.cantidadTarjas === 0
+                  ? 'SIN_TARJAS'
+                  : 'MOVIMIENTO_CON_CARGA_O_TARJAS'
+          };
+        })
+      };
+    });
+    response.json({
+      date,
+      modalidad,
+      message: 'Cruce de solo lectura: anulaciones Falcon y primer pesaje GITS del mismo día. Un candidato requiere validación operativa; no se mezclan pesajes de reprogramaciones posteriores.',
+      totalAnuladas: audit.anuladas.length,
+      conMovimientoMismoDia: anuladas.filter((item) => item.movimientosMismoDia.length > 0),
+      sinMovimientoMismoDia: anuladas.filter((item) => item.movimientosMismoDia.length === 0).map((item) => item.cita)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudieron cruzar anulaciones Falcon con movimientos GITS.' });
+  }
+});
+
 app.get('/api/investigations/falcon-appointment-history', async (request, response) => {
   const volante = String(request.query.volante ?? '').trim();
   if (!/^\d{1,30}$/.test(volante)) {
