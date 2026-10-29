@@ -4,7 +4,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
+import { auditarCierreFalcon, buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
@@ -317,6 +317,24 @@ app.get('/api/integrations/falcon/counts', async (request, response) => {
   }
   try { response.json({ date, items: await contarCitasPorHora(date) }); }
   catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' }); }
+});
+
+app.get('/api/investigations/falcon-closeout', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  const modalidad = String(request.query.modalidad ?? '').toUpperCase();
+  const allowed = ['FCL', 'LCL', 'BB'] as const;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !allowed.includes(modalidad as typeof allowed[number])) {
+    response.status(400).json({ message: 'Indica date=AAAA-MM-DD y modalidad=FCL, LCL o BB.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Auditoría de cierre Falcon en solo lectura. Los grupos se comparan contra el cierre conocido antes de asignar una semántica.',
+      audit: await auditarCierreFalcon(date, modalidad as typeof allowed[number])
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo auditar el cierre Falcon.' });
+  }
 });
 
 app.get('/api/integrations/falcon/event-candidates', async (_request, response) => {

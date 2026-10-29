@@ -152,6 +152,18 @@ export interface FalconHourAppointment {
   transportista: string | null;
 }
 
+export interface FalconCloseoutAudit {
+  date: string;
+  modalidad: Modalidad;
+  total: number;
+  grupos: Array<{ flagCita: string | null; tieneAtencion: boolean; usuarioAtencion: string | null; cantidad: number }>;
+  items: Array<{
+    id: string; hora: string | null; volante: string | null; flagCita: string | null;
+    express: string | null; fechaAtencion: string | null; usuarioAtencion: string | null;
+    fechaRegistro: string | null; fechaVigencia: string | null; placa: string | null;
+  }>;
+}
+
 export interface FalconEventCandidate {
   schema: string;
   table: string;
@@ -220,6 +232,47 @@ export async function consultarCitasPorHora(date: string, modalidad: Modalidad, 
       conductor: text(value(row, ['des_conductor'])),
       transportista: text(value(row, ['des_transportista']))
     }));
+  } finally { await pool.close(); }
+}
+
+/**
+ * Auditoría acotada del cierre diario. Devuelve los campos de estado tal como
+ * están en Falcon para compararlos con el cierre operativo conocido; no
+ * infiere anulaciones ni modifica la fuente.
+ */
+export async function auditarCierreFalcon(date: string, modalidad: Modalidad): Promise<FalconCloseoutAudit> {
+  const negocio = maritimeBusiness[modalidad];
+  if (!negocio) throw new Error('La auditoría de cierre solo está disponible para FCL, LCL y BB.');
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const result = await pool.request().input('reportDate', sql.Date, date).input('business', sql.Int, negocio).query<SourceRow>(`
+      SELECT TOP (300)
+        c.id, c.hora, c.cod_volante, c.flag_cita, c.express,
+        c.fecha_atencion, c.user_atencion_estado, c.fecha_registro, c.fec_vigencia,
+        c.des_placa
+      FROM dbo.citas_programadas c
+      WHERE c.cod_negocio = @business
+        AND c.fecha >= CONVERT(date, @reportDate)
+        AND c.fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+      ORDER BY c.hora ASC, c.id ASC;
+    `);
+    const items = result.recordset.map((row) => ({
+      id: text(value(row, ['id'])) ?? '', hora: text(value(row, ['hora'])),
+      volante: text(value(row, ['cod_volante'])), flagCita: text(value(row, ['flag_cita'])),
+      express: text(value(row, ['express'])), fechaAtencion: dateText(value(row, ['fecha_atencion'])),
+      usuarioAtencion: text(value(row, ['user_atencion_estado'])), fechaRegistro: dateText(value(row, ['fecha_registro'])),
+      fechaVigencia: dateText(value(row, ['fec_vigencia'])), placa: text(value(row, ['des_placa']))
+    }));
+    const grouped = new Map<string, { flagCita: string | null; tieneAtencion: boolean; usuarioAtencion: string | null; cantidad: number }>();
+    for (const item of items) {
+      const tieneAtencion = Boolean(item.fechaAtencion);
+      const key = `${item.flagCita ?? 'NULL'}|${tieneAtencion}|${item.usuarioAtencion ?? 'NULL'}`;
+      const current = grouped.get(key) ?? { flagCita: item.flagCita, tieneAtencion, usuarioAtencion: item.usuarioAtencion, cantidad: 0 };
+      current.cantidad += 1;
+      grouped.set(key, current);
+    }
+    return { date, modalidad, total: items.length, grupos: [...grouped.values()], items };
   } finally { await pool.close(); }
 }
 
