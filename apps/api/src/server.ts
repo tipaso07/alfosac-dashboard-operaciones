@@ -5,7 +5,7 @@ import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { operacionesDemo } from './demo-source.js';
 import { buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
+import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarPendientesLlegada } from './report-store.js';
 
 const app = express();
@@ -133,6 +133,17 @@ app.get('/api/integrations/gits/gate-catalog', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo de garita en GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/gate-search', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Búsqueda amplia de metadatos para localizar una posible fuente de garita o atención. No consulta operaciones ni modifica GITS.',
+      search: await buscarReferenciasGaritaGits()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo buscar referencias de garita en GITS.' });
   }
 });
 

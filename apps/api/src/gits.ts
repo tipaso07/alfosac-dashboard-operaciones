@@ -41,6 +41,11 @@ export interface GitsGateTrace {
   }>;
 }
 
+export interface GitsGateSearch {
+  candidates: GitsSchemaCandidate[];
+  truncated: boolean;
+}
+
 export interface GitsFlowSamples {
   movementBalance: Record<string, unknown>[];
   agencyTickets: Record<string, unknown>[];
@@ -353,6 +358,62 @@ export async function catalogoGaritaGits(): Promise<GitsGateCatalog> {
         targetColumn: row.target_column
       }))
     };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Búsqueda amplia, pero solo de metadatos, de posibles fuentes del registro
+ * previo a balanza. La aplicación no infiere que un campo sea garita: entrega
+ * los candidatos para validarlos contra una operación real.
+ */
+export async function buscarReferenciasGaritaGits(): Promise<GitsGateSearch> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const result = await pool.request().query<{
+      schema_name: string;
+      table_name: string;
+      column_name: string;
+    }>(`
+      SELECT TOP (501)
+        TABLE_SCHEMA AS schema_name,
+        TABLE_NAME AS table_name,
+        COLUMN_NAME AS column_name
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA NOT IN ('sys', 'INFORMATION_SCHEMA')
+        AND (
+          UPPER(TABLE_NAME) LIKE '%GARITA%'
+          OR UPPER(TABLE_NAME) LIKE '%VIGIL%'
+          OR UPPER(TABLE_NAME) LIKE '%PUERTA%'
+          OR UPPER(TABLE_NAME) LIKE '%ACCES%'
+          OR UPPER(TABLE_NAME) LIKE '%CONTROL%'
+          OR UPPER(TABLE_NAME) LIKE '%ATENCION%'
+          OR UPPER(TABLE_NAME) LIKE '%TICKET%'
+          OR UPPER(COLUMN_NAME) LIKE '%GARITA%'
+          OR UPPER(COLUMN_NAME) LIKE '%VIGIL%'
+          OR UPPER(COLUMN_NAME) LIKE '%PUERTA%'
+          OR UPPER(COLUMN_NAME) LIKE '%ACCES%'
+          OR UPPER(COLUMN_NAME) LIKE '%CONTROL%'
+          OR UPPER(COLUMN_NAME) LIKE '%ATENCION%'
+          OR UPPER(COLUMN_NAME) LIKE '%LECTURA%'
+          OR UPPER(COLUMN_NAME) LIKE '%VALIDA%'
+        )
+      ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION;
+    `);
+
+    const rows = result.recordset.slice(0, 500);
+    const candidateMap = new Map<string, GitsSchemaCandidate>();
+    for (const row of rows) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      const candidate = candidateMap.get(key) ?? { schema: row.schema_name, table: row.table_name, columns: [] };
+      candidate.columns.push(row.column_name);
+      candidateMap.set(key, candidate);
+    }
+    return { candidates: [...candidateMap.values()], truncated: result.recordset.length > 500 };
   } finally {
     await pool.close();
   }
