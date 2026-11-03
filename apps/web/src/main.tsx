@@ -55,6 +55,8 @@ const minutosNaranjaBalanzaSinSalida = 31;
 const toleranciaPeso = 0.03;
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
+/** BB y Aéreo se mantienen en los datos, pero se ocultan temporalmente de la operación visible. */
+const modalidadesVisibles: Modalidad[] = ['FCL', 'LCL'];
 const rotationMs = 15_000;
 const alertRotationMs = 25_000;
 const tvPageRows = 8;
@@ -118,7 +120,7 @@ function App() {
     modalidad,
     crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate, seguimiento.filter((item) => item.modalidad === modalidad))
   ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate, seguimiento]);
-  const modalidadesConAlerta = useMemo(() => orden.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && esCritico(alerta.estado))), [seguimiento]);
+  const modalidadesConAlerta = useMemo(() => modalidadesVisibles.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && esCritico(alerta.estado))), [seguimiento]);
   const resumenSeguimiento = useMemo(() => crearResumenSeguimiento(seguimiento), [seguimiento]);
   const claveAlertas = modalidadesConAlerta.join('|');
   const prioridadActiva = Boolean(tv && claveAlertas && alertaPriorizada !== claveAlertas);
@@ -126,41 +128,44 @@ function App() {
   useEffect(() => {
     if (!tv) return;
     if (claveAlertas && alertaPriorizada !== claveAlertas) {
-      setIndice(orden.indexOf(modalidadesConAlerta[0]));
+      setIndice(modalidadesVisibles.indexOf(modalidadesConAlerta[0]));
       const prioridad = window.setTimeout(() => setAlertaPriorizada(claveAlertas), alertRotationMs);
       return () => window.clearTimeout(prioridad);
     }
     if (!claveAlertas && alertaPriorizada !== null) setAlertaPriorizada(null);
-    const rotate = window.setInterval(() => setIndice((actual) => (actual + 1) % orden.length), rotationMs);
+    const rotate = window.setInterval(() => setIndice((actual) => (actual + 1) % modalidadesVisibles.length), rotationMs);
     return () => window.clearInterval(rotate);
   }, [tv, claveAlertas, alertaPriorizada, modalidadesConAlerta]);
 
-  const modalidad = orden[indice];
-  const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen[indice];
+  const modalidad = modalidadesVisibles[indice];
+  const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen.find((item) => item.modalidad === modalidad)!;
   const detalle = detallesTv[modalidad];
   const alertaActiva = modalidadesConAlerta.includes(modalidad);
   const seguimientoModalidad = seguimiento.filter((item) => item.modalidad === modalidad);
   const resumenModalidad = resumenSeguimiento[modalidad];
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} grupos={grupos.filter((group) => group.modalidad === modalidad)} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} onModalidadChange={(next) => { setIndice(modalidadesVisibles.indexOf(next)); setAlertaPriorizada(claveAlertas); }} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
     : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} />;
 }
 
-function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, alertaActiva, prioridadAlerta, incidentes }: {
+function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, onModalidadChange, alertaActiva, prioridadAlerta, incidentes }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
+  grupos: GrupoFlujo[];
   seguimiento: SeguimientoLlegada[];
   resumenSeguimiento: ResumenSeguimiento;
   updatedAt: string;
   reportDate: string | null;
   indice: number;
+  onModalidadChange: (modalidad: Modalidad) => void;
   alertaActiva: boolean;
   prioridadAlerta: boolean;
   incidentes: IncidenteOperativo[];
 }) {
   const [page, setPage] = useState(0);
+  const [horaInspeccion, setHoraInspeccion] = useState<string | null>(null);
   const pageCount = Math.max(1, Math.ceil(detalle.length / tvPageRows));
   const visibleRows = detalle.slice(page * tvPageRows, (page + 1) * tvPageRows);
   const alertRow = detalle.findIndex((item) => item.critical);
@@ -181,71 +186,62 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
     <main className="tv-screen">
       <header className="tv-header">
         <div>
-          <p className="brand">ALMACENES FORWARDER S.A.C.</p>
+          <p className="brand">ALFOSAC · SEGUIMIENTO OPERATIVO</p>
           <h1>{nombres[modalidad]}</h1>
-          {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
         <div className="tv-clock">
           <strong>{formatHour(new Date().toISOString())}</strong>
-          <span>Actualizado {formatHour(updatedAt)}</span>
+          <span>{reportDate ? formatDate(reportDate) : 'Hoy'} · actualizado {formatHour(updatedAt)}</span>
           <a className="exit-tv" href="/">Salir TV</a>
         </div>
       </header>
 
       <section className="tv-summary">
-        <IncidentNotice incidentes={incidentes} />
-        {resumenSeguimiento.criticas > 0 && <div className="tv-alert"><strong>Atención requerida: {resumenSeguimiento.criticas} alerta(s) operativa(s)</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${etiquetaSeguimiento(item)}`).join('   |   ')}</span></div>}
+        {resumenSeguimiento.criticas > 0 && <div className="tv-alert"><strong>{resumenSeguimiento.criticas} alerta(s) que requieren atención</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${etiquetaSeguimiento(item)}`).join('   |   ')}</span></div>}
         <section className="tv-kpis" aria-label="Resumen de la operación">
-        {modalidad === 'AEREO' ? <>
-          <Kpi label="A.R. atendidos" value={summary.despacho} />
-          <Kpi label="Registro en garita" value="N/A" />
-          <Kpi label="Seguimiento de llegada" value="N/A" />
-          <Kpi label="Cierre validado" value="—" />
-        </> : <>
           <Kpi label="Citas programadas" value={summary.agendadas} />
           <Kpi label="Registro en garita" value={summary.garita} />
           <Kpi label="Alertas críticas" value={resumenSeguimiento.criticas} />
-          <Kpi label="Próximas alertas" value={resumenSeguimiento.proximas} />
-        </>}
         </section>
       </section>
 
       <section className="tv-table-wrap">
-        <h2>{modalidad === 'AEREO' ? 'Actividad por horario' : 'Seguimiento por horario'}</h2>
+        <h2>Seguimiento por horario <span>Selecciona una hora para ver el detalle</span></h2>
         <table>
           <thead>
             <tr>
               <th>Hora</th>
-              <th>{modalidad === 'AEREO' ? 'A.R.' : 'Citas'}</th>
-              <th>{modalidad === 'AEREO' ? 'Garita' : 'Garita Falcon'}</th>
-              <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Ingreso Falcon'}</th>
-              <th>{modalidad === 'AEREO' ? 'Despacho' : 'Salida Falcon'}</th>
-              {modalidad !== 'AEREO' && <th>Por revisar</th>}
+              <th>Citas</th>
+              <th>Garita</th>
+              <th>Ingreso</th>
+              <th>Salida</th>
+              <th>Por revisar</th>
               <th>Estado</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.length > 0 ? visibleRows.map((item) => (
-              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}>
+              <tr key={item.hora} className={`tv-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion(item.hora)}>
                 <td>{item.hora}</td>
                 <td>{item.citas}</td>
                 <td>{item.garita}</td>
-                <td>{modalidad === 'AEREO' ? item.ingreso : item.ingreso}</td>
-                <td>{modalidad === 'AEREO' ? item.despacho : item.despacho}</td>
-                {modalidad !== 'AEREO' && <td>{item.revisar}</td>}
+                <td>{item.ingreso}</td>
+                <td>{item.despacho}</td>
+                <td>{item.revisar}</td>
                 <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes} ALERTA${item.pendientes === 1 ? '' : 'S'}` : item.warning ? 'PRÓXIMA ALERTA' : item.incidencias ? 'INCIDENCIA GENERAL' : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
               </tr>
-            )) : <tr><td colSpan={modalidad === 'AEREO' ? 6 : 7} className="empty">Sin operaciones para mostrar</td></tr>}
+            )) : <tr><td colSpan={7} className="empty">Sin operaciones para mostrar</td></tr>}
           </tbody>
         </table>
       </section>
 
       <footer className="tv-footer">
-        <div className="rotation" aria-label="Rotación de operaciones">
-          {orden.map((item, position) => <span className={position === indice ? 'active' : ''} key={item}>{nombres[item]}</span>)}
+        <div className="rotation" aria-label="Cambiar operación visible">
+          {modalidadesVisibles.map((item, position) => <button className={position === indice ? 'active' : ''} onClick={() => onModalidadChange(item)} key={item}>{nombres[item]}</button>)}
         </div>
         <p>{prioridadAlerta ? 'Alerta prioritaria · visible 25 segundos' : `${pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos`}</p>
       </footer>
+      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={modalidad} grupos={grupos} seguimiento={seguimiento} onClose={() => setHoraInspeccion(null)} />}
     </main>
   );
 }
@@ -254,11 +250,13 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
+  const [horaInspeccion, setHoraInspeccion] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [horaFiltro, setHoraFiltro] = useState('');
   const [situacionFiltro, setSituacionFiltro] = useState<'TODAS' | 'ALERTA' | 'PROXIMA' | 'SIN_MOVIMIENTOS' | 'PENDIENTE_BALANZA' | 'CON_SALIDA_BALANZA' | 'MULTIPLES'>('TODAS');
   const seguimientoPorCita = useMemo(() => new Map(seguimiento.map((item) => [item.id, item])), [seguimiento]);
   const gruposFiltrados = useMemo(() => grupos.filter((group) => {
+    if (!group.modalidad || !modalidadesVisibles.includes(group.modalidad)) return false;
     if (filtro !== 'TODAS' && group.modalidad !== filtro) return false;
     const texto = busqueda.trim().toLowerCase();
     const coincideTexto = !texto || [group.volante, ...group.citas.map((cita) => cita.unidad), ...group.movimientos.map((movimiento) => movimiento.placa ?? '')]
@@ -275,17 +273,17 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     if (situacionFiltro === 'MULTIPLES') return group.tipo === 'MULTIPLE';
     return true;
   }), [grupos, filtro, busqueda, horaFiltro, situacionFiltro, seguimientoPorCita]);
-  const seguimientoFiltrado = filtro === 'TODAS' ? seguimiento : seguimiento.filter((item) => item.modalidad === filtro);
+  const seguimientoFiltrado = seguimiento.filter((item) => modalidadesVisibles.includes(item.modalidad) && (filtro === 'TODAS' || item.modalidad === filtro));
   const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
   const alertas = seguimientoFiltrado.filter((item) => esCritico(item.estado) || esProximo(item.estado));
-  const totales = resumen.reduce((acumulado, item) => ({
+  const totales = resumen.filter((item) => modalidadesVisibles.includes(item.modalidad)).reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
     despacho: acumulado.despacho + item.despacho,
     completadas: acumulado.completadas + item.completadas,
     noCompletadas: acumulado.noCompletadas + item.noCompletadas
   }), { agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 });
-  const seguimientoTotal = orden.reduce((total, modalidad) => ({
+  const seguimientoTotal = modalidadesVisibles.reduce((total, modalidad) => ({
     criticas: total.criticas + resumenSeguimiento[modalidad].criticas,
     proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
     pesoObservado: total.pesoObservado + resumenSeguimiento[modalidad].pesoObservado
@@ -323,7 +321,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         <div className="toolbar-row">
           <div className="filter-row" aria-label="Filtrar por operación">
             <button className={filtro === 'TODAS' ? 'selected' : ''} onClick={() => setFiltro('TODAS')}>Todas</button>
-            {orden.map((item) => <button className={filtro === item ? 'selected' : ''} key={item} onClick={() => setFiltro(item)}>{nombres[item]}</button>)}
+            {modalidadesVisibles.map((item) => <button className={filtro === item ? 'selected' : ''} key={item} onClick={() => setFiltro(item)}>{nombres[item]}</button>)}
           </div>
           <div className="view-row" aria-label="Elegir vista">
             <button className={vista === 'RESUMEN' ? 'selected' : ''} onClick={() => setVista('RESUMEN')} title="Resumen agrupado por hora" aria-label="Resumen agrupado por hora">
@@ -348,9 +346,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
-            <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>Garita Falcon</th><th>Ingreso Falcon</th><th>Salida Falcon</th><th>Por revisar</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Hora de cita</th><th>Citas</th><th>Garita Falcon</th><th>Ingreso a balanza</th><th>Salida por balanza</th><th>Por revisar</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
-              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? `${item.pendientes} alerta(s)` : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
+              <tr key={item.hora} className={`summary-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion(item.hora)}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? `${item.pendientes} alerta(s)` : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
             )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
           </table> : <table className="operations-table detail-list">
             <thead>
@@ -372,10 +370,10 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita?.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
-                  <td><DurationCell start={cita?.fechaGarita ?? null} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" /></td>
+                  <DurationTableCell start={cita?.fechaGarita ?? null} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" />
                   <td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td>
                   <td>{movimiento?.fechaSalidaBalanza ? formatTime(movimiento.fechaSalidaBalanza) : '—'}</td>
-                  <td><DurationCell start={movimiento?.fechaGarita ?? null} end={movimiento?.fechaSalidaBalanza ?? null} tipo="ATENCION" /></td>
+                  <DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento?.fechaSalidaBalanza ?? null} tipo="ATENCION" />
                   <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
@@ -388,6 +386,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       <DisponibilidadHistoricaPanel reportDate={reportDate} />
 
       {seleccionado && <FlowModal group={seleccionado} onClose={() => setSeleccionado(null)} />}
+      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={filtro === 'TODAS' ? null : filtro} grupos={gruposFiltrados} seguimiento={seguimientoFiltrado} onClose={() => setHoraInspeccion(null)} />}
     </main>
   );
 }
@@ -416,14 +415,14 @@ function faceLabel(state: VisualState) {
 
 function HealthFace({ state }: { state: VisualState }) {
   if (state === 'unknown') return <span aria-hidden="true">—</span>;
-  const mouth = state === 'ok' ? 'M7 14c1.2 1.8 3.8 1.8 5 0' : state === 'warning' ? 'M7 15h5' : 'M7 16c1.2-1.8 3.8-1.8 5 0';
-  return <svg viewBox="0 0 19 19" aria-hidden="true"><circle cx="9.5" cy="9.5" r="8"/><circle cx="7" cy="8" r=".8"/><circle cx="12" cy="8" r=".8"/><path d={mouth}/></svg>;
+  const mouth = state === 'ok' ? 'M6 11.5c1 2.4 6 2.4 7 0' : state === 'warning' ? 'M6.5 13h6' : 'M6 14c1-2.2 6-2.2 7 0';
+  return <svg viewBox="0 0 19 19" aria-hidden="true"><circle className="face-base" cx="9.5" cy="9.5" r="8"/><circle className="face-eye" cx="6.9" cy="7.7" r=".95"/><circle className="face-eye" cx="12.1" cy="7.7" r=".95"/><path className="face-mouth" d={mouth}/></svg>;
 }
 
-function DurationCell({ start, end, tipo }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION' }) {
+function DurationTableCell({ start, end, tipo }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION' }) {
   const seconds = durationSeconds(start, end);
-  if (seconds === null) return <>—</>;
-  return <span className={`duration duration-${durationTone(seconds, tipo)}`}>{formatDuration(seconds)}</span>;
+  if (seconds === null) return <td className="duration-cell">—</td>;
+  return <td className={`duration-cell duration-${durationTone(seconds, tipo)}`}>{formatDuration(seconds)}</td>;
 }
 
 function ReportesPanel({ reportDate }: { reportDate: string | null }) {
@@ -597,6 +596,40 @@ function FlowModal({ group, onClose }: { group: GrupoFlujo; onClose: () => void 
   </div>;
 }
 
+function HourInspectionModal({ hora, modalidad, grupos, seguimiento, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; onClose: () => void }) {
+  const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
+  const filas = grupos.flatMap((group) => {
+    const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+    return group.citas
+      .filter((cita) => cita.fechaCita && formatHour(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
+      .map((cita) => {
+        const estado = seguimientoPorCita.get(cita.id);
+        const esRojo = Boolean(estado && esCritico(estado.estado));
+        const esAmarillo = Boolean(estado && esProximo(estado.estado));
+        const etiqueta = esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
+          : movimiento?.fechaSalidaBalanza ? 'Completado'
+            : movimiento?.fechaGarita ? 'En balanza'
+              : cita.fechaGarita ? 'En garita'
+                : 'Programada';
+        return { cita, movimiento, etiqueta, tono: esRojo ? 'alert' : esAmarillo ? 'warning' : movimiento?.fechaSalidaBalanza ? 'ok' : 'unknown' };
+      });
+  });
+  return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
+    <section className="hour-inspection-modal" role="dialog" aria-modal="true" aria-label={`Inspección de ${hora}`} onMouseDown={(event) => event.stopPropagation()}>
+      <header className="hour-inspection-header"><div><p>INSPECCIÓN POR HORA</p><h2>{hora} · {modalidad ? nombres[modalidad] : 'FCL y LCL'}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar inspección">×</button></header>
+      <div className="hour-inspection-note">Detalle de citas, garita y pesajes asociados a este horario.</div>
+      <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th><th>Hora cita</th><th>T. espera</th><th>T. atención</th><th>Estado actual</th></tr></thead>
+        <tbody>{filas.length ? filas.map(({ cita, movimiento, etiqueta, tono }) => {
+          const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
+          const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento?.fechaSalidaBalanza ?? null);
+          return <tr key={cita.id}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA')}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+        }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
+      </table></div>
+      <footer className="hour-inspection-footer"><button className="clear-filters" onClick={onClose}>Cerrar inspección</button></footer>
+    </section>
+  </div>;
+}
+
 function Kpi({ label, value }: { label: string; value: number | string }) {
   return <article className="tv-kpi"><span>{label}</span><strong>{value}</strong></article>;
 }
@@ -634,7 +667,6 @@ function crearDetalle(operaciones: Operacion[], reportDate: string | null): Deta
 }
 
 function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, seguimiento: SeguimientoLlegada[] = []): DetalleHora[] {
-  const citas = grupos.flatMap((group) => group.citas);
   const data = new Map<string, DetalleHora>();
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false, warning = false) => {
@@ -650,7 +682,9 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
     return row;
   };
   if (seguimiento.length > 0) {
-    citas.forEach((cita) => {
+    grupos.forEach((group) => {
+      const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+      group.citas.forEach((cita) => {
       const seguimientoCita = seguimientoPorCita.get(cita.id);
       const estado = seguimientoCita?.estado;
       const critical = estado ? esCritico(estado) : false;
@@ -658,20 +692,23 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       const row = add(cita.fechaCita, 'citas', critical, warning);
       if (!row) return;
       if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
-      if (cita.fechaIngresoDespacho && (!reportDate || fechaLima(cita.fechaIngresoDespacho) === reportDate)) row.ingreso += 1;
-      if (cita.fechaCompletado && (!reportDate || fechaLima(cita.fechaCompletado) === reportDate)) row.despacho += 1;
+      if (movimiento?.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
+      if (movimiento?.fechaSalidaBalanza && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza) === reportDate)) row.despacho += 1;
       if (estado === 'VINCULO_PENDIENTE') row.revisar += 1;
       if (estado === 'PESO_OBSERVADO') row.revisar += 1;
       if (estado === 'INCIDENCIA_OPERATIVA') row.incidencias += 1;
+      });
     });
   } else {
-    citas.forEach((cita) => {
+    grupos.forEach((group) => group.citas.forEach((cita) => {
       const critical = cita.estado === 'NO_COMPLETADA';
-      add(cita.fechaCita, 'citas', critical);
-      add(cita.fechaGarita, 'garita');
-      add(cita.fechaIngresoDespacho, 'ingreso');
-      add(cita.fechaCompletado, 'despacho');
-    });
+      const row = add(cita.fechaCita, 'citas', critical);
+      if (!row) return;
+      if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
+      const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+      if (movimiento?.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
+      if (movimiento?.fechaSalidaBalanza && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza) === reportDate)) row.despacho += 1;
+    }));
   }
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
 }
