@@ -838,7 +838,8 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         minutosRetraso = minutosEntre(now, primerPesaje);
         estado = minutosRetraso >= minutosRojoBalanzaSinSalida ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso >= minutosNaranjaBalanzaSinSalida ? 'EN_BALANZA' : 'PROGRAMADA';
-      } else if (movimientoUnico && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPeso(movimientoUnico)) != null && porcentajePeso > toleranciaPeso) {
+      /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
+      } else if (cita.modalidad === 'LCL' && movimientoUnico && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPeso(movimientoUnico)) != null && porcentajePeso > toleranciaPeso) {
         fechaReferencia = segundoPesaje;
         minutosRetraso = minutosEntre(now, segundoPesaje);
         estado = 'PESO_OBSERVADO';
