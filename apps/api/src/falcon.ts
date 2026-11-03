@@ -656,6 +656,23 @@ function dateText(valueToFormat: unknown) {
   return String(valueToFormat);
 }
 
+/**
+ * Falcon almacena DATETIME sin zona horaria. SQL Server lo entrega como Date
+ * usando sus componentes UTC; los preservamos como hora Perú para que el
+ * navegador no reste cinco horas al presentarlo.
+ */
+export function fechaFalconPeru(valueToFormat: unknown) {
+  if (valueToFormat === null || valueToFormat === undefined) return null;
+  if (valueToFormat instanceof Date) {
+    const part = (number: number) => String(number).padStart(2, '0');
+    return `${valueToFormat.getUTCFullYear()}-${part(valueToFormat.getUTCMonth() + 1)}-${part(valueToFormat.getUTCDate())}T${part(valueToFormat.getUTCHours())}:${part(valueToFormat.getUTCMinutes())}:${part(valueToFormat.getUTCSeconds())}-05:00`;
+  }
+  const raw = String(valueToFormat);
+  return /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:\d{2})$/.test(raw)
+    ? `${raw.replace(' ', 'T')}-05:00`
+    : raw;
+}
+
 function fechaConHora(fecha: unknown, hora: unknown) {
   const date = dateText(fecha);
   if (!date) return null;
@@ -929,7 +946,7 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
         // Confirmado por Operaciones: fecha_atencion es el registro/atención
         // de la unidad en garita. El preregistro del transportista no se usa
         // para este hito.
-        fechaGarita: dateText(value(row, ['fecha_atencion'])) ?? previous?.fechaGarita ?? null,
+        fechaGarita: fechaFalconPeru(value(row, ['fecha_atencion'])) ?? previous?.fechaGarita ?? null,
         fechaIngresoDespacho: null
       });
     };
@@ -955,7 +972,7 @@ export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritime
         volante: text(value(row, ['cpa_volante', 'cpa_lista_retiro'])) ?? id,
         unidad: '-', contenedor: null, fechaCita: null,
         fechaGarita: null,
-        fechaIngresoDespacho: dateText(value(row, ['cpa_fecha_atencion']))
+        fechaIngresoDespacho: fechaFalconPeru(value(row, ['cpa_fecha_atencion']))
       }];
     });
   } finally { await pool.close(); }
