@@ -46,11 +46,18 @@ services:
       GITS_DB_TRUST_CERTIFICATE: ${GITS_DB_TRUST_CERTIFICATE:-true}
       DASHBOARD_REPORT_DATE: ${DASHBOARD_REPORT_DATE:-}
       DASHBOARD_DEMO_MODE: ${DASHBOARD_DEMO_MODE:-false}
+      AUTH_ENABLED: ${AUTH_ENABLED:-false}
+      AUTH_COOKIE_SECURE: ${AUTH_COOKIE_SECURE:-false}
+      AUTH_SESSION_HOURS: ${AUTH_SESSION_HOURS:-12}
+      AUTH_BOOTSTRAP_EMAIL: ${AUTH_BOOTSTRAP_EMAIL:-}
+      AUTH_BOOTSTRAP_PASSWORD: ${AUTH_BOOTSTRAP_PASSWORD:-}
+      AUTH_BOOTSTRAP_NAME: ${AUTH_BOOTSTRAP_NAME:-Administrador Alfosac}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "${API_PORT:-5100}:5100"
+      # La API queda disponible solo desde la PC servidor; el navegador usa /api a través de web.
+      - "127.0.0.1:${API_PORT:-5100}:5100"
 
   web:
     build:

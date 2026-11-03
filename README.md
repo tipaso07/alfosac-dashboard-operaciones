@@ -22,7 +22,31 @@ Vista TV / Panel interno → API del dashboard → base de reportes propia
 2. Ejecuta `docker compose up --build`.
 3. Abre `http://localhost:8090/tv` para la vista de televisores o `http://localhost:8090/dashboard` para el panel interno.
 
-La API queda disponible internamente en `/api`; el puerto `5100` se expone solo para desarrollo local.
+La API queda disponible internamente en `/api`. El puerto `5100` queda ligado a `localhost` de la PC servidor: las laptops nunca deben conectarse directamente a él.
+
+## Acceso seguro
+
+El panel soporta acceso con correo y contraseña, sesiones `HttpOnly`, roles y auditoría de ingresos. Los conectores Falcon y GITS continúan en la PC servidor; sus credenciales nunca se entregan al navegador.
+
+Para activarlo, define estas variables solo en `.env` de la PC servidor:
+
+```text
+AUTH_ENABLED=true
+AUTH_BOOTSTRAP_EMAIL=tu-correo@alfosac.pe
+AUTH_BOOTSTRAP_PASSWORD=una-clave-larga-de-al-menos-14-caracteres
+AUTH_BOOTSTRAP_NAME=Administrador Alfosac
+AUTH_SESSION_HOURS=12
+```
+
+El primer arranque crea ese administrador en la base propia del dashboard. Luego un administrador puede crear cuentas por la ruta protegida `POST /api/auth/users` con los roles `ADMIN`, `OPERADOR` o `LECTURA`.
+
+Para la prueba dentro de la red local se usa `AUTH_COOKIE_SECURE=false`. Para acceso externo se requiere HTTPS mediante un túnel o proxy corporativo y se debe cambiar a:
+
+```text
+AUTH_COOKIE_SECURE=true
+```
+
+No publiques el puerto `5100`, Falcon, GITS ni PostgreSQL. Para acceso desde fuera de la oficina usa una VPN corporativa o un túnel con control de acceso; el dashboard sigue alojado en la PC/servidor que tiene acceso a las bases internas.
 
 ## Integración futura
 

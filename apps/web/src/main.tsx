@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useMemo, useState } from 'react';
+import { StrictMode, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -47,6 +47,8 @@ type DisponibilidadHistorica = {
   fuente: string;
   modalidades: Array<{ modalidad: 'FCL' | 'LCL' | 'BB'; horas: Array<{ hora: number; cuposDisponibles: number | null }> }>;
 };
+type UsuarioSesion = { id: string; email: string; nombre: string; rol: 'ADMIN' | 'OPERADOR' | 'LECTURA' };
+type EstadoAutenticacion = { enabled: boolean; user: UsuarioSesion | null };
 
 const minutosRojoCitaSinGarita = 30;
 const minutosNaranjaCitaSinGarita = 45;
@@ -77,6 +79,26 @@ const demoResumen: Resumen[] = [
 ];
 
 function App() {
+  const [auth, setAuth] = useState<EstadoAutenticacion | null>(null);
+
+  useEffect(() => {
+    void fetch('/api/auth/me', { credentials: 'same-origin' })
+      .then(async (response) => response.ok ? response.json() as Promise<EstadoAutenticacion> : { enabled: true, user: null })
+      .then(setAuth)
+      .catch(() => setAuth({ enabled: true, user: null }));
+  }, []);
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    setAuth({ enabled: true, user: null });
+  };
+
+  if (!auth) return <main className="auth-loading">Verificando acceso seguro…</main>;
+  if (auth.enabled && !auth.user) return <LoginScreen onLogin={(user) => setAuth({ enabled: true, user })} />;
+  return <DashboardApp user={auth.user} authEnabled={auth.enabled} onLogout={logout} />;
+}
+
+function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
   const tv = window.location.pathname === '/tv';
   const [resumen, setResumen] = useState<Resumen[]>(demoResumen);
   const [operaciones, setOperaciones] = useState<Operacion[]>([]);
@@ -148,7 +170,34 @@ function App() {
 
   return tv
     ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} grupos={grupos.filter((group) => group.modalidad === modalidad)} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} onModalidadChange={(next) => { setIndice(modalidadesVisibles.indexOf(next)); setAlertaPriorizada(claveAlertas); }} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
-    : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} />;
+    : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} user={user} authEnabled={authEnabled} onLogout={onLogout} />;
+}
+
+function LoginScreen({ onLogin }: { onLogin: (user: UsuarioSesion) => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/auth/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+      const data = await response.json() as { user?: UsuarioSesion; message?: string };
+      if (!response.ok || !data.user) throw new Error(data.message ?? 'No se pudo iniciar sesión.');
+      onLogin(data.user);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'No se pudo iniciar sesión.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  return <main className="login-screen"><section className="login-card">
+    <p className="brand">ALMACENES FORWARDER S.A.C.</p><h1>Dashboard operativo</h1><p className="login-subtitle">Acceso restringido a personal autorizado.</p>
+    <form onSubmit={submit}><label>Correo corporativo<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required /></label><label>Contraseña<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>{error && <p className="login-error" role="alert">{error}</p>}<button type="submit" disabled={loading}>{loading ? 'Ingresando…' : 'Ingresar'}</button></form>
+    <p className="login-note">La actividad de acceso queda registrada.</p>
+  </section></main>;
 }
 
 function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, onModalidadChange, alertaActiva, prioridadAlerta, incidentes }: {
@@ -248,7 +297,7 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
   );
 }
 
-function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode, incidentes }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes'; incidentes: IncidenteOperativo[] }) {
+function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode, incidentes, user, authEnabled, onLogout }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes'; incidentes: IncidenteOperativo[]; user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
@@ -302,7 +351,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           <h1>Dashboard operativo</h1>
           {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
-        <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a><p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
+        <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a>{authEnabled && user && <button className="logout-button" onClick={() => void onLogout()}>Salir · {user.nombre}</button>}<p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
       </header>
 
       <section className="internal-kpis" aria-label="Resumen general">

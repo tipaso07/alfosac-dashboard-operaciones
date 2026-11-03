@@ -1,5 +1,4 @@
-import cors from 'cors';
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
@@ -9,9 +8,78 @@ import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica } from './availability-store.js';
+import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, crearSesion, crearUsuario, leerSesion, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
+const loginAttempts = new Map<string, { count: number; firstAt: number }>();
+
+type RequestAutenticado = Request & { usuario?: UsuarioSesion };
+
+function cookieValue(request: Request, name: string) {
+  const prefix = `${name}=`;
+  return request.headers.cookie?.split(';').map((value) => value.trim()).find((value) => value.startsWith(prefix))?.slice(prefix.length);
+}
+
+function cookieSegura() {
+  return process.env.AUTH_COOKIE_SECURE === 'true';
+}
+
+function sessionCookie(response: Response, token: string, expiresAt: Date) {
+  const secure = cookieSegura() ? '; Secure' : '';
+  response.append('Set-Cookie', `alfosac_dashboard_session=${token}; Path=/; HttpOnly; SameSite=Strict; Expires=${expiresAt.toUTCString()}${secure}`);
+}
+
+function clearSessionCookie(response: Response) {
+  const secure = cookieSegura() ? '; Secure' : '';
+  response.append('Set-Cookie', `alfosac_dashboard_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+}
+
+function clientIp(request: Request) {
+  return request.ip || request.socket.remoteAddress || 'unknown';
+}
+
+function loginPermitido(request: Request) {
+  const ip = clientIp(request);
+  const now = Date.now();
+  const previous = loginAttempts.get(ip);
+  if (!previous || now - previous.firstAt > 15 * 60_000) return true;
+  return previous.count < 5;
+}
+
+function registrarFalloLogin(request: Request) {
+  const ip = clientIp(request);
+  const now = Date.now();
+  const previous = loginAttempts.get(ip);
+  loginAttempts.set(ip, !previous || now - previous.firstAt > 15 * 60_000 ? { count: 1, firstAt: now } : { ...previous, count: previous.count + 1 });
+}
+
+function limpiarFallosLogin(request: Request) {
+  loginAttempts.delete(clientIp(request));
+}
+
+async function exigirAutenticacion(request: RequestAutenticado, response: Response, next: NextFunction) {
+  if (!autenticacionHabilitada()) return next();
+  const usuario = await leerSesion(cookieValue(request, 'alfosac_dashboard_session'));
+  if (!usuario) {
+    response.status(401).json({ message: 'Inicia sesión para acceder al dashboard.' });
+    return;
+  }
+  if (request.path.startsWith('/integrations/') && usuario.rol !== 'ADMIN') {
+    response.status(403).json({ message: 'Esta acción requiere perfil administrador.' });
+    return;
+  }
+  request.usuario = usuario;
+  next();
+}
+
+function exigirAdministrador(request: RequestAutenticado, response: Response, next: NextFunction) {
+  if (!request.usuario || request.usuario.rol !== 'ADMIN') {
+    response.status(403).json({ message: 'Esta acción requiere perfil administrador.' });
+    return;
+  }
+  next();
+}
 
 /** Modo local y reversible para presentaciones sin usar fuentes externas. */
 function modoDemostracion() {
@@ -108,11 +176,79 @@ async function syncFalconIfEnabled() {
   }
 }
 
-app.use(cors());
-app.use(express.json());
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use((_request, response, next) => {
+  response.setHeader('X-Content-Type-Options', 'nosniff');
+  response.setHeader('X-Frame-Options', 'DENY');
+  response.setHeader('Referrer-Policy', 'no-referrer');
+  response.setHeader('Cache-Control', 'no-store');
+  next();
+});
+app.use(express.json({ limit: '20kb' }));
 
-void asegurarEsquemaDisponibilidad().catch((error) => {
-  console.error('No se pudo preparar el historial de disponibilidad:', error);
+app.get('/api/auth/me', async (request, response) => {
+  if (!autenticacionHabilitada()) {
+    response.json({ enabled: false, user: null });
+    return;
+  }
+  const user = await leerSesion(cookieValue(request, 'alfosac_dashboard_session'));
+  response.json({ enabled: true, user });
+});
+
+app.post('/api/auth/login', async (request, response) => {
+  if (!autenticacionHabilitada()) {
+    response.status(409).json({ message: 'El inicio de sesión aún no está habilitado.' });
+    return;
+  }
+  if (!loginPermitido(request)) {
+    response.status(429).json({ message: 'Demasiados intentos. Espera 15 minutos antes de volver a intentarlo.' });
+    return;
+  }
+  const email = typeof request.body?.email === 'string' ? request.body.email : '';
+  const password = typeof request.body?.password === 'string' ? request.body.password : '';
+  const user = await autenticarUsuario(email, password);
+  if (!user) {
+    registrarFalloLogin(request);
+    await registrarAuditoria('LOGIN_FALLIDO', { email, ip: clientIp(request) });
+    response.status(401).json({ message: 'Correo o contraseña incorrectos.' });
+    return;
+  }
+  limpiarFallosLogin(request);
+  const session = await crearSesion(user);
+  sessionCookie(response, session.token, session.expiresAt);
+  await registrarAuditoria('LOGIN_EXITOSO', { email: user.email, usuarioId: user.id, ip: clientIp(request) });
+  response.json({ user, expiresAt: session.expiresAt.toISOString() });
+});
+
+app.post('/api/auth/logout', async (request, response) => {
+  const token = cookieValue(request, 'alfosac_dashboard_session');
+  const user = await leerSesion(token);
+  await revocarSesion(token);
+  clearSessionCookie(response);
+  if (user) await registrarAuditoria('LOGOUT', { email: user.email, usuarioId: user.id, ip: clientIp(request) });
+  response.status(204).end();
+});
+
+/** Todas las rutas operativas requieren sesión; las integraciones además son solo para administradores. */
+app.use('/api', exigirAutenticacion);
+
+app.post('/api/auth/users', exigirAdministrador, async (request: RequestAutenticado, response) => {
+  const email = typeof request.body?.email === 'string' ? request.body.email : '';
+  const nombre = typeof request.body?.nombre === 'string' ? request.body.nombre : '';
+  const password = typeof request.body?.password === 'string' ? request.body.password : '';
+  const rol = request.body?.rol as RolUsuario;
+  if (!['ADMIN', 'OPERADOR', 'LECTURA'].includes(rol)) {
+    response.status(400).json({ message: 'Indica un rol válido: ADMIN, OPERADOR o LECTURA.' });
+    return;
+  }
+  try {
+    const user = await crearUsuario({ email, nombre, password, rol });
+    await registrarAuditoria('USUARIO_CREADO', { email: user.email, usuarioId: request.usuario?.id, ip: clientIp(request), detalle: rol });
+    response.status(201).json({ user });
+  } catch (error) {
+    response.status(400).json({ message: error instanceof Error ? error.message : 'No se pudo crear el usuario.' });
+  }
 });
 
 app.get('/api/health', async (_request, response) => {
@@ -647,11 +783,19 @@ app.post('/api/integrations/falcon/import', async (_request, response) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Dashboard API disponible en el puerto ${port}`);
-  const configuredInterval = Number(process.env.FALCON_SYNC_INTERVAL_SECONDS ?? 300);
-  const intervalSeconds = Number.isFinite(configuredInterval) ? Math.max(60, Math.floor(configuredInterval)) : 300;
-  void syncFalconIfEnabled();
-  setInterval(() => void syncFalconIfEnabled(), intervalSeconds * 1_000);
+async function iniciarServidor() {
+  await Promise.all([asegurarEsquemaDisponibilidad(), asegurarEsquemaAutenticacion()]);
+  app.listen(port, () => {
+    console.log(`Dashboard API disponible en el puerto ${port}`);
+    const configuredInterval = Number(process.env.FALCON_SYNC_INTERVAL_SECONDS ?? 300);
+    const intervalSeconds = Number.isFinite(configuredInterval) ? Math.max(60, Math.floor(configuredInterval)) : 300;
+    void syncFalconIfEnabled();
+    setInterval(() => void syncFalconIfEnabled(), intervalSeconds * 1_000);
+  });
+}
+
+void iniciarServidor().catch((error) => {
+  console.error('No se pudo iniciar el dashboard de forma segura:', error);
+  process.exitCode = 1;
 });
 
