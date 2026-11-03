@@ -371,7 +371,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                 return <tr key={group.volante}>
                   <td>{cita?.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
                   <td>{cita?.fechaCita ? formatTime(cita.fechaCita) : '—'}{group.citas.length > 1 ? ` +${group.citas.length - 1}` : ''}</td>
-                  <td><strong>{group.volante}</strong><small className="detail-subtitle">{group.modalidad ? nombres[group.modalidad] : 'Sin cita'}</small></td>
+                  <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita?.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
                   <td><DurationCell start={cita?.fechaCita ?? null} end={cita?.fechaGarita ?? null} tipo="ESPERA" /></td>

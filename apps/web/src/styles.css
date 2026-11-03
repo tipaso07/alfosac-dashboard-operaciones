@@ -108,9 +108,15 @@ td:first-child { font-weight: 700; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
 .operations-table td { padding: 16px 12px; }
-.detail-list { min-width: 1450px; }
-.detail-list td { white-space: nowrap; }
-.detail-subtitle { display: block; margin-top: 4px; color: #52627a; font-size: .76rem; font-weight: 600; white-space: normal; }
+.detail-list { min-width: 100%; table-layout: fixed; font-size: clamp(.67rem, .82vw, .94rem); }
+.detail-list th, .detail-list td { padding: 12px 6px; white-space: nowrap; }
+.detail-list th:nth-child(1) { width: 8%; }
+.detail-list th:nth-child(2) { width: 9%; }
+.detail-list th:nth-child(3) { width: 10%; }
+.detail-list th:nth-child(4) { width: 8%; }
+.detail-list th:nth-child(5), .detail-list th:nth-child(7), .detail-list th:nth-child(8) { width: 9%; }
+.detail-list th:nth-child(6), .detail-list th:nth-child(9) { width: 11%; }
+.detail-list th:nth-child(10) { width: 5%; }
 .duration { display: block; margin: -16px -12px; padding: 16px 12px; font-weight: 700; }
 .duration-ok { background: #c9f4d4; color: #28633b; }
 .duration-warning { background: #ffed61; color: #7f5b00; }
