@@ -358,7 +358,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <thead>
               <tr>
                 <th>F. cita</th><th>Hora cita</th><th>Volante / A.R.</th><th>Placa</th><th>Registro</th><th>T. espera</th>
-                <th>Ingreso</th><th>Salida</th><th>T. atención</th><th>Relación</th><th>Situación</th>
+                <th>Ingreso</th><th>Salida</th><th>T. atención</th>
                 <th></th>
               </tr>
             </thead>
@@ -378,11 +378,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td>{cita?.fechaIngresoDespacho ? formatTime(cita.fechaIngresoDespacho) : '—'}</td>
                   <td>{cita?.fechaCompletado ? formatTime(cita.fechaCompletado) : '—'}</td>
                   <td><DurationCell start={cita?.fechaIngresoDespacho ?? null} end={cita?.fechaCompletado ?? null} tipo="ATENCION" /></td>
-                  <td><span className="state-badge">{group.tipo === 'UNICO' ? 'Vínculo único' : group.tipo === 'MULTIPLE' ? 'Múltiples movimientos' : 'Sin cita'}</span></td>
-                  <td><GroupSituation group={group} seguimientoPorCita={seguimientoPorCita} /></td>
                   <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
                 </tr>;
-              }) : <tr><td colSpan={12} className="empty">No hay operaciones para estos filtros.</td></tr>}
+              }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
             </tbody>
           </table>}
         </div>
@@ -396,37 +394,25 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   );
 }
 
-function GroupSituation({ group, seguimientoPorCita }: { group: GrupoFlujo; seguimientoPorCita: Map<string, SeguimientoLlegada> }) {
-  const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
-  const alerta = estados.find((item) => esCritico(item.estado));
-  const proxima = estados.find((item) => esProximo(item.estado));
-  if (alerta) return <span className="state-badge state-alert">{etiquetaSeguimiento(alerta)}</span>;
-  if (proxima) return <span className="state-badge state-warning">{etiquetaSeguimiento(proxima)}</span>;
-  if (group.tipo === 'MULTIPLE') return <span className="state-badge state-warning">Requiere revisión</span>;
-  if (!group.movimientos.length) return <span className="state-badge">Sin movimiento GITS</span>;
-  if (group.movimientos.some((movement) => movement.fechaGarita && !movement.fechaSalidaBalanza)) return <span className="state-badge state-warning">Salida por balanza pendiente</span>;
-  if (group.movimientos.some((movement) => movement.fechaSalidaBalanza)) return <span className="state-badge">Flujo GITS registrado</span>;
-  return <span className="state-badge">Sin alerta activa</span>;
-}
-
 type VisualState = 'ok' | 'warning' | 'alert' | 'unknown';
 
 function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, SeguimientoLlegada>): VisualState {
   const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
   if (estados.some((item) => esCritico(item.estado))) return 'alert';
-  if (estados.some((item) => esProximo(item.estado))) return 'warning';
   const cita = group.citas[0];
   if (!cita) return 'unknown';
   const espera = durationSeconds(cita.fechaCita, cita.fechaGarita);
   const atencion = durationSeconds(cita.fechaIngresoDespacho, cita.fechaCompletado);
   if ((espera !== null && espera >= 45 * 60) || (atencion !== null && atencion > 90 * 60)) return 'alert';
-  if ((espera !== null && espera >= 30 * 60) || (atencion !== null && atencion >= 45 * 60)) return 'warning';
-  if (espera !== null || atencion !== null) return 'ok';
+  const amarillosPorTiempo = Number(espera !== null && espera >= 30 * 60) + Number(atencion !== null && atencion >= 45 * 60);
+  const amarillosActivos = estados.filter((item) => esProximo(item.estado)).length;
+  if (amarillosPorTiempo + amarillosActivos >= 2) return 'warning';
+  if (espera !== null || atencion !== null || amarillosActivos > 0) return 'ok';
   return 'unknown';
 }
 
 function faceLabel(state: VisualState) {
-  return state === 'ok' ? 'operación dentro del tiempo esperado' : state === 'warning' ? 'operación por vigilar' : state === 'alert' ? 'operación requiere atención' : 'sin tiempos suficientes';
+  return state === 'ok' ? 'operación sin rojos y con máximo una alerta amarilla' : state === 'warning' ? 'operación con dos o más alertas amarillas' : state === 'alert' ? 'operación con una alerta roja' : 'sin tiempos suficientes';
 }
 
 function HealthFace({ state }: { state: VisualState }) {
