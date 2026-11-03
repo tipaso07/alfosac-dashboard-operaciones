@@ -275,6 +275,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     if (situacionFiltro === 'MULTIPLES') return group.tipo === 'MULTIPLE';
     return true;
   }), [grupos, filtro, busqueda, horaFiltro, situacionFiltro, seguimientoPorCita]);
+  const citasOrdenadas = useMemo(() => gruposFiltrados
+    .flatMap((group) => group.citas.map((cita) => ({ group, cita })))
+    .sort((a, b) => (a.cita.fechaCita ?? '').localeCompare(b.cita.fechaCita ?? '') || a.group.volante.localeCompare(b.group.volante)), [gruposFiltrados]);
   const seguimientoFiltrado = seguimiento.filter((item) => modalidadesVisibles.includes(item.modalidad) && (filtro === 'TODAS' || item.modalidad === filtro));
   const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
   const alertas = seguimientoFiltrado.filter((item) => esCritico(item.estado) || esProximo(item.estado));
@@ -361,18 +364,18 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
               </tr>
             </thead>
             <tbody>
-              {gruposFiltrados.length > 0 ? gruposFiltrados.map((group) => {
-                const cita = group.citas[0];
-                const movimiento = group.movimientos.at(-1);
-                const placa = movimiento?.placa ?? cita?.unidad ?? '—';
-                const visual = groupVisualState(group, seguimientoPorCita);
-                return <tr key={group.volante}>
-                  <td>{cita?.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
-                  <td>{cita?.fechaCita ? formatTime(cita.fechaCita) : '—'}{group.citas.length > 1 ? ` +${group.citas.length - 1}` : ''}</td>
+              {citasOrdenadas.length ? citasOrdenadas.map(({ group, cita }) => {
+                /** No se asigna un pesaje a una cita cuando el vínculo es múltiple. */
+                const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+                const placa = movimiento?.placa ?? cita.unidad ?? '—';
+                const visual = citaVisualState(cita, movimiento, seguimientoPorCita.get(cita.id));
+                return <tr key={`${group.volante}-${cita.id}`}>
+                  <td>{cita.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
+                  <td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
-                  <td>{cita?.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
-                  <DurationTableCell start={cita?.fechaGarita ?? null} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" />
+                  <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
+                  <DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" />
                   <td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td>
                   <td>{movimiento?.fechaSalidaBalanza ? formatTime(movimiento.fechaSalidaBalanza) : '—'}</td>
                   <DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento?.fechaSalidaBalanza ?? null} tipo="ATENCION" />
@@ -411,13 +414,24 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
   return 'unknown';
 }
 
+function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
+  if (seguimiento && esCritico(seguimiento.estado)) return 'alert';
+  const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
+  const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento?.fechaSalidaBalanza ?? null);
+  if ((espera !== null && espera >= 45 * 60) || (atencion !== null && atencion >= 45 * 60)) return 'alert';
+  const amarillosPorTiempo = Number(espera !== null && espera > 30 * 60) + Number(atencion !== null && atencion > 30 * 60);
+  const amarillaActiva = Boolean(seguimiento && esProximo(seguimiento.estado));
+  if (amarillosPorTiempo + Number(amarillaActiva) >= 2) return 'warning';
+  if (espera !== null || atencion !== null || amarillaActiva) return 'ok';
+  return 'unknown';
+}
+
 function faceLabel(state: VisualState) {
   return state === 'ok' ? 'operación sin rojos y con máximo una alerta amarilla' : state === 'warning' ? 'operación con dos o más alertas amarillas' : state === 'alert' ? 'operación con una alerta roja' : 'sin tiempos suficientes';
 }
 
 function HealthFace({ state }: { state: VisualState }) {
-  if (state === 'unknown') return <span aria-hidden="true">—</span>;
-  const mouth = state === 'ok' ? 'M6 11.5c1 2.4 6 2.4 7 0' : state === 'warning' ? 'M6.5 13h6' : 'M6 14c1-2.2 6-2.2 7 0';
+  const mouth = state === 'ok' ? 'M6 11.5c1 2.4 6 2.4 7 0' : state === 'warning' || state === 'unknown' ? 'M6.5 13h6' : 'M6 14c1-2.2 6-2.2 7 0';
   return <svg viewBox="0 0 19 19" aria-hidden="true"><circle className="face-base" cx="9.5" cy="9.5" r="8"/><circle className="face-eye" cx="6.9" cy="7.7" r=".95"/><circle className="face-eye" cx="12.1" cy="7.7" r=".95"/><path className="face-mouth" d={mouth}/></svg>;
 }
 
