@@ -678,13 +678,11 @@ function AlertCard({ cita, item, telefono }: { cita: Operacion; item: Seguimient
   const detail = alertDetail(item);
   return <article className={`alert-card alert-card-${detail.tone}`}>
     <div className="alert-card-top"><span className={`alert-severity alert-severity-${detail.tone}`}>{detail.level}</span><strong>{detail.title}</strong></div>
-    <p>{detail.description}</p>
     <dl className="alert-metrics">
       <div><dt>Referencia</dt><dd>{formatDateTime(item.fechaReferencia)}</dd></div>
       {detail.showElapsed && <div><dt>Tiempo transcurrido</dt><dd>{formatMinutes(item.minutosRetraso)}</dd></div>}
       {item.estado === 'PESO_OBSERVADO' && <div><dt>Diferencia</dt><dd>{((item.porcentajePeso ?? 0) * 100).toFixed(1)}%</dd></div>}
     </dl>
-    <div className="alert-action"><strong>Acción sugerida</strong><span>{detail.action}</span></div>
     {detail.contact && <div className="alert-contact"><strong>Contacto</strong><span>{telefono ? telefono : 'Pendiente de registro en Falcon'}</span>{!telefono && <small>Cuando Falcon incorpore el teléfono, se mostrará aquí para que ATC contacte al responsable.</small>}</div>}
     <small className="alert-citation">Cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'} · {cita.modalidad}</small>
   </article>;
@@ -692,16 +690,16 @@ function AlertCard({ cita, item, telefono }: { cita: Operacion; item: Seguimient
 
 function alertDetail(item: SeguimientoLlegada) {
   switch (item.estado) {
-    case 'CITA_SIN_GARITA': return { tone: 'alert', level: 'ROJO', title: 'Cita sin registro en garita', description: 'La unidad no registra atención en garita dentro del plazo definido para su cita.', action: 'Contactar al responsable para confirmar llegada o gestionar la inasistencia.', contact: true, showElapsed: true };
-    case 'PROXIMA_GARITA': return { tone: 'warning', level: 'NARANJA', title: 'Próxima alerta de llegada', description: 'La cita se acerca y aún no existe registro de atención en garita.', action: 'Monitorear la llegada y preparar contacto preventivo.', contact: true, showElapsed: false };
-    case 'GARITA_SIN_INGRESO': return { tone: 'alert', level: 'ROJO', title: 'Garita sin primer pesaje', description: 'La unidad fue registrada en garita, pero no se ha registrado su ingreso a balanza en GITS.', action: 'Coordinar con operación para verificar el traslado desde garita a balanza.', contact: false, showElapsed: true };
-    case 'EN_GARITA': return { tone: 'warning', level: 'NARANJA', title: 'Demora desde garita', description: 'La unidad ya registra atención en garita y se aproxima al límite para el primer pesaje.', action: 'Verificar cola, disponibilidad de balanza y priorizar el ingreso.', contact: false, showElapsed: true };
-    case 'BALANZA_SIN_SALIDA': return { tone: 'alert', level: 'ROJO', title: 'Primer pesaje sin salida', description: 'Existe primer pesaje en GITS, pero no se ha registrado la salida por balanza.', action: 'Verificar despacho, segundo pesaje y cualquier retención de la unidad.', contact: false, showElapsed: true };
-    case 'EN_BALANZA': return { tone: 'warning', level: 'NARANJA', title: 'Demora en balanza / despacho', description: 'La unidad tiene primer pesaje y se aproxima al límite sin segundo pesaje.', action: 'Revisar el avance del despacho y coordinar la salida por balanza.', contact: false, showElapsed: true };
-    case 'PESO_OBSERVADO': return { tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', description: 'La diferencia entre peso neto de balanza y mercadería declarada supera la tolerancia de 3%.', action: 'Validar pesos, mercancía y documentos antes de cerrar la operación.', contact: false, showElapsed: false };
-    case 'VINCULO_PENDIENTE': return { tone: 'warning', level: 'REVISAR', title: 'Vínculo de datos pendiente', description: 'Hay más de una cita o movimiento asociado al volante y no se puede atribuir el pesaje con seguridad.', action: 'Validar manualmente la cita y el movimiento físico correspondiente.', contact: false, showElapsed: false };
-    case 'INCIDENCIA_OPERATIVA': return { tone: 'warning', level: 'REVISAR', title: 'Incidencia operativa activa', description: 'Existe una incidencia general reportada para esta modalidad.', action: 'Revisar la incidencia vigente antes de escalar una alerta individual.', contact: false, showElapsed: false };
-    default: return { tone: 'ok', level: 'OK', title: 'Operación controlada', description: 'No hay una alerta activa para los hitos disponibles.', action: 'Continuar el monitoreo operativo.', contact: false, showElapsed: false };
+    case 'CITA_SIN_GARITA': return { tone: 'alert', level: 'ROJO', title: 'Cita sin registro en garita', contact: true, showElapsed: true };
+    case 'PROXIMA_GARITA': return { tone: 'warning', level: 'NARANJA', title: 'Próxima alerta de llegada', contact: true, showElapsed: false };
+    case 'GARITA_SIN_INGRESO': return { tone: 'alert', level: 'ROJO', title: 'Garita sin primer pesaje', contact: false, showElapsed: true };
+    case 'EN_GARITA': return { tone: 'warning', level: 'NARANJA', title: 'Demora desde garita', contact: false, showElapsed: true };
+    case 'BALANZA_SIN_SALIDA': return { tone: 'alert', level: 'ROJO', title: 'Primer pesaje sin salida', contact: false, showElapsed: true };
+    case 'EN_BALANZA': return { tone: 'warning', level: 'NARANJA', title: 'Demora en balanza / despacho', contact: false, showElapsed: true };
+    case 'PESO_OBSERVADO': return { tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', contact: false, showElapsed: false };
+    case 'VINCULO_PENDIENTE': return { tone: 'warning', level: 'REVISAR', title: 'Vínculo de datos pendiente', contact: false, showElapsed: false };
+    case 'INCIDENCIA_OPERATIVA': return { tone: 'warning', level: 'REVISAR', title: 'Incidencia operativa activa', contact: false, showElapsed: false };
+    default: return { tone: 'ok', level: 'OK', title: 'Operación controlada', contact: false, showElapsed: false };
   }
 }
 
