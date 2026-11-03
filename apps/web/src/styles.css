@@ -149,14 +149,6 @@ td:first-child { font-weight: 700; }
 .modal-summary span, .modal-summary strong { display: block; }
 .modal-summary span { font-size: .8rem; font-weight: 700; margin-bottom: 7px; }
 .operation-modal h3 { margin: 0 0 12px; font-size: 1.1rem; }
-.operation-health { display: flex; align-items: center; gap: 14px; margin: 20px 0; padding: 16px; border-left: 5px solid #708095; background: #f3f6fa; }
-.operation-health svg { width: 42px; height: 42px; flex: 0 0 auto; }
-.operation-health strong, .operation-health p { display: block; }
-.operation-health strong { font-size: 1.06rem; }
-.operation-health p { margin: 4px 0 0; color: #52627a; font-size: .92rem; }
-.operation-health-alert { border-left-color: #c83f4b; background: #fff3f4; }
-.operation-health-warning { border-left-color: #e5ad28; background: #fff9e9; }
-.operation-health-ok { border-left-color: #3e9a61; background: #effaf2; }
 .alerts-section { margin: 22px 0 26px; }
 .alerts-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 12px; }
 .alerts-heading h3 { margin: 0; }

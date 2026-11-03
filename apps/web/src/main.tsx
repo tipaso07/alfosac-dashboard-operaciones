@@ -612,10 +612,6 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
-      <section className={`operation-health operation-health-${visual}`}>
-        <HealthFace state={visual} />
-        <div><strong>{healthTitle(visual)}</strong><p>{healthDescription(visual, alertas.length)}</p></div>
-      </section>
       <section className="alerts-section">
         <div className="alerts-heading"><div><p className="brand">DIAGNÓSTICO</p><h3>{alertas.length ? 'Alertas y acciones sugeridas' : 'Operación sin alertas activas'}</h3></div><span className={`alert-count alert-count-${visual}`}>{alertas.length || 'OK'}</span></div>
         {alertas.length ? <div className="alert-cards">{alertas.map(({ cita, seguimiento: item }) => <AlertCard key={cita.id} cita={cita} item={item} telefono={telefono} />)}</div>
@@ -658,17 +654,6 @@ function alertDetail(item: SeguimientoLlegada) {
     case 'INCIDENCIA_OPERATIVA': return { tone: 'warning', level: 'REVISAR', title: 'Incidencia operativa activa', description: 'Existe una incidencia general reportada para esta modalidad.', action: 'Revisar la incidencia vigente antes de escalar una alerta individual.', contact: false, showElapsed: false };
     default: return { tone: 'ok', level: 'OK', title: 'Operación controlada', description: 'No hay una alerta activa para los hitos disponibles.', action: 'Continuar el monitoreo operativo.', contact: false, showElapsed: false };
   }
-}
-
-function healthTitle(state: VisualState) {
-  return state === 'alert' ? 'Atención requerida' : state === 'warning' ? 'En observación' : state === 'ok' ? 'Operación controlada' : 'Información incompleta';
-}
-
-function healthDescription(state: VisualState, alerts: number) {
-  if (state === 'alert') return `${alerts} alerta(s) requiere(n) intervención prioritaria.`;
-  if (state === 'warning') return `${alerts} situación(es) debe(n) ser monitoreada(s).`;
-  if (state === 'ok') return 'Sin alertas rojas ni acumulación de alertas naranjas.';
-  return 'Aún no hay hitos suficientes para evaluar los tiempos.';
 }
 
 function HourInspectionModal({ hora, modalidad, grupos, seguimiento, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; onClose: () => void }) {
