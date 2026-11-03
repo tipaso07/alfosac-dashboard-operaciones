@@ -27,7 +27,7 @@ type Resumen = {
 };
 
 type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null };
-type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' };
+type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO' };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
 type EstadoSeguimiento = 'PROGRAMADA' | 'PROXIMA_GARITA' | 'CITA_SIN_GARITA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'EN_DESPACHO' | 'INGRESO_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';

@@ -18,6 +18,11 @@ test('marca como único solamente una cita y un movimiento del mismo volante', (
   assert.equal(group.tipo, 'UNICO');
 });
 
+test('separa una cita sin movimiento de un vínculo múltiple', () => {
+  const group = crearFlujoOperativo([cita('1')], [])[0];
+  assert.equal(group.tipo, 'SIN_MOVIMIENTO');
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');

@@ -1,7 +1,7 @@
 import type { Modalidad, Operacion, ResumenModalidad } from './domain.js';
 import type { GitsDailyFlowItem } from './gits.js';
 
-export type TipoGrupoFlujo = 'UNICO' | 'MULTIPLE' | 'SIN_CITA';
+export type TipoGrupoFlujo = 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO';
 
 export interface GrupoFlujoOperativo {
   volante: string;
@@ -53,7 +53,9 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
       modalidad: modalidades.length === 1 ? modalidades[0] : null,
       citas: citasDelVolante,
       movimientos: movimientosDelVolante,
-      tipo: citasDelVolante.length === 0 ? 'SIN_CITA' : citasDelVolante.length === 1 && movimientosDelVolante.length === 1 ? 'UNICO' : 'MULTIPLE'
+      tipo: citasDelVolante.length === 0 ? 'SIN_CITA'
+        : movimientosDelVolante.length === 0 ? 'SIN_MOVIMIENTO'
+          : citasDelVolante.length === 1 && movimientosDelVolante.length === 1 ? 'UNICO' : 'MULTIPLE'
     };
   });
   return groups.sort((a, b) =>
