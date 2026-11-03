@@ -108,7 +108,13 @@ td:first-child { font-weight: 700; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
 .operations-table td { padding: 16px 12px; }
-.detail-list { min-width: 1900px; }
+.detail-list { min-width: 1800px; }
+.detail-list td { white-space: nowrap; }
+.detail-subtitle { display: block; margin-top: 4px; color: #52627a; font-size: .76rem; font-weight: 600; white-space: normal; }
+.duration { display: block; margin: -16px -12px; padding: 16px 12px; font-weight: 700; }
+.duration-ok { background: #c9f4d4; color: #28633b; }
+.duration-warning { background: #ffed61; color: #7f5b00; }
+.duration-alert { background: #f5c9c9; color: #913334; }
 .state-badge { display: inline-block; border: 1px solid #329AD6; color: #000059; padding: 6px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; }
 .state-badge.state-alert { background: #000059; color: #ffffff; border-color: #000059; }
 .state-badge.state-warning { background: #fff8e7; color: #8a5a00; border-color: #e5ad28; }

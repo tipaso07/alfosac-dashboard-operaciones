@@ -357,27 +357,31 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
-                <th>Volante / A.R.</th><th>Modalidad</th><th>Cita</th><th>Garita Falcon</th><th>Ingreso Falcon</th><th>Salida Falcon</th>
-                <th>Ingreso a balanza</th><th>Salida por balanza</th><th>Relación</th><th>Situación</th>
+                <th>F. cita</th><th>Hora cita</th><th>Volante / A.R.</th><th>Placa</th><th>Registro</th><th>T. espera</th>
+                <th>Ingreso</th><th>Salida</th><th>T. atención</th><th>Relación</th><th>Situación</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {gruposFiltrados.length > 0 ? gruposFiltrados.map((group) => (
-                <tr key={group.volante}>
-                  <td><strong>{group.volante}</strong></td>
-                  <td>{group.modalidad ? nombres[group.modalidad] : 'Sin cita vinculada'}</td>
-                  <td>{group.citas[0]?.fechaCita ? formatDateTime(group.citas[0].fechaCita) : '—'}{group.citas.length > 1 ? ` +${group.citas.length - 1}` : ''}</td>
-                  <td>{group.citas[0]?.fechaGarita ? formatDateTime(group.citas[0].fechaGarita) : '—'}</td>
-                  <td>{group.citas[0]?.fechaIngresoDespacho ? formatDateTime(group.citas[0].fechaIngresoDespacho) : '—'}</td>
-                  <td>{group.citas[0]?.fechaCompletado ? formatDateTime(group.citas[0].fechaCompletado) : '—'}</td>
-                  <td>{group.movimientos.at(-1)?.fechaGarita ? formatDateTime(group.movimientos.at(-1)!.fechaGarita!) : '—'}</td>
-                  <td>{group.movimientos.at(-1)?.fechaSalidaBalanza ? formatDateTime(group.movimientos.at(-1)!.fechaSalidaBalanza!) : group.movimientos.length ? 'Pendiente' : '—'}</td>
+              {gruposFiltrados.length > 0 ? gruposFiltrados.map((group) => {
+                const cita = group.citas[0];
+                const movimiento = group.movimientos.at(-1);
+                const placa = movimiento?.placa ?? cita?.unidad ?? '—';
+                return <tr key={group.volante}>
+                  <td>{cita?.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
+                  <td>{cita?.fechaCita ? formatTime(cita.fechaCita) : '—'}{group.citas.length > 1 ? ` +${group.citas.length - 1}` : ''}</td>
+                  <td><strong>{group.volante}</strong><small className="detail-subtitle">{group.modalidad ? nombres[group.modalidad] : 'Sin cita'}</small></td>
+                  <td>{placa}</td>
+                  <td>{cita?.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
+                  <td><DurationCell start={cita?.fechaCita ?? null} end={cita?.fechaGarita ?? null} tipo="ESPERA" /></td>
+                  <td>{cita?.fechaIngresoDespacho ? formatTime(cita.fechaIngresoDespacho) : '—'}</td>
+                  <td>{cita?.fechaCompletado ? formatTime(cita.fechaCompletado) : '—'}</td>
+                  <td><DurationCell start={cita?.fechaIngresoDespacho ?? null} end={cita?.fechaCompletado ?? null} tipo="ATENCION" /></td>
                   <td><span className="state-badge">{group.tipo === 'UNICO' ? 'Vínculo único' : group.tipo === 'MULTIPLE' ? 'Múltiples movimientos' : 'Sin cita'}</span></td>
                   <td><GroupSituation group={group} seguimientoPorCita={seguimientoPorCita} /></td>
                   <td><button className="detail-button" onClick={() => setSeleccionado(group)}>Ver detalle</button></td>
-                </tr>
-              )) : <tr><td colSpan={11} className="empty">No hay operaciones para estos filtros.</td></tr>}
+                </tr>;
+              }) : <tr><td colSpan={12} className="empty">No hay operaciones para estos filtros.</td></tr>}
             </tbody>
           </table>}
         </div>
@@ -402,6 +406,12 @@ function GroupSituation({ group, seguimientoPorCita }: { group: GrupoFlujo; segu
   if (group.movimientos.some((movement) => movement.fechaGarita && !movement.fechaSalidaBalanza)) return <span className="state-badge state-warning">Salida por balanza pendiente</span>;
   if (group.movimientos.some((movement) => movement.fechaSalidaBalanza)) return <span className="state-badge">Flujo GITS registrado</span>;
   return <span className="state-badge">Sin alerta activa</span>;
+}
+
+function DurationCell({ start, end, tipo }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION' }) {
+  const seconds = durationSeconds(start, end);
+  if (seconds === null) return <>—</>;
+  return <span className={`duration duration-${durationTone(seconds, tipo)}`}>{formatDuration(seconds)}</span>;
 }
 
 function ReportesPanel({ reportDate }: { reportDate: string | null }) {
@@ -471,6 +481,26 @@ function difference(start: string | null, end: string | null) {
   if (!start || !end) return '—';
   const minutes = Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
   return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+}
+
+function durationSeconds(start: string | null, end: string | null) {
+  if (!start || !end) return null;
+  return Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 1_000));
+}
+
+function formatDuration(seconds: number) {
+  const hours = Math.floor(seconds / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  const remainingSeconds = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+}
+
+function durationTone(seconds: number, tipo: 'ESPERA' | 'ATENCION') {
+  const minutes = seconds / 60;
+  if (tipo === 'ESPERA') return minutes >= 45 ? 'alert' : minutes >= 30 ? 'warning' : 'ok';
+  if (minutes > 90) return 'alert';
+  if (minutes >= 45) return 'warning';
+  return 'ok';
 }
 
 function primaryDate(operation: Operacion) {
@@ -749,6 +779,14 @@ function formatHourShort(value: string) {
 function formatDate(value: string) {
   return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
     .format(new Date(`${value}T12:00:00-05:00`));
+}
+
+function formatDateShort(value: string) {
+  return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'America/Lima' }).format(new Date(value));
+}
+
+function formatTime(value: string) {
+  return new Intl.DateTimeFormat('es-PE', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'America/Lima' }).format(new Date(value));
 }
 
 function formatDateTime(value: string) {
