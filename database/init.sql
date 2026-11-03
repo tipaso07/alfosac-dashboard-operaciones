@@ -31,3 +31,21 @@ CREATE INDEX IF NOT EXISTS idx_operaciones_modalidad_estado ON operaciones (moda
 CREATE INDEX IF NOT EXISTS idx_operaciones_actualizado_origen ON operaciones (actualizado_origen_en DESC);
 CREATE INDEX IF NOT EXISTS idx_operaciones_llave ON operaciones (llave_operacion);
 
+CREATE TABLE IF NOT EXISTS disponibilidad_capturas (
+  id BIGSERIAL PRIMARY KEY,
+  fecha_operativa DATE NOT NULL,
+  capturada_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  fuente VARCHAR(40) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS disponibilidad_cupos (
+  captura_id BIGINT NOT NULL REFERENCES disponibilidad_capturas(id) ON DELETE CASCADE,
+  modalidad VARCHAR(10) NOT NULL,
+  hora SMALLINT NOT NULL CHECK (hora BETWEEN 0 AND 23),
+  cupos_disponibles INTEGER,
+  PRIMARY KEY (captura_id, modalidad, hora)
+);
+
+CREATE INDEX IF NOT EXISTS idx_disponibilidad_capturas_fecha ON disponibilidad_capturas (fecha_operativa, capturada_en DESC);
+

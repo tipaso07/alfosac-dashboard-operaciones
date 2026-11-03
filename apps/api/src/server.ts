@@ -8,6 +8,7 @@ import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacio
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
+import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica } from './availability-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
@@ -107,6 +108,10 @@ async function syncFalconIfEnabled() {
 
 app.use(cors());
 app.use(express.json());
+
+void asegurarEsquemaDisponibilidad().catch((error) => {
+  console.error('No se pudo preparar el historial de disponibilidad:', error);
+});
 
 app.get('/api/health', async (_request, response) => {
   response.json({
@@ -317,6 +322,19 @@ app.get('/api/integrations/falcon/counts', async (request, response) => {
   }
   try { response.json({ date, items: await contarCitasPorHora(date) }); }
   catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' }); }
+});
+
+app.get('/api/availability/history', async (request, response) => {
+  const date = String(request.query.date ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    response.status(400).json({ message: 'Indica la fecha con ?date=AAAA-MM-DD.' });
+    return;
+  }
+  try {
+    response.json({ date, snapshot: await listarDisponibilidadHistorica(date) });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el historial de disponibilidad.' });
+  }
 });
 
 app.get('/api/investigations/falcon-closeout', async (request, response) => {

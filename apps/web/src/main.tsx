@@ -39,6 +39,12 @@ type ReporteOperativo = {
   filas: Array<{ fecha: string | null; horaCita: string | null; modalidad: Modalidad; volante: string; placa: string; estado: Estado; clasificacion: string }>;
   nota: string;
 };
+type DisponibilidadHistorica = {
+  fecha: string;
+  capturadaEn: string;
+  fuente: string;
+  modalidades: Array<{ modalidad: 'FCL' | 'LCL' | 'BB'; horas: Array<{ hora: number; cuposDisponibles: number | null }> }>;
+};
 
 const minutosRojoCitaSinGarita = 30;
 const minutosNaranjaCitaSinGarita = 45;
@@ -250,7 +256,27 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
-  const gruposFiltrados = filtro === 'TODAS' ? grupos : grupos.filter((group) => group.modalidad === filtro);
+  const [busqueda, setBusqueda] = useState('');
+  const [horaFiltro, setHoraFiltro] = useState('');
+  const [situacionFiltro, setSituacionFiltro] = useState<'TODAS' | 'ALERTA' | 'PROXIMA' | 'SIN_MOVIMIENTOS' | 'PENDIENTE_BALANZA' | 'CON_SALIDA_BALANZA' | 'MULTIPLES'>('TODAS');
+  const seguimientoPorCita = useMemo(() => new Map(seguimiento.map((item) => [item.id, item])), [seguimiento]);
+  const gruposFiltrados = useMemo(() => grupos.filter((group) => {
+    if (filtro !== 'TODAS' && group.modalidad !== filtro) return false;
+    const texto = busqueda.trim().toLowerCase();
+    const coincideTexto = !texto || [group.volante, ...group.citas.map((cita) => cita.unidad), ...group.movimientos.map((movimiento) => movimiento.placa ?? '')]
+      .some((value) => value.toLowerCase().includes(texto));
+    if (!coincideTexto) return false;
+    const coincideHora = !horaFiltro || group.citas.some((cita) => cita.fechaCita && formatHourShort(cita.fechaCita) === horaFiltro);
+    if (!coincideHora) return false;
+    const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)?.estado).filter((estado): estado is EstadoSeguimiento => Boolean(estado));
+    if (situacionFiltro === 'ALERTA') return estados.some(esCritico);
+    if (situacionFiltro === 'PROXIMA') return estados.some(esProximo);
+    if (situacionFiltro === 'SIN_MOVIMIENTOS') return group.movimientos.length === 0;
+    if (situacionFiltro === 'PENDIENTE_BALANZA') return group.movimientos.some((movimiento) => Boolean(movimiento.fechaGarita) && !movimiento.fechaSalidaBalanza);
+    if (situacionFiltro === 'CON_SALIDA_BALANZA') return group.movimientos.some((movimiento) => Boolean(movimiento.fechaSalidaBalanza));
+    if (situacionFiltro === 'MULTIPLES') return group.tipo === 'MULTIPLE';
+    return true;
+  }), [grupos, filtro, busqueda, horaFiltro, situacionFiltro, seguimientoPorCita]);
   const seguimientoFiltrado = filtro === 'TODAS' ? seguimiento : seguimiento.filter((item) => item.modalidad === filtro);
   const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
   const alertas = seguimientoFiltrado.filter((item) => esCritico(item.estado) || esProximo(item.estado));
@@ -311,6 +337,17 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           </div>
         </div>
 
+        <div className="advanced-filters" aria-label="Filtros detallados">
+          <label>Buscar volante o placa<input value={busqueda} onChange={(event) => setBusqueda(event.target.value)} placeholder="Ej. 162866 o AYK848" /></label>
+          <label>Hora de cita<input type="time" value={horaFiltro} onChange={(event) => setHoraFiltro(event.target.value)} /></label>
+          <label>Situación<select value={situacionFiltro} onChange={(event) => setSituacionFiltro(event.target.value as typeof situacionFiltro)}>
+            <option value="TODAS">Todas</option><option value="ALERTA">Alerta activa</option><option value="PROXIMA">Próxima alerta</option>
+            <option value="SIN_MOVIMIENTOS">Sin movimientos GITS</option><option value="PENDIENTE_BALANZA">Ingreso a balanza sin salida</option>
+            <option value="CON_SALIDA_BALANZA">Con salida por balanza</option><option value="MULTIPLES">Vínculo múltiple</option>
+          </select></label>
+          {(busqueda || horaFiltro || situacionFiltro !== 'TODAS') && <button className="clear-filters" onClick={() => { setBusqueda(''); setHoraFiltro(''); setSituacionFiltro('TODAS'); }}>Limpiar filtros</button>}
+        </div>
+
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
             <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>Garita Falcon</th><th>Ingreso Falcon</th><th>Salida Falcon</th><th>Por revisar</th><th>Estado</th></tr></thead>
@@ -320,8 +357,8 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
-                <th>Volante / A.R.</th><th>Modalidad</th><th>Citas</th><th>Movimientos GITS</th>
-                <th>Último primer pesaje</th><th>Relación</th>
+                <th>Volante / A.R.</th><th>Modalidad</th><th>Cita</th><th>Garita Falcon</th><th>Ingreso Falcon</th><th>Salida Falcon</th>
+                <th>Ingreso a balanza</th><th>Salida por balanza</th><th>Relación</th><th>Situación</th>
                 <th></th>
               </tr>
             </thead>
@@ -330,23 +367,41 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                 <tr key={group.volante}>
                   <td><strong>{group.volante}</strong></td>
                   <td>{group.modalidad ? nombres[group.modalidad] : 'Sin cita vinculada'}</td>
-                  <td>{group.citas.length}</td>
-                  <td>{group.movimientos.length}</td>
+                  <td>{group.citas[0]?.fechaCita ? formatDateTime(group.citas[0].fechaCita) : '—'}{group.citas.length > 1 ? ` +${group.citas.length - 1}` : ''}</td>
+                  <td>{group.citas[0]?.fechaGarita ? formatDateTime(group.citas[0].fechaGarita) : '—'}</td>
+                  <td>{group.citas[0]?.fechaIngresoDespacho ? formatDateTime(group.citas[0].fechaIngresoDespacho) : '—'}</td>
+                  <td>{group.citas[0]?.fechaCompletado ? formatDateTime(group.citas[0].fechaCompletado) : '—'}</td>
                   <td>{group.movimientos.at(-1)?.fechaGarita ? formatDateTime(group.movimientos.at(-1)!.fechaGarita!) : '—'}</td>
+                  <td>{group.movimientos.at(-1)?.fechaSalidaBalanza ? formatDateTime(group.movimientos.at(-1)!.fechaSalidaBalanza!) : group.movimientos.length ? 'Pendiente' : '—'}</td>
                   <td><span className="state-badge">{group.tipo === 'UNICO' ? 'Vínculo único' : group.tipo === 'MULTIPLE' ? 'Múltiples movimientos' : 'Sin cita'}</span></td>
+                  <td><GroupSituation group={group} seguimientoPorCita={seguimientoPorCita} /></td>
                   <td><button className="detail-button" onClick={() => setSeleccionado(group)}>Ver detalle</button></td>
                 </tr>
-              )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}
+              )) : <tr><td colSpan={11} className="empty">No hay operaciones para estos filtros.</td></tr>}
             </tbody>
           </table>}
         </div>
       </section>
 
       <ReportesPanel reportDate={reportDate} />
+      <DisponibilidadHistoricaPanel reportDate={reportDate} />
 
       {seleccionado && <FlowModal group={seleccionado} onClose={() => setSeleccionado(null)} />}
     </main>
   );
+}
+
+function GroupSituation({ group, seguimientoPorCita }: { group: GrupoFlujo; seguimientoPorCita: Map<string, SeguimientoLlegada> }) {
+  const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
+  const alerta = estados.find((item) => esCritico(item.estado));
+  const proxima = estados.find((item) => esProximo(item.estado));
+  if (alerta) return <span className="state-badge state-alert">{etiquetaSeguimiento(alerta)}</span>;
+  if (proxima) return <span className="state-badge state-warning">{etiquetaSeguimiento(proxima)}</span>;
+  if (group.tipo === 'MULTIPLE') return <span className="state-badge state-warning">Requiere revisión</span>;
+  if (!group.movimientos.length) return <span className="state-badge">Sin movimiento GITS</span>;
+  if (group.movimientos.some((movement) => movement.fechaGarita && !movement.fechaSalidaBalanza)) return <span className="state-badge state-warning">Salida por balanza pendiente</span>;
+  if (group.movimientos.some((movement) => movement.fechaSalidaBalanza)) return <span className="state-badge">Flujo GITS registrado</span>;
+  return <span className="state-badge">Sin alerta activa</span>;
 }
 
 function ReportesPanel({ reportDate }: { reportDate: string | null }) {
@@ -382,6 +437,33 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       <p className="report-note">{reporte.nota} {reporte.resumen.porConfirmar > 0 ? `${reporte.resumen.porConfirmar} cita(s) aún por confirmar.` : ''}</p>
       <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante</th><th>Placa</th><th>Estado</th></tr></thead><tbody>{reporte.filas.length ? reporte.filas.map((item) => <tr key={`${item.modalidad}-${item.volante}-${item.horaCita}`}><td>{item.fecha ?? '—'}</td><td>{item.horaCita ?? '—'}</td><td>{item.modalidad}</td><td>{item.volante}</td><td>{item.placa}</td><td><span className={item.clasificacion === 'NO_ATENDIDA' || item.clasificacion === 'PESAJE_LIBRE' ? 'state-badge state-alert' : 'state-badge'}>{item.clasificacion.replaceAll('_', ' ')}</span></td></tr>) : <tr><td colSpan={6} className="empty">No hay citas para este período.</td></tr>}</tbody></table></div>
     </> : <p className="empty">Cargando reporte…</p>}
+  </section>;
+}
+
+function DisponibilidadHistoricaPanel({ reportDate }: { reportDate: string | null }) {
+  const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
+  const [snapshot, setSnapshot] = useState<DisponibilidadHistorica | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
+  useEffect(() => {
+    setCargando(true);
+    void fetch(`/api/availability/history?date=${fecha}`)
+      .then(async (response) => response.ok ? response.json() as Promise<{ snapshot: DisponibilidadHistorica | null }> : Promise.reject(await response.json()))
+      .then((value) => { setSnapshot(value.snapshot); setError(''); })
+      .catch((reason: { message?: string }) => { setSnapshot(null); setError(reason.message ?? 'No se pudo consultar el historial.'); })
+      .finally(() => setCargando(false));
+  }, [fecha]);
+
+  return <section className="availability-panel">
+    <div className="panel-heading"><div><p className="brand">DISPONIBILIDAD</p><h2>Historial de cupos publicados</h2></div><label>Fecha<input type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} /></label></div>
+    {error ? <p className="empty">{error}</p> : cargando ? <p className="empty">Consultando historial…</p> : !snapshot ? <p className="report-note">Aún no hay una captura guardada para esta fecha. El historial comenzará a poblarse cuando se habilite la captura programada desde la fuente publicada.</p> : <>
+      <p className="report-note">Capturada {formatDateTime(snapshot.capturadaEn)} · fuente: {snapshot.fuente}</p>
+      <div className="availability-grids">{snapshot.modalidades.map((modalidad) => <article key={modalidad.modalidad}>
+        <h3>{modalidad.modalidad} importación</h3><div className="availability-hours">{modalidad.horas.map((item) => <span key={item.hora}><strong>{String(item.hora).padStart(2, '0')}:00</strong>{item.cuposDisponibles ?? '—'}</span>)}</div>
+      </article>)}</div>
+    </>}
   </section>;
 }
 

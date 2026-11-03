@@ -75,6 +75,11 @@ td:first-child { font-weight: 700; }
 .view-row button { width: 46px; height: 40px; padding: 8px; display: grid; place-items: center; }
 .view-row button + button { border-left: 1px solid #329AD6; }
 .view-row svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.advanced-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 0 0 20px; border-bottom: 1px solid #d6e6f1; }
+.advanced-filters label { display: grid; gap: 6px; color: #334155; font-size: .82rem; font-weight: 700; }
+.advanced-filters input, .advanced-filters select { min-height: 40px; min-width: 180px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
+.clear-filters { min-height: 40px; border: 1px solid #329AD6; background: #fff; color: #000059; padding: 8px 12px; cursor: pointer; font: inherit; font-weight: 700; }
+.clear-filters:hover { background: #edf8ff; }
 .operations-table-wrap { overflow-x: auto; }
 .pending-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
 .pending-panel h2 { margin-bottom: 16px; }
@@ -85,6 +90,15 @@ td:first-child { font-weight: 700; }
 .pending-list article.pending-warning { border-left-color: #e5ad28; background: #fff8e7; }
 .pending-list strong, .pending-list span { display: block; }
 .reports-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
+.availability-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
+.availability-panel .panel-heading label { display: grid; gap: 6px; color: #334155; font-size: .82rem; font-weight: 700; }
+.availability-panel input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
+.availability-grids { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.availability-grids article { border: 1px solid #d6e6f1; padding: 14px; }
+.availability-grids h3 { margin: 0 0 12px; color: #000059; font-size: 1rem; }
+.availability-hours { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.availability-hours span { display: grid; gap: 4px; padding: 8px; background: #edf8ff; color: #000059; text-align: center; font-weight: 700; }
+.availability-hours strong { font-size: .72rem; }
 .reports-controls { display: flex; flex-wrap: wrap; gap: 14px; padding: 20px 0; }
 .reports-controls label { display: grid; gap: 6px; color: #334155; font-size: .84rem; font-weight: 700; }
 .reports-controls select, .reports-controls input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
@@ -94,9 +108,10 @@ td:first-child { font-weight: 700; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
 .operations-table td { padding: 16px 12px; }
-.detail-list { min-width: 1160px; }
+.detail-list { min-width: 1900px; }
 .state-badge { display: inline-block; border: 1px solid #329AD6; color: #000059; padding: 6px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; }
 .state-badge.state-alert { background: #000059; color: #ffffff; border-color: #000059; }
+.state-badge.state-warning { background: #fff8e7; color: #8a5a00; border-color: #e5ad28; }
 .detail-button { white-space: nowrap; }
 .modal-backdrop { position: fixed; inset: 0; background: rgb(0 0 89 / 72%); display: grid; place-items: center; padding: 24px; z-index: 10; }
 .operation-modal { width: min(680px, 100%); max-height: min(760px, 90vh); overflow: auto; background: #ffffff; border: 3px solid #329AD6; padding: 28px; }
@@ -129,8 +144,10 @@ td:first-child { font-weight: 700; }
   .rotation { gap: 6px; }
   .internal-kpis, .modal-summary { grid-template-columns: 1fr; }
   .report-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
+  .availability-grids { grid-template-columns: 1fr; }
   .operations-panel { padding: 16px; }
   .toolbar-row { align-items: flex-start; flex-direction: column; }
+  .advanced-filters label, .advanced-filters input, .advanced-filters select { width: 100%; }
   .panel-heading, .timeline li { align-items: start; flex-direction: column; }
   .internal-actions { align-items: start; flex-direction: column; }
 }
