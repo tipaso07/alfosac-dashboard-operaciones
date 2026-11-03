@@ -30,7 +30,7 @@ type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: 
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO' };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
-type EstadoSeguimiento = 'PROGRAMADA' | 'PROXIMA_GARITA' | 'CITA_SIN_GARITA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'EN_DESPACHO' | 'INGRESO_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
+type EstadoSeguimiento = 'PROGRAMADA' | 'PROXIMA_GARITA' | 'CITA_SIN_GARITA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
 type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null };
 type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
 type ReporteOperativo = {
@@ -52,8 +52,6 @@ const minutosRojoGaritaSinIngreso = 45;
 const minutosNaranjaGaritaSinIngreso = 31;
 const minutosRojoBalanzaSinSalida = 45;
 const minutosNaranjaBalanzaSinSalida = 31;
-const minutosRojoIngresoSinSalida = 90;
-const minutosNaranjaIngresoSinSalida = 45;
 const toleranciaPeso = 0.03;
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
@@ -374,10 +372,10 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita?.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
-                  <td><DurationCell start={cita?.fechaCita ?? null} end={cita?.fechaGarita ?? null} tipo="ESPERA" /></td>
-                  <td>{cita?.fechaIngresoDespacho ? formatTime(cita.fechaIngresoDespacho) : '—'}</td>
-                  <td>{cita?.fechaCompletado ? formatTime(cita.fechaCompletado) : '—'}</td>
-                  <td><DurationCell start={cita?.fechaIngresoDespacho ?? null} end={cita?.fechaCompletado ?? null} tipo="ATENCION" /></td>
+                  <td><DurationCell start={cita?.fechaGarita ?? null} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" /></td>
+                  <td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td>
+                  <td>{movimiento?.fechaSalidaBalanza ? formatTime(movimiento.fechaSalidaBalanza) : '—'}</td>
+                  <td><DurationCell start={movimiento?.fechaGarita ?? null} end={movimiento?.fechaSalidaBalanza ?? null} tipo="ATENCION" /></td>
                   <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
@@ -401,10 +399,11 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
   if (estados.some((item) => esCritico(item.estado))) return 'alert';
   const cita = group.citas[0];
   if (!cita) return 'unknown';
-  const espera = durationSeconds(cita.fechaCita, cita.fechaGarita);
-  const atencion = durationSeconds(cita.fechaIngresoDespacho, cita.fechaCompletado);
-  if ((espera !== null && espera >= 45 * 60) || (atencion !== null && atencion > 90 * 60)) return 'alert';
-  const amarillosPorTiempo = Number(espera !== null && espera >= 30 * 60) + Number(atencion !== null && atencion >= 45 * 60);
+  const movimiento = group.movimientos.at(-1);
+  const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
+  const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento?.fechaSalidaBalanza ?? null);
+  if ((espera !== null && espera >= 45 * 60) || (atencion !== null && atencion >= 45 * 60)) return 'alert';
+  const amarillosPorTiempo = Number(espera !== null && espera > 30 * 60) + Number(atencion !== null && atencion > 30 * 60);
   const amarillosActivos = estados.filter((item) => esProximo(item.estado)).length;
   if (amarillosPorTiempo + amarillosActivos >= 2) return 'warning';
   if (espera !== null || atencion !== null || amarillosActivos > 0) return 'ok';
@@ -510,9 +509,9 @@ function formatDuration(seconds: number) {
 
 function durationTone(seconds: number, tipo: 'ESPERA' | 'ATENCION') {
   const minutes = seconds / 60;
-  if (tipo === 'ESPERA') return minutes >= 45 ? 'alert' : minutes >= 30 ? 'warning' : 'ok';
-  if (minutes > 90) return 'alert';
-  if (minutes >= 45) return 'warning';
+  if (tipo === 'ESPERA') return minutes >= 45 ? 'alert' : minutes > 30 ? 'warning' : 'ok';
+  if (minutes >= 45) return 'alert';
+  if (minutes > 30) return 'warning';
   return 'ok';
 }
 
@@ -682,11 +681,11 @@ function minutosEntre(now: Date, fecha: string) {
 }
 
 function esCritico(estado: EstadoSeguimiento) {
-  return ['CITA_SIN_GARITA', 'GARITA_SIN_INGRESO', 'BALANZA_SIN_SALIDA', 'INGRESO_SIN_SALIDA', 'PESO_OBSERVADO'].includes(estado);
+  return ['CITA_SIN_GARITA', 'GARITA_SIN_INGRESO', 'BALANZA_SIN_SALIDA', 'PESO_OBSERVADO'].includes(estado);
 }
 
 function esProximo(estado: EstadoSeguimiento) {
-  return ['PROXIMA_GARITA', 'EN_GARITA', 'EN_BALANZA', 'EN_DESPACHO'].includes(estado);
+  return ['PROXIMA_GARITA', 'EN_GARITA', 'EN_BALANZA'].includes(estado);
 }
 
 function porcentajeDiferenciaPeso(movimiento: MovimientoFisico) {
@@ -698,7 +697,8 @@ function porcentajeDiferenciaPeso(movimiento: MovimientoFisico) {
 }
 
 /**
- * Falcon aporta garita, ingreso y salida; GITS aporta primer y segundo pesaje.
+ * Falcon aporta el registro en garita. GITS aporta el primer y segundo pesaje:
+ * espera = garita a primer pesaje; atención = primer a segundo pesaje.
  * Solo se mezclan ambos orígenes cuando el vínculo volante-cita es único.
  */
 function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | null, now: Date, modalidadesEnIncidencia: Set<Modalidad>): SeguimientoLlegada[] {
@@ -720,6 +720,15 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
 
       if (grupo.tipo !== 'UNICO' && hayMovimientoHoy) {
         estado = 'VINCULO_PENDIENTE';
+      } else if (!cita.fechaGarita) {
+        estado = minutosHastaCita <= minutosRojoCitaSinGarita ? 'CITA_SIN_GARITA'
+          : minutosHastaCita <= minutosNaranjaCitaSinGarita ? 'PROXIMA_GARITA' : 'PROGRAMADA';
+        minutosRetraso = Math.max(0, -minutosHastaCita);
+      } else if (!primerPesaje) {
+        fechaReferencia = cita.fechaGarita;
+        minutosRetraso = minutosEntre(now, fechaReferencia);
+        estado = minutosRetraso >= minutosRojoGaritaSinIngreso ? 'GARITA_SIN_INGRESO'
+          : minutosRetraso >= minutosNaranjaGaritaSinIngreso ? 'EN_GARITA' : 'PROGRAMADA';
       } else if (primerPesaje && !segundoPesaje) {
         fechaReferencia = primerPesaje;
         minutosRetraso = minutosEntre(now, primerPesaje);
@@ -729,20 +738,6 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         fechaReferencia = segundoPesaje;
         minutosRetraso = minutosEntre(now, segundoPesaje);
         estado = 'PESO_OBSERVADO';
-      } else if (cita.fechaIngresoDespacho && !cita.fechaCompletado) {
-        fechaReferencia = cita.fechaIngresoDespacho;
-        minutosRetraso = minutosEntre(now, fechaReferencia);
-        estado = minutosRetraso >= minutosRojoIngresoSinSalida ? 'INGRESO_SIN_SALIDA'
-          : minutosRetraso >= minutosNaranjaIngresoSinSalida ? 'EN_DESPACHO' : 'PROGRAMADA';
-      } else if (cita.fechaGarita && !cita.fechaIngresoDespacho) {
-        fechaReferencia = cita.fechaGarita;
-        minutosRetraso = minutosEntre(now, fechaReferencia);
-        estado = minutosRetraso >= minutosRojoGaritaSinIngreso ? 'GARITA_SIN_INGRESO'
-          : minutosRetraso >= minutosNaranjaGaritaSinIngreso ? 'EN_GARITA' : 'PROGRAMADA';
-      } else if (!cita.fechaGarita) {
-        estado = minutosHastaCita <= minutosRojoCitaSinGarita ? 'CITA_SIN_GARITA'
-          : minutosHastaCita <= minutosNaranjaCitaSinGarita ? 'PROXIMA_GARITA' : 'PROGRAMADA';
-        minutosRetraso = Math.max(0, -minutosHastaCita);
       } else estado = 'PROGRAMADA';
 
       if (modalidadesEnIncidencia.has(cita.modalidad) && esProximo(estado)) estado = 'INCIDENCIA_OPERATIVA';
@@ -769,9 +764,8 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
   if (item.estado === 'CITA_SIN_GARITA') return `Sin registro en garita Falcon · ${item.minutosRetraso ? `${item.minutosRetraso} min vencida` : 'faltan menos de 30 min'}`;
   if (item.estado === 'PROXIMA_GARITA') return 'Sin registro en garita Falcon · faltan entre 31 y 45 min';
-  if (item.estado === 'GARITA_SIN_INGRESO') return `Garita Falcon sin ingreso · ${item.minutosRetraso} min`;
+  if (item.estado === 'GARITA_SIN_INGRESO') return `Garita Falcon sin primer pesaje GITS · ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
-  if (item.estado === 'INGRESO_SIN_SALIDA') return `Ingreso Falcon sin salida Falcon · ${item.minutosRetraso} min`;
   if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 3%`;
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
   return 'Sin alerta activa';
