@@ -119,6 +119,12 @@ td:first-child { font-weight: 700; }
 .state-badge.state-alert { background: #000059; color: #ffffff; border-color: #000059; }
 .state-badge.state-warning { background: #fff8e7; color: #8a5a00; border-color: #e5ad28; }
 .detail-button { white-space: nowrap; }
+.health-face { width: 36px; height: 36px; border: 0; border-radius: 50%; padding: 0; cursor: pointer; display: inline-grid; place-items: center; background: transparent; color: #708095; }
+.health-face svg { width: 31px; height: 31px; fill: currentColor; stroke: #ffffff; stroke-width: 1.3; stroke-linecap: round; }
+.health-face-ok { color: #3e9a61; }
+.health-face-warning { color: #e5ad28; }
+.health-face-alert { color: #c83f4b; }
+.health-face:hover { transform: scale(1.08); }
 .modal-backdrop { position: fixed; inset: 0; background: rgb(0 0 89 / 72%); display: grid; place-items: center; padding: 24px; z-index: 10; }
 .operation-modal { width: min(680px, 100%); max-height: min(760px, 90vh); overflow: auto; background: #ffffff; border: 3px solid #329AD6; padding: 28px; }
 .modal-header { display: flex; justify-content: space-between; align-items: start; gap: 18px; padding-bottom: 20px; border-bottom: 2px solid #329AD6; }

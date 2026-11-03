@@ -367,6 +367,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                 const cita = group.citas[0];
                 const movimiento = group.movimientos.at(-1);
                 const placa = movimiento?.placa ?? cita?.unidad ?? '—';
+                const visual = groupVisualState(group, seguimientoPorCita);
                 return <tr key={group.volante}>
                   <td>{cita?.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
                   <td>{cita?.fechaCita ? formatTime(cita.fechaCita) : '—'}{group.citas.length > 1 ? ` +${group.citas.length - 1}` : ''}</td>
@@ -379,7 +380,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td><DurationCell start={cita?.fechaIngresoDespacho ?? null} end={cita?.fechaCompletado ?? null} tipo="ATENCION" /></td>
                   <td><span className="state-badge">{group.tipo === 'UNICO' ? 'Vínculo único' : group.tipo === 'MULTIPLE' ? 'Múltiples movimientos' : 'Sin cita'}</span></td>
                   <td><GroupSituation group={group} seguimientoPorCita={seguimientoPorCita} /></td>
-                  <td><button className="detail-button" onClick={() => setSeleccionado(group)}>Ver detalle</button></td>
+                  <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
                 </tr>;
               }) : <tr><td colSpan={12} className="empty">No hay operaciones para estos filtros.</td></tr>}
             </tbody>
@@ -406,6 +407,32 @@ function GroupSituation({ group, seguimientoPorCita }: { group: GrupoFlujo; segu
   if (group.movimientos.some((movement) => movement.fechaGarita && !movement.fechaSalidaBalanza)) return <span className="state-badge state-warning">Salida por balanza pendiente</span>;
   if (group.movimientos.some((movement) => movement.fechaSalidaBalanza)) return <span className="state-badge">Flujo GITS registrado</span>;
   return <span className="state-badge">Sin alerta activa</span>;
+}
+
+type VisualState = 'ok' | 'warning' | 'alert' | 'unknown';
+
+function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, SeguimientoLlegada>): VisualState {
+  const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
+  if (estados.some((item) => esCritico(item.estado))) return 'alert';
+  if (estados.some((item) => esProximo(item.estado))) return 'warning';
+  const cita = group.citas[0];
+  if (!cita) return 'unknown';
+  const espera = durationSeconds(cita.fechaCita, cita.fechaGarita);
+  const atencion = durationSeconds(cita.fechaIngresoDespacho, cita.fechaCompletado);
+  if ((espera !== null && espera >= 45 * 60) || (atencion !== null && atencion > 90 * 60)) return 'alert';
+  if ((espera !== null && espera >= 30 * 60) || (atencion !== null && atencion >= 45 * 60)) return 'warning';
+  if (espera !== null || atencion !== null) return 'ok';
+  return 'unknown';
+}
+
+function faceLabel(state: VisualState) {
+  return state === 'ok' ? 'operación dentro del tiempo esperado' : state === 'warning' ? 'operación por vigilar' : state === 'alert' ? 'operación requiere atención' : 'sin tiempos suficientes';
+}
+
+function HealthFace({ state }: { state: VisualState }) {
+  if (state === 'unknown') return <span aria-hidden="true">—</span>;
+  const mouth = state === 'ok' ? 'M7 14c1.2 1.8 3.8 1.8 5 0' : state === 'warning' ? 'M7 15h5' : 'M7 16c1.2-1.8 3.8-1.8 5 0';
+  return <svg viewBox="0 0 19 19" aria-hidden="true"><circle cx="9.5" cy="9.5" r="8"/><circle cx="7" cy="8" r=".8"/><circle cx="12" cy="8" r=".8"/><path d={mouth}/></svg>;
 }
 
 function DurationCell({ start, end, tipo }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION' }) {
