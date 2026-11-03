@@ -29,9 +29,10 @@ type Resumen = {
 type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null };
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
-type EstadoSeguimiento = 'PROGRAMADA' | 'EN_ESPERA' | 'PROXIMA_A_VENCER' | 'PENDIENTE_LLEGADA' | 'EN_GARITA' | 'VINCULO_PENDIENTE' | 'PROXIMO_DESPACHO' | 'DESPACHO_DEMORADO' | 'INCIDENCIA_OPERATIVA';
-type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string };
-type ResumenSeguimiento = { proximasLlegada: number; pendientesLlegada: number; proximosDespacho: number; despachoDemorado: number };
+/** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
+type EstadoSeguimiento = 'PROGRAMADA' | 'PROXIMA_GARITA' | 'CITA_SIN_GARITA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'EN_DESPACHO' | 'INGRESO_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
+type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null };
+type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
 type ReporteOperativo = {
   periodo: 'DIARIO' | 'MENSUAL'; fecha: string; modalidad: 'TODAS' | 'FCL' | 'LCL';
   resumen: { programadas: number; atendidas: number; noAtendidas: number; pendientesAnulacion: number; anuladas: number; pesajesLibres: number; porConfirmar: number };
@@ -39,10 +40,15 @@ type ReporteOperativo = {
   nota: string;
 };
 
-const minutosAlertaLlegada = 35;
-const minutosAvisoLlegada = 25;
-const minutosAlertaDespacho = 45;
-const minutosAvisoDespacho = 35;
+const minutosRojoCitaSinGarita = 30;
+const minutosNaranjaCitaSinGarita = 45;
+const minutosRojoGaritaSinIngreso = 45;
+const minutosNaranjaGaritaSinIngreso = 31;
+const minutosRojoBalanzaSinSalida = 45;
+const minutosNaranjaBalanzaSinSalida = 31;
+const minutosRojoIngresoSinSalida = 90;
+const minutosNaranjaIngresoSinSalida = 45;
+const toleranciaPeso = 0.03;
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 const rotationMs = 15_000;
@@ -108,7 +114,7 @@ function App() {
     modalidad,
     crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate, seguimiento.filter((item) => item.modalidad === modalidad))
   ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate, seguimiento]);
-  const modalidadesConAlerta = useMemo(() => orden.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && (alerta.estado === 'PENDIENTE_LLEGADA' || alerta.estado === 'DESPACHO_DEMORADO'))), [seguimiento]);
+  const modalidadesConAlerta = useMemo(() => orden.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && esCritico(alerta.estado))), [seguimiento]);
   const resumenSeguimiento = useMemo(() => crearResumenSeguimiento(seguimiento), [seguimiento]);
   const claveAlertas = modalidadesConAlerta.join('|');
   const prioridadActiva = Boolean(tv && claveAlertas && alertaPriorizada !== claveAlertas);
@@ -156,7 +162,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
   const alertRow = detalle.findIndex((item) => item.critical);
   const alertPage = alertRow >= 0 ? Math.floor(alertRow / tvPageRows) : 0;
   const pendientesPrioritarios = seguimiento
-    .filter((item) => item.estado === 'PENDIENTE_LLEGADA' || item.estado === 'DESPACHO_DEMORADO')
+    .filter((item) => esCritico(item.estado))
     .sort((a, b) => b.minutosRetraso - a.minutosRetraso)
     .slice(0, 3);
 
@@ -184,7 +190,7 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
 
       <section className="tv-summary">
         <IncidentNotice incidentes={incidentes} />
-        {resumenSeguimiento.pendientesLlegada + resumenSeguimiento.despachoDemorado > 0 && <div className="tv-alert"><strong>Atención requerida: {resumenSeguimiento.pendientesLlegada + resumenSeguimiento.despachoDemorado} alerta(s) operativa(s)</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${etiquetaSeguimiento(item)}`).join('   |   ')}</span></div>}
+        {resumenSeguimiento.criticas > 0 && <div className="tv-alert"><strong>Atención requerida: {resumenSeguimiento.criticas} alerta(s) operativa(s)</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${etiquetaSeguimiento(item)}`).join('   |   ')}</span></div>}
         <section className="tv-kpis" aria-label="Resumen de la operación">
         {modalidad === 'AEREO' ? <>
           <Kpi label="A.R. atendidos" value={summary.despacho} />
@@ -193,9 +199,9 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
           <Kpi label="Cierre validado" value="—" />
         </> : <>
           <Kpi label="Citas programadas" value={summary.agendadas} />
-          <Kpi label="Ingreso a balanza" value={summary.garita} />
-          <Kpi label="Sin ingreso a balanza +35 min" value={resumenSeguimiento.pendientesLlegada} />
-          <Kpi label="En operación +45 min" value={resumenSeguimiento.despachoDemorado} />
+          <Kpi label="Registro en garita" value={summary.garita} />
+          <Kpi label="Alertas críticas" value={resumenSeguimiento.criticas} />
+          <Kpi label="Próximas alertas" value={resumenSeguimiento.proximas} />
         </>}
         </section>
       </section>
@@ -207,9 +213,9 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
             <tr>
               <th>Hora</th>
               <th>{modalidad === 'AEREO' ? 'A.R.' : 'Citas'}</th>
-              <th>{modalidad === 'AEREO' ? 'Garita' : 'En balanza'}</th>
-              <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Sin ingreso a balanza +35'}</th>
-              <th>{modalidad === 'AEREO' ? 'Despacho' : 'En operación +45'}</th>
+              <th>{modalidad === 'AEREO' ? 'Garita' : 'Garita Falcon'}</th>
+              <th>{modalidad === 'AEREO' ? 'Ingreso' : 'Ingreso Falcon'}</th>
+              <th>{modalidad === 'AEREO' ? 'Despacho' : 'Salida Falcon'}</th>
               {modalidad !== 'AEREO' && <th>Por revisar</th>}
               <th>Estado</th>
             </tr>
@@ -220,10 +226,10 @@ function TvScreen({ modalidad, summary, detalle, seguimiento, resumenSeguimiento
                 <td>{item.hora}</td>
                 <td>{item.citas}</td>
                 <td>{item.garita}</td>
-                <td>{modalidad === 'AEREO' ? item.ingreso : item.pendientes}</td>
-                <td>{modalidad === 'AEREO' ? item.despacho : item.despachoDemorado}</td>
+                <td>{modalidad === 'AEREO' ? item.ingreso : item.ingreso}</td>
+                <td>{modalidad === 'AEREO' ? item.despacho : item.despacho}</td>
                 {modalidad !== 'AEREO' && <td>{item.revisar}</td>}
-                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes + item.despachoDemorado} ALERTA${item.pendientes + item.despachoDemorado === 1 ? '' : 'S'}` : item.warning ? 'PRÓXIMA ALERTA' : item.incidencias ? 'INCIDENCIA GENERAL' : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
+                <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes} ALERTA${item.pendientes === 1 ? '' : 'S'}` : item.warning ? 'PRÓXIMA ALERTA' : item.incidencias ? 'INCIDENCIA GENERAL' : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
               </tr>
             )) : <tr><td colSpan={modalidad === 'AEREO' ? 6 : 7} className="empty">Sin operaciones para mostrar</td></tr>}
           </tbody>
@@ -247,7 +253,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   const gruposFiltrados = filtro === 'TODAS' ? grupos : grupos.filter((group) => group.modalidad === filtro);
   const seguimientoFiltrado = filtro === 'TODAS' ? seguimiento : seguimiento.filter((item) => item.modalidad === filtro);
   const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
-  const alertas = seguimientoFiltrado.filter((item) => ['PENDIENTE_LLEGADA', 'PROXIMA_A_VENCER', 'DESPACHO_DEMORADO', 'PROXIMO_DESPACHO'].includes(item.estado));
+  const alertas = seguimientoFiltrado.filter((item) => esCritico(item.estado) || esProximo(item.estado));
   const totales = resumen.reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
@@ -256,9 +262,10 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     noCompletadas: acumulado.noCompletadas + item.noCompletadas
   }), { agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 });
   const seguimientoTotal = orden.reduce((total, modalidad) => ({
-    pendientesLlegada: total.pendientesLlegada + resumenSeguimiento[modalidad].pendientesLlegada,
-    despachoDemorado: total.despachoDemorado + resumenSeguimiento[modalidad].despachoDemorado
-  }), { pendientesLlegada: 0, despachoDemorado: 0 });
+    criticas: total.criticas + resumenSeguimiento[modalidad].criticas,
+    proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
+    pesoObservado: total.pesoObservado + resumenSeguimiento[modalidad].pesoObservado
+  }), { criticas: 0, proximas: 0, pesoObservado: 0 });
 
   return (
     <main className="internal-screen">
@@ -273,9 +280,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
       <section className="internal-kpis" aria-label="Resumen general">
         <Kpi label="Citas / A.R." value={totales.agendadas} />
-        <Kpi label="Ingreso a balanza" value={totales.garita} />
-        <Kpi label="Sin ingreso a balanza +35 min" value={seguimientoTotal.pendientesLlegada} />
-        <Kpi label="En operación +45 min" value={seguimientoTotal.despachoDemorado} />
+        <Kpi label="Registro en garita" value={totales.garita} />
+        <Kpi label="Alertas críticas" value={seguimientoTotal.criticas} />
+        <Kpi label="Peso por validar" value={seguimientoTotal.pesoObservado} />
       </section>
 
       <IncidentNotice incidentes={incidentes} />
@@ -306,15 +313,15 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
         <div className="operations-table-wrap">
           {vista === 'RESUMEN' ? <table className="operations-table">
-            <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>En balanza</th><th>Sin ingreso a balanza +35</th><th>En operación +45</th><th>Por revisar</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Hora de cita</th><th>Citas / A.R.</th><th>Garita Falcon</th><th>Ingreso Falcon</th><th>Salida Falcon</th><th>Por revisar</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
-              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.pendientes}</td><td>{item.despachoDemorado}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? 'Alerta' : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
+              <tr key={item.hora} className={item.critical ? 'critical-row' : item.warning ? 'warning-row' : undefined}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? `${item.pendientes} alerta(s)` : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
             )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
           </table> : <table className="operations-table detail-list">
             <thead>
               <tr>
-                <th>Volante / A.R.</th><th>Modalidad</th><th>Citas</th><th>Movimientos en garita</th>
-                <th>Último registro físico</th><th>Relación</th>
+                <th>Volante / A.R.</th><th>Modalidad</th><th>Citas</th><th>Movimientos GITS</th>
+                <th>Último primer pesaje</th><th>Relación</th>
                 <th></th>
               </tr>
             </thead>
@@ -405,7 +412,7 @@ function fechaOperacionEnReporte(operation: Operacion, reportDate: string | null
 function StateBadge({ estado }: { estado: Estado }) {
   const labels: Record<Estado, string> = {
     AGENDADA: 'Agendada',
-    EN_GARITA: 'En balanza',
+    EN_GARITA: 'En garita',
     EN_DESPACHO: 'En despacho',
     COMPLETADA: 'Completada',
     NO_COMPLETADA: 'No completada',
@@ -419,9 +426,9 @@ function StateBadge({ estado }: { estado: Estado }) {
 function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose: () => void }) {
   const events = [
     ['Cita / A.R.', operacion.fechaCita],
-    ['Ingreso a balanza / primer pesaje', operacion.fechaGarita],
-    ['Movimiento interno de almacén', operacion.fechaIngresoDespacho],
-    ['Despacho / completado', operacion.fechaCompletado]
+    ['Registro en garita (Falcon)', operacion.fechaGarita],
+    ['Ingreso (Falcon)', operacion.fechaIngresoDespacho],
+    ['Salida / completado (Falcon)', operacion.fechaCompletado]
   ];
 
   return (
@@ -504,9 +511,6 @@ function crearDetalle(operaciones: Operacion[], reportDate: string | null): Deta
 
 function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, seguimiento: SeguimientoLlegada[] = []): DetalleHora[] {
   const citas = grupos.flatMap((group) => group.citas);
-  const physical = grupos.flatMap((group) => group.movimientos.map((movement) => ({
-    id: movement.movimiento, modalidad: group.modalidad, fechaGarita: movement.fechaGarita
-  }))).filter((item): item is { id: string; modalidad: Modalidad; fechaGarita: string | null } => Boolean(item.modalidad));
   const data = new Map<string, DetalleHora>();
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
   const add = (date: string | null, field: keyof Pick<DetalleHora, 'citas' | 'garita' | 'ingreso' | 'despacho'>, critical = false, warning = false) => {
@@ -523,32 +527,54 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
   };
   if (seguimiento.length > 0) {
     citas.forEach((cita) => {
-      const estado = seguimientoPorCita.get(cita.id)?.estado;
-      const critical = estado === 'PENDIENTE_LLEGADA' || estado === 'DESPACHO_DEMORADO';
-      const warning = estado === 'PROXIMA_A_VENCER' || estado === 'PROXIMO_DESPACHO';
+      const seguimientoCita = seguimientoPorCita.get(cita.id);
+      const estado = seguimientoCita?.estado;
+      const critical = estado ? esCritico(estado) : false;
+      const warning = estado ? esProximo(estado) : false;
       const row = add(cita.fechaCita, 'citas', critical, warning);
       if (!row) return;
-      if (estado === 'EN_GARITA') row.garita += 1;
+      if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
+      if (cita.fechaIngresoDespacho && (!reportDate || fechaLima(cita.fechaIngresoDespacho) === reportDate)) row.ingreso += 1;
+      if (cita.fechaCompletado && (!reportDate || fechaLima(cita.fechaCompletado) === reportDate)) row.despacho += 1;
       if (estado === 'VINCULO_PENDIENTE') row.revisar += 1;
-      if (estado === 'DESPACHO_DEMORADO') row.despachoDemorado += 1;
+      if (estado === 'PESO_OBSERVADO') row.revisar += 1;
       if (estado === 'INCIDENCIA_OPERATIVA') row.incidencias += 1;
     });
   } else {
     citas.forEach((cita) => {
       const critical = cita.estado === 'NO_COMPLETADA';
       add(cita.fechaCita, 'citas', critical);
+      add(cita.fechaGarita, 'garita');
       add(cita.fechaIngresoDespacho, 'ingreso');
       add(cita.fechaCompletado, 'despacho');
     });
-    physical.forEach((movement) => add(movement.fechaGarita, 'garita'));
   }
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
 }
 
+function minutosEntre(now: Date, fecha: string) {
+  return Math.max(0, Math.floor((now.getTime() - new Date(fecha).getTime()) / 60_000));
+}
+
+function esCritico(estado: EstadoSeguimiento) {
+  return ['CITA_SIN_GARITA', 'GARITA_SIN_INGRESO', 'BALANZA_SIN_SALIDA', 'INGRESO_SIN_SALIDA', 'PESO_OBSERVADO'].includes(estado);
+}
+
+function esProximo(estado: EstadoSeguimiento) {
+  return ['PROXIMA_GARITA', 'EN_GARITA', 'EN_BALANZA', 'EN_DESPACHO'].includes(estado);
+}
+
+function porcentajeDiferenciaPeso(movimiento: MovimientoFisico) {
+  const neto = movimiento.pesoNetoBalanza ?? (movimiento.pesoInicial != null && movimiento.pesoFinal != null
+    ? Math.abs(movimiento.pesoFinal - movimiento.pesoInicial) : null);
+  const declarado = movimiento.pesoMercaderiaDeclarado;
+  if (neto == null || declarado == null || declarado <= 0) return null;
+  return Math.abs(neto - declarado) / declarado;
+}
+
 /**
- * Las alertas se calculan únicamente para el día operativo actual.
- * GITS confirma el primer pesaje y la salida por balanza. El tiempo operativo
- * se mide entre ambos hitos, tal como opera LCL.
+ * Falcon aporta garita, ingreso y salida; GITS aporta primer y segundo pesaje.
+ * Solo se mezclan ambos orígenes cuando el vínculo volante-cita es único.
  */
 function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | null, now: Date, modalidadesEnIncidencia: Set<Modalidad>): SeguimientoLlegada[] {
   const hoy = fechaLima(now.toISOString());
@@ -559,65 +585,71 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
     .map((cita) => {
       const movimientoUnico = grupo.tipo === 'UNICO' ? grupo.movimientos[0] : undefined;
       const hayMovimientoHoy = grupo.movimientos.some((movimiento) => movimiento.fechaGarita && fechaLima(movimiento.fechaGarita) === reportDate);
-      const ingresoBalanza = Boolean(movimientoUnico?.fechaGarita && fechaLima(movimientoUnico.fechaGarita) === reportDate);
-      const minutosRetraso = Math.max(0, Math.floor((now.getTime() - new Date(cita.fechaCita!).getTime()) / 60_000));
+      const primerPesaje = movimientoUnico?.fechaGarita && fechaLima(movimientoUnico.fechaGarita) === reportDate ? movimientoUnico.fechaGarita : null;
+      const segundoPesaje = movimientoUnico?.fechaSalidaBalanza && fechaLima(movimientoUnico.fechaSalidaBalanza) === reportDate ? movimientoUnico.fechaSalidaBalanza : null;
+      const minutosHastaCita = Math.ceil((new Date(cita.fechaCita!).getTime() - now.getTime()) / 60_000);
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
-      if (ingresoBalanza && movimientoUnico?.fechaGarita && !movimientoUnico.fechaSalidaBalanza) {
-        fechaReferencia = movimientoUnico.fechaGarita;
-        const minutosDespacho = Math.max(0, Math.floor((now.getTime() - new Date(fechaReferencia).getTime()) / 60_000));
-        if (minutosDespacho >= minutosAlertaDespacho) estado = 'DESPACHO_DEMORADO';
-        else if (minutosDespacho >= minutosAvisoDespacho) estado = 'PROXIMO_DESPACHO';
-        else estado = 'EN_GARITA';
-        if (modalidadesEnIncidencia.has(cita.modalidad) && (estado === 'DESPACHO_DEMORADO' || estado === 'PROXIMO_DESPACHO')) {
-          estado = 'INCIDENCIA_OPERATIVA';
-        }
-        return {
-          id: cita.id, volante: cita.volante, modalidad: cita.modalidad, fechaCita: cita.fechaCita!,
-          placa: movimientoUnico.placa ?? cita.unidad ?? null, estado, minutosRetraso: minutosDespacho, fechaReferencia
-        };
-      }
-      if (ingresoBalanza) estado = 'EN_GARITA';
-      else if (hayMovimientoHoy) estado = 'VINCULO_PENDIENTE';
-      else if (new Date(cita.fechaCita!).getTime() > now.getTime()) estado = 'PROGRAMADA';
-      else if (minutosRetraso >= minutosAlertaLlegada) estado = 'PENDIENTE_LLEGADA';
-      else if (minutosRetraso >= minutosAvisoLlegada) estado = 'PROXIMA_A_VENCER';
-      else estado = 'EN_ESPERA';
+      let minutosRetraso = 0;
+      let porcentajePeso: number | null | undefined;
 
-      if (modalidadesEnIncidencia.has(cita.modalidad) && (estado === 'PENDIENTE_LLEGADA' || estado === 'PROXIMA_A_VENCER')) {
-        estado = 'INCIDENCIA_OPERATIVA';
-      }
+      if (grupo.tipo !== 'UNICO' && hayMovimientoHoy) {
+        estado = 'VINCULO_PENDIENTE';
+      } else if (primerPesaje && !segundoPesaje) {
+        fechaReferencia = primerPesaje;
+        minutosRetraso = minutosEntre(now, primerPesaje);
+        estado = minutosRetraso >= minutosRojoBalanzaSinSalida ? 'BALANZA_SIN_SALIDA'
+          : minutosRetraso >= minutosNaranjaBalanzaSinSalida ? 'EN_BALANZA' : 'PROGRAMADA';
+      } else if (movimientoUnico && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPeso(movimientoUnico)) != null && porcentajePeso > toleranciaPeso) {
+        fechaReferencia = segundoPesaje;
+        minutosRetraso = minutosEntre(now, segundoPesaje);
+        estado = 'PESO_OBSERVADO';
+      } else if (cita.fechaIngresoDespacho && !cita.fechaCompletado) {
+        fechaReferencia = cita.fechaIngresoDespacho;
+        minutosRetraso = minutosEntre(now, fechaReferencia);
+        estado = minutosRetraso >= minutosRojoIngresoSinSalida ? 'INGRESO_SIN_SALIDA'
+          : minutosRetraso >= minutosNaranjaIngresoSinSalida ? 'EN_DESPACHO' : 'PROGRAMADA';
+      } else if (cita.fechaGarita && !cita.fechaIngresoDespacho) {
+        fechaReferencia = cita.fechaGarita;
+        minutosRetraso = minutosEntre(now, fechaReferencia);
+        estado = minutosRetraso >= minutosRojoGaritaSinIngreso ? 'GARITA_SIN_INGRESO'
+          : minutosRetraso >= minutosNaranjaGaritaSinIngreso ? 'EN_GARITA' : 'PROGRAMADA';
+      } else if (!cita.fechaGarita) {
+        estado = minutosHastaCita <= minutosRojoCitaSinGarita ? 'CITA_SIN_GARITA'
+          : minutosHastaCita <= minutosNaranjaCitaSinGarita ? 'PROXIMA_GARITA' : 'PROGRAMADA';
+        minutosRetraso = Math.max(0, -minutosHastaCita);
+      } else estado = 'PROGRAMADA';
 
+      if (modalidadesEnIncidencia.has(cita.modalidad) && esProximo(estado)) estado = 'INCIDENCIA_OPERATIVA';
       return {
-        id: cita.id,
-        volante: cita.volante,
-        modalidad: cita.modalidad,
-        fechaCita: cita.fechaCita!,
-        placa: grupo.movimientos.find((movimiento) => movimiento.fechaGarita)?.placa ?? cita.unidad ?? null,
-        estado,
-        minutosRetraso,
-        fechaReferencia
+        id: cita.id, volante: cita.volante, modalidad: cita.modalidad, fechaCita: cita.fechaCita!,
+        placa: movimientoUnico?.placa ?? grupo.movimientos.find((movimiento) => movimiento.fechaGarita)?.placa ?? cita.unidad ?? null,
+        estado, minutosRetraso, fechaReferencia, porcentajePeso
       };
     }));
 }
 
 function crearResumenSeguimiento(seguimiento: SeguimientoLlegada[]): Record<Modalidad, ResumenSeguimiento> {
-  const resumen = Object.fromEntries(orden.map((modalidad) => [modalidad, { proximasLlegada: 0, pendientesLlegada: 0, proximosDespacho: 0, despachoDemorado: 0 }])) as Record<Modalidad, ResumenSeguimiento>;
+  const resumen = Object.fromEntries(orden.map((modalidad) => [modalidad, { proximas: 0, criticas: 0, revisar: 0, pesoObservado: 0 }])) as Record<Modalidad, ResumenSeguimiento>;
   for (const item of seguimiento) {
-    if (item.estado === 'PROXIMA_A_VENCER') resumen[item.modalidad].proximasLlegada += 1;
-    if (item.estado === 'PENDIENTE_LLEGADA') resumen[item.modalidad].pendientesLlegada += 1;
-    if (item.estado === 'PROXIMO_DESPACHO') resumen[item.modalidad].proximosDespacho += 1;
-    if (item.estado === 'DESPACHO_DEMORADO') resumen[item.modalidad].despachoDemorado += 1;
+    if (esProximo(item.estado)) resumen[item.modalidad].proximas += 1;
+    if (esCritico(item.estado)) resumen[item.modalidad].criticas += 1;
+    if (item.estado === 'VINCULO_PENDIENTE' || item.estado === 'INCIDENCIA_OPERATIVA') resumen[item.modalidad].revisar += 1;
+    if (item.estado === 'PESO_OBSERVADO') resumen[item.modalidad].pesoObservado += 1;
   }
   return resumen;
 }
 
 function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
-  if (item.estado === 'PENDIENTE_LLEGADA') return `Llamar a agente de aduana · ${item.minutosRetraso} min sin ingreso a balanza`;
-  if (item.estado === 'PROXIMA_A_VENCER') return `Sin ingreso a balanza · ${item.minutosRetraso} min (alerta a los ${minutosAlertaLlegada})`;
-  if (item.estado === 'DESPACHO_DEMORADO') return `Operación demorada · ${item.minutosRetraso} min desde el primer pesaje`;
-  return `En operación · ${item.minutosRetraso} min desde el primer pesaje (alerta a los ${minutosAlertaDespacho})`;
+  if (item.estado === 'CITA_SIN_GARITA') return `Sin registro en garita Falcon · ${item.minutosRetraso ? `${item.minutosRetraso} min vencida` : 'faltan menos de 30 min'}`;
+  if (item.estado === 'PROXIMA_GARITA') return 'Sin registro en garita Falcon · faltan entre 31 y 45 min';
+  if (item.estado === 'GARITA_SIN_INGRESO') return `Garita Falcon sin ingreso · ${item.minutosRetraso} min`;
+  if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
+  if (item.estado === 'INGRESO_SIN_SALIDA') return `Ingreso Falcon sin salida Falcon · ${item.minutosRetraso} min`;
+  if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 3%`;
+  if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
+  return 'Sin alerta activa';
 }
 
 function formatHour(value: string) {
