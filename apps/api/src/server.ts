@@ -74,8 +74,10 @@ async function enriquecerMaritimasConGits(maritimas: Awaited<ReturnType<typeof l
     if (!correlation) return cita;
     return {
       ...cita,
-      unidad: correlation.event.placa ?? cita.unidad,
-      fechaGarita: correlation.event.fechaGarita ?? cita.fechaGarita
+      // GITS completa la placa cuando existe una correlación segura, pero su
+      // primer pesaje es un hito distinto y nunca debe sustituir la garita
+      // registrada por Falcon.
+      unidad: correlation.event.placa ?? cita.unidad
     };
   });
 }

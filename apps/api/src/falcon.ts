@@ -905,7 +905,8 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
     const citasRequest = pool.request().input('limit', sql.Int, limit);
     if (date) citasRequest.input('reportDate', sql.Date, date);
     const citasResult = await citasRequest.query<SourceRow>(`
-      SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa, des_contenedor
+      SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa, des_contenedor,
+        fecha_atencion
       FROM dbo.citas_programadas
       WHERE cod_negocio IN (3, 4, 5)
         AND fecha >= ${dayStart}
@@ -925,8 +926,10 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
         unidad: text(value(row, ['des_placa'])) ?? previous?.unidad ?? '-',
         contenedor: text(value(row, ['des_contenedor'])) ?? previous?.contenedor ?? null,
         fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])) ?? previous?.fechaCita ?? null,
-        // El preregistro de transportista no se debe interpretar como garita.
-        fechaGarita: null,
+        // Confirmado por Operaciones: fecha_atencion es el registro/atención
+        // de la unidad en garita. El preregistro del transportista no se usa
+        // para este hito.
+        fechaGarita: dateText(value(row, ['fecha_atencion'])) ?? previous?.fechaGarita ?? null,
         fechaIngresoDespacho: null
       });
     };
