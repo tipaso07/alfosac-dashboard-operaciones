@@ -41,6 +41,23 @@ export interface GitsGateTrace {
   }>;
 }
 
+/** Documentos y tickets ya relacionados por GITS a un movimiento de balanza. */
+export interface GitsMovementDocumentsTrace {
+  movimiento: string;
+  documentos: Array<{
+    volante: string | null;
+    detalle: string | null;
+    pesoDeclarado: number | null;
+  }>;
+  tickets: Array<{
+    volante: string | null;
+    correlativo: string | null;
+    placa: string | null;
+    fechaAtencion: string | null;
+    fechaFinalizacion: string | null;
+  }>;
+}
+
 export interface GitsGateSearch {
   candidates: GitsSchemaCandidate[];
   truncated: boolean;
@@ -596,6 +613,89 @@ export async function trazarGaritaGits(movimiento: string): Promise<GitsGateTrac
         placa: row.placa,
         peso: numero(row.peso),
         fechaAuditoria: fechaGitsPeru(row.fecha_auditoria)
+      }))
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Enumera los documentos y tickets que GITS ya enlazó a un mismo pesaje.
+ * Es una traza diagnóstica de solo lectura: no asocia nada por placa u hora.
+ */
+export async function trazarDocumentosMovimientoGits(movimiento: string): Promise<GitsMovementDocumentsTrace> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const request = () => pool.request()
+      .input('empresa', sql.VarChar(10), empresaGits())
+      .input('movimiento', sql.VarChar(30), movimiento);
+    const [documentosResult, ticketsResult] = await Promise.all([
+      request().query<{ volante: string | null; detalle: string | null; peso_declarado: number | null }>(`
+        SELECT DISTINCT TOP (100)
+          origen.DOCORI_C_NUMERO_VOLANTE AS volante,
+          enlace.DOORDE_C_NUMERO_DETALLE AS detalle,
+          detalle.DOORDE_N_PESO_MANIFESTADO AS peso_declarado
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA_DOCUMENTO enlace
+        INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN origen
+          ON origen.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO
+          AND origen.NAVE_C_CODIGO = enlace.NAVE_C_CODIGO
+          AND origen.NAVIRU_C_VIAJE = enlace.NAVIRU_C_VIAJE
+          AND origen.RUMBO_C_CODIGO = enlace.RUMBO_C_CODIGO
+          AND origen.OPERAC_C_CODIGO = enlace.OPERAC_C_CODIGO
+          AND origen.PUERTO_C_CODIGO_ORIGEN = enlace.PUERTO_C_CODIGO_ORIGEN
+          AND origen.PUERTO_C_CODIGO_EMBARQUE = enlace.PUERTO_C_CODIGO_EMBARQUE
+          AND origen.DOCORI_C_NUMERO = enlace.DOCORI_C_NUMERO
+        LEFT JOIN dbo.OPETV_DOCUMENTO_ORIGEN_DETALLE detalle
+          ON detalle.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO
+          AND detalle.NAVE_C_CODIGO = enlace.NAVE_C_CODIGO
+          AND detalle.NAVIRU_C_VIAJE = enlace.NAVIRU_C_VIAJE
+          AND detalle.RUMBO_C_CODIGO = enlace.RUMBO_C_CODIGO
+          AND detalle.OPERAC_C_CODIGO = enlace.OPERAC_C_CODIGO
+          AND detalle.PUERTO_C_CODIGO_ORIGEN = enlace.PUERTO_C_CODIGO_ORIGEN
+          AND detalle.PUERTO_C_CODIGO_EMBARQUE = enlace.PUERTO_C_CODIGO_EMBARQUE
+          AND detalle.DOCORI_C_NUMERO = enlace.DOCORI_C_NUMERO
+          AND detalle.DOORDE_C_NUMERO_DETALLE = enlace.DOORDE_C_NUMERO_DETALLE
+        WHERE enlace.EMPRES_C_CODIGO = @empresa AND enlace.MOVBAL_C_NUMERO = @movimiento
+        ORDER BY origen.DOCORI_C_NUMERO_VOLANTE, enlace.DOORDE_C_NUMERO_DETALLE;
+      `),
+      request().query<{
+        volante: string | null; correlativo: string | null; placa: string | null;
+        fecha_atencion: Date | null; fecha_finalizacion: Date | null;
+      }>(`
+        SELECT DISTINCT TOP (100)
+          ticket.AGMOTI_C_NROVOLANTE AS volante,
+          ticket.AGMOTI_C_CORRELATIVO AS correlativo,
+          ticket.CAMION_C_PLACA AS placa,
+          ticket.AGMOTI_D_FECHA_HORA_ATENCION AS fecha_atencion,
+          ticket.AGMOTI_D_FECHA_HORA_FINALIZACION AS fecha_finalizacion
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA_AUTORIZACION_RETIRO autorizacion
+        INNER JOIN dbo.CCTV_AGENCIA_MOVIMIENTO_TICKET_RETIRO ticketRetiro
+          ON ticketRetiro.EMPRES_C_CODIGO = autorizacion.EMPRES_C_CODIGO
+          AND ticketRetiro.AUTRET_C_NUMERO = autorizacion.AUTRET_C_NUMERO
+        INNER JOIN dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET ticket
+          ON ticket.EMPRES_C_CODIGO = ticketRetiro.EMPRES_C_CODIGO
+          AND ticket.AGMOTI_C_CORRELATIVO = ticketRetiro.AGMOTI_C_CORRELATIVO
+        WHERE autorizacion.EMPRES_C_CODIGO = @empresa AND autorizacion.MOVBAL_C_NUMERO = @movimiento
+        ORDER BY ticket.AGMOTI_D_FECHA_HORA_ATENCION;
+      `)
+    ]);
+    return {
+      movimiento,
+      documentos: documentosResult.recordset.map((row) => ({
+        volante: row.volante?.trim() || null,
+        detalle: row.detalle?.trim() || null,
+        pesoDeclarado: numero(row.peso_declarado)
+      })),
+      tickets: ticketsResult.recordset.map((row) => ({
+        volante: row.volante?.trim() || null,
+        correlativo: row.correlativo?.trim() || null,
+        placa: row.placa?.trim() || null,
+        fechaAtencion: fechaGitsPeru(row.fecha_atencion),
+        fechaFinalizacion: fechaGitsPeru(row.fecha_finalizacion)
       }))
     };
   } finally {

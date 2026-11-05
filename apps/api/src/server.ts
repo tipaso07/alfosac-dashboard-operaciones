@@ -5,7 +5,7 @@ import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
 import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
+import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica } from './availability-store.js';
 import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, crearSesion, crearUsuario, leerSesion, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
@@ -329,6 +329,22 @@ app.get('/api/integrations/gits/gate-trace', async (request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo trazar vigilancia y tarja en GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/movement-documents', async (request, response) => {
+  const movimiento = String(request.query.movimiento ?? '').trim();
+  if (!/^\d{1,30}$/.test(movimiento)) {
+    response.status(400).json({ message: 'Indica el número de movimiento GITS: ?movimiento=000000000341741.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Documentos y tickets que GITS ya relaciona con el mismo movimiento de balanza. Consulta de solo lectura; no asocia operaciones por placa.',
+      trace: await trazarDocumentosMovimientoGits(movimiento)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudieron trazar los documentos del movimiento en GITS.' });
   }
 });
 
