@@ -709,7 +709,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, onClose }: 
   const filas = grupos.flatMap((group) => {
     const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
     return group.citas
-      .filter((cita) => cita.fechaCita && formatHour(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
+      .filter((cita) => cita.fechaCita && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
       .map((cita) => {
         const estado = seguimientoPorCita.get(cita.id);
         const esRojo = Boolean(estado && esCritico(estado.estado));
