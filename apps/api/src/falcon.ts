@@ -32,7 +32,14 @@ export interface FalconPreviewItem {
 export interface FalconAerialTrace {
   volante: string;
   camposDetectados: string[];
-  registros: FalconPreviewItem[];
+  registros: Array<FalconPreviewItem & { coincidePor: 'VOLANTE' | 'LISTA_RETIRO' }>;
+}
+
+/** Catálogo técnico, sin datos operativos, para encontrar el enlace de Aéreo con placa y peso. */
+export interface FalconAerialLinkCatalog {
+  tablasConCamposRelacionables: Array<{ tabla: string; campos: string[] }>;
+  relacionesDeclaradas: Array<{ tablaOrigen: string; campoOrigen: string; tablaDestino: string; campoDestino: string }>;
+  modulosCandidatos: Array<{ esquema: string; objeto: string; tipo: string }>;
 }
 
 export interface FalconPreview {
@@ -1003,15 +1010,89 @@ export async function trazarRetiroAereoFalcon(volante: string): Promise<FalconAe
       previewTableByValue(pool, 'citas_programadas_aereo', 'cpa_lista_retiro', volante)
     ]);
     const vistos = new Set<string>();
-    const registros = [...porVolante, ...porListaRetiro]
-      .filter((row) => {
-        const id = text(value(row, ['cpa_id', 'id'])) ?? JSON.stringify(row);
-        if (vistos.has(id)) return false;
-        vistos.add(id);
-        return true;
-      })
-      .map((row) => normalize(row, 'AR_AEREO'));
+    const registros = [
+      ...porVolante.map((row) => ({ row, coincidePor: 'VOLANTE' as const })),
+      ...porListaRetiro.map((row) => ({ row, coincidePor: 'LISTA_RETIRO' as const }))
+    ].filter(({ row }) => {
+      const id = text(value(row, ['cpa_id', 'id'])) ?? JSON.stringify(row);
+      if (vistos.has(id)) return false;
+      vistos.add(id);
+      return true;
+    }).map(({ row, coincidePor }) => ({
+      ...normalize(row, 'AR_AEREO'),
+      // El DATETIME de Falcon no tiene zona: se entrega explícitamente en Perú.
+      fechaAtencion: fechaFalconPeru(value(row, ['cpa_fecha_atencion', 'fecha_atencion'])),
+      coincidePor
+    }));
     return { volante, camposDetectados, registros };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Localiza la ruta técnica que Falcon ya pueda tener entre un retiro aéreo,
+ * la placa y el peso. Solo consulta catálogo: no lee ni altera operaciones.
+ */
+export async function catalogarEnlaceAereoFalcon(): Promise<FalconAerialLinkCatalog> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const [tablas, relaciones, modulos] = await Promise.all([
+      pool.request().query<{ tabla: string; campo: string }>(`
+        WITH tablas_relacionables AS (
+          SELECT table_name
+          FROM information_schema.columns
+          WHERE table_schema = 'dbo'
+          GROUP BY table_name
+          HAVING SUM(CASE WHEN LOWER(column_name) IN ('cpa_id', 'cpa_volante', 'cpa_lista_retiro') THEN 1 ELSE 0 END) > 0
+             AND SUM(CASE WHEN LOWER(column_name) LIKE '%placa%'
+                                OR LOWER(column_name) LIKE '%peso%'
+                                OR LOWER(column_name) LIKE '%lista_retiro%'
+                                OR LOWER(column_name) LIKE '%volante%' THEN 1 ELSE 0 END) > 1
+        )
+        SELECT c.table_name AS tabla, c.column_name AS campo
+        FROM information_schema.columns c
+        INNER JOIN tablas_relacionables t ON t.table_name = c.table_name
+        WHERE c.table_schema = 'dbo'
+        ORDER BY c.table_name, c.ordinal_position;
+      `),
+      pool.request().query<{ tabla_origen: string; campo_origen: string; tabla_destino: string; campo_destino: string }>(`
+        SELECT
+          OBJECT_SCHEMA_NAME(fkc.parent_object_id) + '.' + OBJECT_NAME(fkc.parent_object_id) AS tabla_origen,
+          COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS campo_origen,
+          OBJECT_SCHEMA_NAME(fkc.referenced_object_id) + '.' + OBJECT_NAME(fkc.referenced_object_id) AS tabla_destino,
+          COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS campo_destino
+        FROM sys.foreign_key_columns fkc
+        WHERE OBJECT_NAME(fkc.parent_object_id) = 'citas_programadas_aereo'
+           OR OBJECT_NAME(fkc.referenced_object_id) = 'citas_programadas_aereo'
+        ORDER BY tabla_origen, campo_origen;
+      `),
+      pool.request().query<{ esquema: string; objeto: string; tipo: string }>(`
+        SELECT TOP (40)
+          SCHEMA_NAME(o.schema_id) AS esquema,
+          o.name AS objeto,
+          o.type_desc AS tipo
+        FROM sys.sql_modules m
+        INNER JOIN sys.objects o ON o.object_id = m.object_id
+        WHERE LOWER(m.definition) LIKE '%citas_programadas_aereo%'
+          AND (LOWER(m.definition) LIKE '%placa%'
+            OR LOWER(m.definition) LIKE '%peso%'
+            OR LOWER(m.definition) LIKE '%lista_retiro%')
+        ORDER BY o.type_desc, o.name;
+      `)
+    ]);
+    const agrupadas = new Map<string, string[]>();
+    for (const row of tablas.recordset) {
+      const campos = agrupadas.get(row.tabla) ?? [];
+      campos.push(row.campo);
+      agrupadas.set(row.tabla, campos);
+    }
+    return {
+      tablasConCamposRelacionables: [...agrupadas.entries()].map(([tabla, campos]) => ({ tabla, campos })),
+      relacionesDeclaradas: relaciones.recordset.map((row) => ({ tablaOrigen: row.tabla_origen, campoOrigen: row.campo_origen, tablaDestino: row.tabla_destino, campoDestino: row.campo_destino })),
+      modulosCandidatos: modulos.recordset.map((row) => ({ esquema: row.esquema, objeto: row.objeto, tipo: row.tipo }))
+    };
   } finally {
     await pool.close();
   }
