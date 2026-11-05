@@ -351,8 +351,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           <h1>Dashboard operativo</h1>
           {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
-        <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a>{authEnabled && user && <button className="logout-button" onClick={() => void onLogout()}>Salir · {user.nombre}</button>}<p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
+        <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a><p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
       </header>
+      {authEnabled && user && <button className="logout-button" onClick={() => void onLogout()} aria-label={`Cerrar sesión de ${user.nombre}`} title="Cerrar sesión"><LogoutIcon /><span>Salir</span></button>}
 
       <section className="internal-kpis" aria-label="Resumen general">
         <Kpi label="Citas / A.R." value={totales.agendadas} />
@@ -662,7 +663,7 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
     <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
       <section className="alerts-section">
-        <div className="alerts-heading"><div><p className="brand">DIAGNÓSTICO</p><h3>{alertas.length ? 'Alertas y acciones sugeridas' : 'Operación sin alertas activas'}</h3></div><span className={`alert-count alert-count-${visual}`}>{alertas.length || 'OK'}</span></div>
+        <div className="alerts-heading"><div><p className="brand">DIAGNÓSTICO</p><h3>{alertas.length ? 'Alertas detectadas' : 'Operación sin alertas activas'}</h3></div><span className={`alert-count alert-count-${visual}`}>{alertas.length || 'OK'}</span></div>
         {alertas.length ? <div className="alert-cards">{alertas.map(({ cita, seguimiento: item }) => <AlertCard key={cita.id} cita={cita} item={item} telefono={telefono} />)}</div>
           : <p className="no-alerts">Los hitos disponibles se encuentran dentro de los tiempos de referencia.</p>}
       </section>
@@ -750,6 +751,10 @@ function IncidentNotice({ incidentes }: { incidentes: IncidenteOperativo[] }) {
 
 function TvIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1"/><path d="M8 21h8M12 17v4"/></svg>;
+}
+
+function LogoutIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /></svg>;
 }
 
 type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; despachoDemorado: number; incidencias: number; revisar: number; critical: boolean; warning: boolean };
