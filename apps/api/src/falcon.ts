@@ -28,6 +28,13 @@ export interface FalconPreviewItem {
   negocio: string | null;
 }
 
+/** Campos operativos de un retiro aéreo, para validar su registro manual en Falcon. */
+export interface FalconAerialTrace {
+  volante: string;
+  camposDetectados: string[];
+  registros: FalconPreviewItem[];
+}
+
 export interface FalconPreview {
   enabled: boolean;
   connected: boolean;
@@ -976,4 +983,36 @@ export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritime
       }];
     });
   } finally { await pool.close(); }
+}
+
+/**
+ * Traza acotada de un volante aéreo. Expone únicamente campos ya usados por
+ * la integración para confirmar placa y hora de registro; nunca escribe Falcon.
+ */
+export async function trazarRetiroAereoFalcon(volante: string): Promise<FalconAerialTrace> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const columnsResult = await pool.request().input('tableName', sql.NVarChar, 'citas_programadas_aereo').query<{ column_name: string }>(`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name = @tableName AND table_schema = 'dbo';
+    `);
+    const camposDetectados = columnsResult.recordset.map((row) => row.column_name).sort();
+    const [porVolante, porListaRetiro] = await Promise.all([
+      previewTableByValue(pool, 'citas_programadas_aereo', 'cpa_volante', volante),
+      previewTableByValue(pool, 'citas_programadas_aereo', 'cpa_lista_retiro', volante)
+    ]);
+    const vistos = new Set<string>();
+    const registros = [...porVolante, ...porListaRetiro]
+      .filter((row) => {
+        const id = text(value(row, ['cpa_id', 'id'])) ?? JSON.stringify(row);
+        if (vistos.has(id)) return false;
+        vistos.add(id);
+        return true;
+      })
+      .map((row) => normalize(row, 'AR_AEREO'));
+    return { volante, camposDetectados, registros };
+  } finally {
+    await pool.close();
+  }
 }
