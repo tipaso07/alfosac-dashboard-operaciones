@@ -42,6 +42,12 @@ export interface FalconAerialLinkCatalog {
   modulosCandidatos: Array<{ esquema: string; objeto: string; tipo: string }>;
 }
 
+export interface FalconAerialModuleTrace {
+  modulo: string;
+  referenciasDeclaradas: Array<{ esquema: string | null; objeto: string | null; tipo: string | null }>;
+  fragmentosRelevantes: string[];
+}
+
 export interface FalconPreview {
   enabled: boolean;
   connected: boolean;
@@ -1092,6 +1098,53 @@ export async function catalogarEnlaceAereoFalcon(): Promise<FalconAerialLinkCata
       tablasConCamposRelacionables: [...agrupadas.entries()].map(([tabla, campos]) => ({ tabla, campos })),
       relacionesDeclaradas: relaciones.recordset.map((row) => ({ tablaOrigen: row.tabla_origen, campoOrigen: row.campo_origen, tablaDestino: row.tabla_destino, campoDestino: row.campo_destino })),
       modulosCandidatos: modulos.recordset.map((row) => ({ esquema: row.esquema, objeto: row.objeto, tipo: row.tipo }))
+    };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Muestra solo fragmentos del procedimiento que relaciona el retiro aéreo.
+ * Evita ejecutar el procedimiento o leer sus resultados operativos.
+ */
+export async function trazarModuloEnlaceAereoFalcon(): Promise<FalconAerialModuleTrace> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const [definition, dependencies] = await Promise.all([
+      pool.request().query<{ definition: string | null }>(`
+        SELECT m.definition
+        FROM sys.sql_modules m
+        INNER JOIN sys.objects o ON o.object_id = m.object_id
+        WHERE o.schema_id = SCHEMA_ID('dbo') AND o.name = 'extranet_citas';
+      `),
+      pool.request().query<{ esquema: string | null; objeto: string | null; tipo: string | null }>(`
+        SELECT DISTINCT
+          referenced_schema_name AS esquema,
+          referenced_entity_name AS objeto,
+          referenced_class_desc AS tipo
+        FROM sys.sql_expression_dependencies
+        WHERE referencing_id = OBJECT_ID('dbo.extranet_citas')
+        ORDER BY esquema, objeto;
+      `)
+    ]);
+    const source = definition.recordset[0]?.definition ?? '';
+    const lower = source.toLowerCase();
+    const anchors = ['citas_programadas_aereo', 'placa', 'peso', 'lista_retiro', 'cpa_fecha_atencion'];
+    const seen = new Set<string>();
+    const fragmentosRelevantes = anchors.flatMap((anchor) => {
+      const index = lower.indexOf(anchor);
+      if (index < 0) return [];
+      const fragment = source.slice(Math.max(0, index - 700), Math.min(source.length, index + 1_500)).trim();
+      if (seen.has(fragment)) return [];
+      seen.add(fragment);
+      return [fragment];
+    }).slice(0, 5);
+    return {
+      modulo: 'dbo.extranet_citas',
+      referenciasDeclaradas: dependencies.recordset.map((row) => ({ esquema: row.esquema, objeto: row.objeto, tipo: row.tipo })),
+      fragmentosRelevantes
     };
   } finally {
     await pool.close();

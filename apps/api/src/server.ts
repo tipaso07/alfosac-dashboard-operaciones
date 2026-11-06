@@ -3,7 +3,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
+import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
@@ -492,6 +492,17 @@ app.get('/api/integrations/falcon/aerial-link-catalog', async (_request, respons
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo de enlace aéreo.' });
+  }
+});
+
+app.get('/api/integrations/falcon/aerial-link-module', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Fragmentos técnicos de solo lectura del procedimiento que alimenta la consulta de citas. No ejecuta el procedimiento ni modifica Falcon.',
+      trace: await trazarModuloEnlaceAereoFalcon()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo inspeccionar el procedimiento de citas.' });
   }
 });
 
