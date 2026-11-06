@@ -23,6 +23,8 @@ export interface Operacion {
   fechaGarita: string | null;
   fechaIngresoDespacho: string | null;
   fechaCompletado: string | null;
+  /** Peso declarado de un retiro aéreo; se conserva para validar viajes mixtos. */
+  pesoDeclarado?: number | null;
   fuente: 'DEMO' | 'FALCON' | 'GITS';
 }
 

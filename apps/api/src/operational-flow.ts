@@ -9,6 +9,15 @@ export interface GrupoFlujoOperativo {
   citas: Operacion[];
   movimientos: GitsDailyFlowItem[];
   tipo: TipoGrupoFlujo;
+  aereosAsociados: Array<{
+    volante: string;
+    placa: string;
+    fechaGarita: string;
+    primerPesaje: string | null;
+    segundoPesaje: string | null;
+    pesoDeclarado: number | null;
+    diferenciaMinutos: number;
+  }>;
 }
 
 function volanteNormalizado(value: string | null | undefined) {
@@ -26,6 +35,15 @@ function fechaLima(value: string | null) {
 function keyFecha(value: unknown) {
   if (value instanceof Date) return value.toISOString();
   return typeof value === 'string' ? value : '';
+}
+
+function placaNormalizada(value: string | null | undefined) {
+  const placa = value?.trim().replace(/[-\s]/g, '').toUpperCase() ?? '';
+  return placa && placa !== '-' ? placa : null;
+}
+
+function diferenciaMinutos(a: string, b: string) {
+  return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 60_000;
 }
 
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
@@ -53,11 +71,37 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
       modalidad: modalidades.length === 1 ? modalidades[0] : null,
       citas: citasDelVolante,
       movimientos: movimientosDelVolante,
+      aereosAsociados: [],
       tipo: citasDelVolante.length === 0 ? 'SIN_CITA'
         : movimientosDelVolante.length === 0 ? 'SIN_MOVIMIENTO'
           : citasDelVolante.length === 1 && movimientosDelVolante.length === 1 ? 'UNICO' : 'MULTIPLE'
     };
   });
+  const maritimas = groups.filter((group) => group.modalidad === 'FCL' || group.modalidad === 'LCL');
+  const aereas = citas.filter((cita) => cita.modalidad === 'AEREO' && placaNormalizada(cita.unidad) && cita.fechaGarita);
+  for (const aereo of aereas) {
+    const plate = placaNormalizada(aereo.unidad);
+    if (!plate || !aereo.fechaGarita) continue;
+    const candidatas = maritimas.filter((group) => group.citas.some((maritima) => {
+      const placa = placaNormalizada(maritima.unidad);
+      return placa === plate
+        && Boolean(maritima.fechaGarita)
+        && fechaLima(maritima.fechaGarita) === fechaLima(aereo.fechaGarita)
+        && diferenciaMinutos(maritima.fechaGarita!, aereo.fechaGarita!) <= 10;
+    }));
+    // Se enlaza solo si hay una operación marítima inequívoca en la ventana aprobada por ATC.
+    if (candidatas.length !== 1) continue;
+    const destinataria = candidatas[0];
+    destinataria.aereosAsociados.push({
+      volante: aereo.volante,
+      placa: aereo.unidad,
+      fechaGarita: aereo.fechaGarita,
+      primerPesaje: aereo.fechaIngresoDespacho,
+      segundoPesaje: aereo.fechaCompletado,
+      pesoDeclarado: aereo.pesoDeclarado ?? null,
+      diferenciaMinutos: diferenciaMinutos(destinataria.citas.find((cita) => placaNormalizada(cita.unidad) === plate && cita.fechaGarita)?.fechaGarita ?? aereo.fechaGarita, aereo.fechaGarita)
+    });
+  }
   return groups.sort((a, b) =>
     keyFecha(b.movimientos.at(-1)?.fechaGarita ?? b.citas.at(-1)?.fechaCita)
       .localeCompare(keyFecha(a.movimientos.at(-1)?.fechaGarita ?? a.citas.at(-1)?.fechaCita))

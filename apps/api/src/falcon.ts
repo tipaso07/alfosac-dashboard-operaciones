@@ -160,6 +160,8 @@ export interface FalconMaritimeOperation {
   fechaCita: string | null;
   fechaGarita: string | null;
   fechaIngresoDespacho: string | null;
+  fechaCompletado?: string | null;
+  pesoDeclarado?: number | null;
 }
 
 export interface FalconHourAppointment {
@@ -989,11 +991,33 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
 export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritimeOperation[]> {
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  const dta = quoteIdentifier(process.env.FALCON_DTA_DB?.trim() || 'FALCON_DTA_ALFOSAC');
   try {
-    const result = await pool.request().input('limit', sql.Int, limit).query<SourceRow>(`
-      SELECT TOP (@limit) cpa_id, cpa_volante, cpa_lista_retiro, cpa_flag_cita, cpa_fecha_atencion
-      FROM dbo.citas_programadas_aereo
-      ORDER BY cpa_id DESC;
+    const date = fechaReporte();
+    const dayStart = date ? 'CONVERT(datetime, @reportDate)' : 'CONVERT(datetime, CONVERT(date, GETDATE()))';
+    const request = pool.request().input('limit', sql.Int, limit);
+    if (date) request.input('reportDate', sql.Date, date);
+    const result = await request.query<SourceRow>(`
+      SELECT TOP (@limit)
+        cpa.cpa_id, cpa.cpa_volante, cpa.cpa_lista_retiro, cpa.cpa_flag_cita, cpa.cpa_fecha_atencion,
+        COALESCE(NULLIF(LTRIM(RTRIM(lr.unidad)), ''), pesaje.placa_balanza) AS placa,
+        pesaje.primer_pesaje, pesaje.segundo_pesaje, carga.peso_declarado
+      FROM dbo.citas_programadas_aereo cpa
+      LEFT JOIN ${dta}.dbo.listas_retiros_guias_eer lr
+        ON lr.id_lista = cpa.cpa_lista_retiro
+      OUTER APPLY (
+        SELECT MIN(tb.fecha_reg1) AS primer_pesaje, MAX(tb.fecha_reg2) AS segundo_pesaje, MAX(tb.placa) AS placa_balanza
+        FROM ${dta}.dbo.tickets_balanza tb
+        WHERE tb.documento = lr.id_lista AND tb.tipo = 2 AND tb.estado IN (29, 60)
+      ) pesaje
+      OUTER APPLY (
+        SELECT SUM(CONVERT(float, h.peso_recib)) AS peso_declarado
+        FROM ${dta}.dbo.hijos h
+        WHERE h.lista_retiros_eer = lr.id_lista
+      ) carga
+      WHERE cpa.cpa_fecha_atencion >= ${dayStart}
+        AND cpa.cpa_fecha_atencion < DATEADD(day, 1, ${dayStart})
+      ORDER BY cpa.cpa_fecha_atencion DESC, cpa.cpa_id DESC;
     `);
     return result.recordset.flatMap((row) => {
       const id = text(value(row, ['cpa_id']));
@@ -1001,9 +1025,12 @@ export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritime
       return [{
         id: `AR-${id}`, modalidad: 'AEREO',
         volante: text(value(row, ['cpa_volante', 'cpa_lista_retiro'])) ?? id,
-        unidad: '-', contenedor: null, fechaCita: null,
-        fechaGarita: null,
-        fechaIngresoDespacho: fechaFalconPeru(value(row, ['cpa_fecha_atencion']))
+        unidad: text(value(row, ['placa'])) ?? '-', contenedor: null, fechaCita: null,
+        // Aéreo no usa cita: este hito manual de Falcon es su registro en garita.
+        fechaGarita: fechaFalconPeru(value(row, ['cpa_fecha_atencion'])),
+        fechaIngresoDespacho: fechaFalconPeru(value(row, ['primer_pesaje'])),
+        fechaCompletado: fechaFalconPeru(value(row, ['segundo_pesaje'])),
+        pesoDeclarado: value(row, ['peso_declarado']) == null ? null : Number(value(row, ['peso_declarado']))
       }];
     });
   } finally { await pool.close(); }

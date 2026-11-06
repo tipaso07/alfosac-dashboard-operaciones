@@ -29,7 +29,8 @@ type Resumen = {
 };
 
 type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null };
-type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO' };
+type AereoAsociado = { volante: string; placa: string; fechaGarita: string; primerPesaje: string | null; segundoPesaje: string | null; pesoDeclarado: number | null; diferenciaMinutos: number };
+type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO'; aereosAsociados?: AereoAsociado[] };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
 type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
@@ -675,6 +676,8 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
   const alertas = estados.filter((item) => item.seguimiento.estado !== 'PROGRAMADA');
   const visual = groupVisualState(group, seguimiento);
   const telefono = group.citas.map((cita) => cita.telefonoContacto).find(Boolean) ?? null;
+  const aereos = group.aereosAsociados ?? [];
+  const pesoAereo = pesoAereoAsociado(group);
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
@@ -685,8 +688,9 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
       </section>
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
+      {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso sin dato' : `${formatWeight(aereo.pesoDeclarado)} declarado`}</strong><small>Primer pesaje: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
       <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
-      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería declarada: {formatWeight(movement.pesoMercaderiaDeclarado)}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
+      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight((movement.pesoMercaderiaDeclarado ?? 0) + pesoAereo)}</>}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
 }
@@ -853,11 +857,16 @@ function esProximo(estado: EstadoSeguimiento) {
   return ['CITA_POR_VENCER', 'EN_GARITA', 'EN_BALANZA'].includes(estado);
 }
 
-function porcentajeDiferenciaPeso(movimiento: MovimientoFisico) {
+function pesoAereoAsociado(group: GrupoFlujo) {
+  return (group.aereosAsociados ?? []).reduce((total, aereo) => total + (aereo.pesoDeclarado ?? 0), 0);
+}
+
+function porcentajeDiferenciaPeso(movimiento: MovimientoFisico, group: GrupoFlujo) {
   if (!tieneSegundoPesajeValido(movimiento)) return null;
   const neto = movimiento.pesoNetoBalanza ?? (movimiento.pesoInicial != null && movimiento.pesoFinal != null
     ? Math.abs(movimiento.pesoFinal - movimiento.pesoInicial) : null);
-  const declarado = movimiento.pesoMercaderiaDeclarado;
+  const declaradoMaritimo = movimiento.pesoMercaderiaDeclarado;
+  const declarado = declaradoMaritimo == null ? null : declaradoMaritimo + pesoAereoAsociado(group);
   if (neto == null || declarado == null || declarado <= 0) return null;
   return Math.abs(neto - declarado) / declarado;
 }
@@ -916,7 +925,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'PROGRAMADA';
       /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
-      } else if (cita.modalidad === 'LCL' && movimientoUnico && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPeso(movimientoUnico)) != null && porcentajePeso > toleranciaPeso) {
+      } else if (cita.modalidad === 'LCL' && movimientoUnico && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPeso(movimientoUnico, grupo)) != null && porcentajePeso > toleranciaPeso) {
         fechaReferencia = segundoPesaje;
         minutosRetraso = minutosEntre(now, segundoPesaje);
         estado = 'PESO_OBSERVADO';

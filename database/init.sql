@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS operaciones (
   fecha_garita TIMESTAMPTZ,
   fecha_ingreso_despacho TIMESTAMPTZ,
   fecha_completado TIMESTAMPTZ,
+  peso_declarado NUMERIC(18,3),
   actualizado_origen_en TIMESTAMPTZ,
   recibido_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (fuente_origen, identificador_origen)

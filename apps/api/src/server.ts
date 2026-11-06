@@ -6,7 +6,7 @@ import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type Periodo
 import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
-import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
+import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica } from './availability-store.js';
 import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, crearSesion, crearUsuario, leerSesion, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
 
@@ -156,7 +156,8 @@ async function importarFalcon() {
   const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
     id: item.id, modalidad: item.modalidad, estado: item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
     volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
-    fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
+    fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
+    pesoDeclarado: item.pesoDeclarado ?? null, fuente: 'FALCON' as const
   });
   await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
   return { maritime: maritimas.length, aereo: aereas.length, gitsEnrichment: process.env.GITS_ENRICH_FALCON_ENABLED === 'true' };
@@ -829,7 +830,8 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
     const operations = source.map((item) => ({
       id: item.id, modalidad: item.modalidad, estado: item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
-      fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: null, fuente: 'FALCON' as const
+      fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
+      pesoDeclarado: item.pesoDeclarado ?? null, fuente: 'FALCON' as const
     }));
     await guardarOperaciones(operations);
     response.json({ imported: true, count: operations.length, message: 'Importación marítima completada en la base propia del dashboard.' });
@@ -854,7 +856,7 @@ app.post('/api/integrations/falcon/import', async (_request, response) => {
 });
 
 async function iniciarServidor() {
-  await Promise.all([asegurarEsquemaDisponibilidad(), asegurarEsquemaAutenticacion()]);
+  await Promise.all([asegurarEsquemaDisponibilidad(), asegurarEsquemaAutenticacion(), asegurarEsquemaOperaciones()]);
   app.listen(port, () => {
     console.log(`Dashboard API disponible en el puerto ${port}`);
     const configuredInterval = Number(process.env.FALCON_SYNC_INTERVAL_SECONDS ?? 300);
