@@ -1195,7 +1195,9 @@ export async function trazarOperacionAereaFalcon(volante: string): Promise<Falco
           AND tb.estado IN (29, 60)
       ) pesaje
       OUTER APPLY (
-        SELECT SUM(TRY_CONVERT(decimal(18, 3), h.peso_recib)) AS peso_declarado
+        -- Falcon usa una versión antigua de SQL Server: FLOAT es compatible
+        -- y peso_recib ya es el campo numérico expuesto por Extranet.
+        SELECT SUM(CONVERT(float, h.peso_recib)) AS peso_declarado
         FROM ${dta}.dbo.hijos h
         WHERE h.lista_retiros_eer = lr.id_lista
       ) carga
