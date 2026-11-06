@@ -48,6 +48,17 @@ export interface FalconAerialModuleTrace {
   fragmentosRelevantes: string[];
 }
 
+/** Hitos aéreos que Falcon ya expone al procedimiento de Extranet. */
+export interface FalconAerialOperationalTrace {
+  volante: string;
+  listaRetiro: string | null;
+  placa: string | null;
+  fechaGarita: string | null;
+  primerPesaje: string | null;
+  segundoPesaje: string | null;
+  pesoDeclarado: number | null;
+}
+
 export interface FalconPreview {
   enabled: boolean;
   connected: boolean;
@@ -1146,6 +1157,60 @@ export async function trazarModuloEnlaceAereoFalcon(): Promise<FalconAerialModul
       referenciasDeclaradas: dependencies.recordset.map((row) => ({ esquema: row.esquema, objeto: row.objeto, tipo: row.tipo })),
       fragmentosRelevantes
     };
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
+ * Consulta directa y acotada del mismo recorrido usado por dbo.extranet_citas
+ * para un volante aéreo. Solo SELECT: sirve para validar el caso con ATC antes
+ * de incorporarlo a la asociación automática.
+ */
+export async function trazarOperacionAereaFalcon(volante: string): Promise<FalconAerialOperationalTrace[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  const dta = quoteIdentifier(process.env.FALCON_DTA_DB?.trim() || 'FALCON_DTA_ALFOSAC');
+  try {
+    const result = await pool.request().input('volante', sql.NVarChar, volante).query<SourceRow>(`
+      SELECT
+        cpa.cpa_volante AS volante,
+        cpa.cpa_lista_retiro AS lista_retiro,
+        COALESCE(NULLIF(LTRIM(RTRIM(lr.unidad)), ''), pesaje.placa_balanza) AS placa,
+        cpa.cpa_fecha_atencion AS fecha_garita,
+        pesaje.primer_pesaje,
+        pesaje.segundo_pesaje,
+        carga.peso_declarado
+      FROM dbo.citas_programadas_aereo cpa
+      LEFT JOIN ${dta}.dbo.listas_retiros_guias_eer lr
+        ON lr.id_lista = cpa.cpa_lista_retiro
+      OUTER APPLY (
+        SELECT
+          MIN(tb.fecha_reg1) AS primer_pesaje,
+          MAX(tb.fecha_reg2) AS segundo_pesaje,
+          MAX(tb.placa) AS placa_balanza
+        FROM ${dta}.dbo.tickets_balanza tb
+        WHERE tb.documento = lr.id_lista
+          AND tb.tipo = 2
+          AND tb.estado IN (29, 60)
+      ) pesaje
+      OUTER APPLY (
+        SELECT SUM(TRY_CONVERT(decimal(18, 3), h.peso_recib)) AS peso_declarado
+        FROM ${dta}.dbo.hijos h
+        WHERE h.lista_retiros_eer = lr.id_lista
+      ) carga
+      WHERE cpa.cpa_volante = @volante
+      ORDER BY cpa.cpa_fecha_atencion DESC;
+    `);
+    return result.recordset.map((row) => ({
+      volante: text(value(row, ['volante'])) ?? volante,
+      listaRetiro: text(value(row, ['lista_retiro'])),
+      placa: text(value(row, ['placa'])),
+      fechaGarita: fechaFalconPeru(value(row, ['fecha_garita'])),
+      primerPesaje: fechaFalconPeru(value(row, ['primer_pesaje'])),
+      segundoPesaje: fechaFalconPeru(value(row, ['segundo_pesaje'])),
+      pesoDeclarado: value(row, ['peso_declarado']) == null ? null : Number(value(row, ['peso_declarado']))
+    }));
   } finally {
     await pool.close();
   }

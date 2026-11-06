@@ -3,7 +3,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
+import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
@@ -503,6 +503,22 @@ app.get('/api/integrations/falcon/aerial-link-module', async (_request, response
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo inspeccionar el procedimiento de citas.' });
+  }
+});
+
+app.get('/api/integrations/falcon/aerial-operational-trace', async (request, response) => {
+  const volante = String(request.query.volante ?? '').trim();
+  if (!/^\d{1,30}$/.test(volante)) {
+    response.status(400).json({ message: 'Indica un volante aéreo numérico: ?volante=83233.' });
+    return;
+  }
+  try {
+    response.json({
+      message: 'Hitos aéreos obtenidos por la misma relación de Falcon usada en Extranet. Consulta de solo lectura; no modifica información.',
+      items: await trazarOperacionAereaFalcon(volante)
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo trazar la operación aérea.' });
   }
 });
 
