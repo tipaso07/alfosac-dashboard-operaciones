@@ -82,16 +82,23 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
   for (const aereo of aereas) {
     const plate = placaNormalizada(aereo.unidad);
     if (!plate || !aereo.fechaGarita) continue;
-    const candidatas = maritimas.filter((group) => group.citas.some((maritima) => {
-      const placa = placaNormalizada(maritima.unidad);
-      return placa === plate
-        && Boolean(maritima.fechaGarita)
+    const candidatas = maritimas.filter((group) => {
+      // Falcon puede no tener placa en la cita marítima; GITS la confirma
+      // cuando el vínculo volante-movimiento ya es único.
+      const mismaPlaca = group.citas.some((maritima) => placaNormalizada(maritima.unidad) === plate)
+        || group.movimientos.some((movimiento) => placaNormalizada(movimiento.placa) === plate);
+      const garitaCoincidente = group.citas.some((maritima) => Boolean(maritima.fechaGarita)
         && fechaLima(maritima.fechaGarita) === fechaLima(aereo.fechaGarita)
-        && diferenciaMinutos(maritima.fechaGarita!, aereo.fechaGarita!) <= 10;
-    }));
+        && diferenciaMinutos(maritima.fechaGarita!, aereo.fechaGarita!) <= 10);
+      return mismaPlaca && garitaCoincidente;
+    });
     // Se enlaza solo si hay una operación marítima inequívoca en la ventana aprobada por ATC.
     if (candidatas.length !== 1) continue;
     const destinataria = candidatas[0];
+    const registrosGarita = destinataria.citas
+      .map((cita) => cita.fechaGarita)
+      .filter((fecha): fecha is string => Boolean(fecha) && fechaLima(fecha) === fechaLima(aereo.fechaGarita))
+      .sort((a, b) => diferenciaMinutos(a, aereo.fechaGarita!) - diferenciaMinutos(b, aereo.fechaGarita!));
     destinataria.aereosAsociados.push({
       volante: aereo.volante,
       placa: aereo.unidad,
@@ -99,7 +106,7 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
       primerPesaje: aereo.fechaIngresoDespacho,
       segundoPesaje: aereo.fechaCompletado,
       pesoDeclarado: aereo.pesoDeclarado ?? null,
-      diferenciaMinutos: diferenciaMinutos(destinataria.citas.find((cita) => placaNormalizada(cita.unidad) === plate && cita.fechaGarita)?.fechaGarita ?? aereo.fechaGarita, aereo.fechaGarita)
+      diferenciaMinutos: diferenciaMinutos(registrosGarita[0] ?? aereo.fechaGarita, aereo.fechaGarita)
     });
   }
   return groups.sort((a, b) =>

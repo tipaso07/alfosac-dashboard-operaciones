@@ -50,3 +50,15 @@ test('no asocia el Aéreo cuando supera diez minutos de diferencia en garita', (
   const group = crearFlujoOperativo([maritima, aereo], []).find((item) => item.volante === '166180');
   assert.equal(group?.aereosAsociados.length, 0);
 });
+
+test('usa la placa del movimiento GITS cuando Falcon no la tiene en la cita marítima', () => {
+  const maritima: Operacion = { ...cita('mar'), volante: '166180', unidad: '-', fechaGarita: '2026-11-05T08:05:00-05:00' };
+  const aereo: Operacion = {
+    id: 'AR-24958', modalidad: 'AEREO', estado: 'EN_GARITA', volante: '83233', unidad: 'CHJ827',
+    fechaCita: null, fechaGarita: '2026-11-05T08:04:00-05:00', fechaIngresoDespacho: null,
+    fechaCompletado: null, pesoDeclarado: 142.5, fuente: 'FALCON'
+  };
+  const gits = { ...movimiento('a'), volante: '000000000166180', placa: 'CHJ827', fechaGarita: '2026-11-05T08:12:00-05:00' };
+  const group = crearFlujoOperativo([maritima, aereo], [gits]).find((item) => item.volante === '166180');
+  assert.equal(group?.aereosAsociados.length, 1);
+});
