@@ -421,20 +421,18 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             </thead>
             <tbody>
               {citasOrdenadas.length ? citasOrdenadas.map(({ group, cita }) => {
-                /** No se asigna un pesaje a una cita cuando el vínculo es múltiple. */
-                const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
-                const placa = movimiento?.placa ?? cita.unidad ?? '—';
-                const visual = citaVisualState(cita, movimiento, seguimientoPorCita.get(cita.id));
+                const movimientos = movimientosConfirmados(group);
+                const esMultiple = esAtencionMultiple(group);
+                const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
+                const placa = esMultiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
+                const visual = esMultiple ? groupVisualState(group, seguimientoPorCita) : citaVisualState(cita, movimiento, seguimientoPorCita.get(cita.id));
                 return <tr key={`${group.volante}-${cita.id}`}>
                   <td>{cita.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
                   <td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
-                  <DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} />
-                  <td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td>
-                  <td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td>
-                  <DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" />
+                  {esMultiple ? <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></> : <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>}
                   <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
@@ -457,16 +455,25 @@ type VisualState = 'ok' | 'warning' | 'alert' | 'unknown';
 function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, SeguimientoLlegada>): VisualState {
   const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
   if (estados.some((item) => esCritico(item.estado))) return 'alert';
-  const movimiento = group.movimientos.at(-1);
-  const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
-  const tonosEspera = group.citas.map((cita) => durationTone(durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null), 'ESPERA', cita));
-  const tonoAtencion = durationTone(atencion, 'ATENCION');
-  if (tonosEspera.includes('alert') || tonoAtencion === 'alert') return 'alert';
-  const amarillosPorTiempo = tonosEspera.filter((tono) => tono === 'warning').length + Number(tonoAtencion === 'warning');
+  const movimientos = movimientosConfirmados(group);
+  const tonosEspera = group.citas.flatMap((cita) => movimientos.map((movimiento) => durationTone(durationSeconds(cita.fechaGarita, movimiento.fechaGarita), 'ESPERA', cita)));
+  const tonosAtencion = movimientos.map((movimiento) => durationTone(durationSeconds(movimiento.fechaGarita, tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null), 'ATENCION'));
+  if (tonosEspera.includes('alert') || tonosAtencion.includes('alert')) return 'alert';
+  const amarillosPorTiempo = tonosEspera.filter((tono) => tono === 'warning').length + tonosAtencion.filter((tono) => tono === 'warning').length;
   const amarillosActivos = estados.filter((item) => esProximo(item.estado)).length;
   if (amarillosPorTiempo + amarillosActivos >= 2) return 'warning';
-  if (tonosEspera.some((tono) => tono !== null) || atencion !== null || amarillosActivos > 0) return 'ok';
+  if (tonosEspera.some((tono) => tono !== null) || tonosAtencion.some((tono) => tono !== null) || amarillosActivos > 0) return 'ok';
   return 'unknown';
+}
+
+/** Una cita con varios movimientos del mismo volante representa un retiro fraccionado confirmado por ATC. */
+function esAtencionMultiple(group: GrupoFlujo) {
+  return group.citas.length === 1 && group.movimientos.length > 1;
+}
+
+/** Solo se atribuyen pesajes cuando el vínculo es único o es un retiro fraccionado válido. */
+function movimientosConfirmados(group: GrupoFlujo) {
+  return group.tipo === 'UNICO' || esAtencionMultiple(group) ? group.movimientos : [];
 }
 
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
@@ -689,6 +696,7 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
       </section>
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
+      {esAtencionMultiple(group) && <p className="multiple-attention-note"><strong>Atención múltiple confirmada</strong> · {group.movimientos.length} unidades retiraron el mismo volante. Los tiempos se evalúan por placa y los pesos se consolidan.</p>}
       {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso sin dato' : `${formatWeight(aereo.pesoDeclarado)} declarado`}</strong><small>Primer pesaje: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
       <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
       {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight(pesoNumerico(movement.pesoMercaderiaDeclarado) + pesoAereo)}</>}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
@@ -740,25 +748,28 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
     });
   });
 
-  const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+  const movimientos = movimientosConfirmados(group);
   const cita = group.citas[0];
-  if (!movimiento || !cita) return alertas;
+  if (!movimientos.length || !cita) return alertas;
 
-  const espera = durationSeconds(cita.fechaGarita, movimiento.fechaGarita);
-  const tonoEspera = durationTone(espera, 'ESPERA', cita);
-  if (espera !== null && (tonoEspera === 'warning' || tonoEspera === 'alert')) {
-    agregar({ key: `espera-${cita.id}`, tone: tonoEspera, level: tonoEspera === 'alert' ? 'ROJO' : 'NARANJA', title: 'Demora de garita a primer pesaje', cita, fechaReferencia: cita.fechaGarita!, duracion: formatDuration(espera) });
-  }
+  movimientos.forEach((movimiento) => {
+    const espera = durationSeconds(cita.fechaGarita, movimiento.fechaGarita);
+    const tonoEspera = durationTone(espera, 'ESPERA', cita);
+    if (espera !== null && (tonoEspera === 'warning' || tonoEspera === 'alert')) {
+      agregar({ key: `espera-${cita.id}-${movimiento.movimiento}`, tone: tonoEspera, level: tonoEspera === 'alert' ? 'ROJO' : 'NARANJA', title: `Demora de garita a primer pesaje${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: cita.fechaGarita!, duracion: formatDuration(espera) });
+    }
 
-  const atencion = durationSeconds(movimiento.fechaGarita, tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
-  const tonoAtencion = durationTone(atencion, 'ATENCION');
-  if (atencion !== null && (tonoAtencion === 'warning' || tonoAtencion === 'alert')) {
-    agregar({ key: `atencion-${cita.id}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'ROJO' : 'NARANJA', title: 'Demora en atención operativa', cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
-  }
+    const atencion = durationSeconds(movimiento.fechaGarita, tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
+    const tonoAtencion = durationTone(atencion, 'ATENCION');
+    if (atencion !== null && (tonoAtencion === 'warning' || tonoAtencion === 'alert')) {
+      agregar({ key: `atencion-${cita.id}-${movimiento.movimiento}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'ROJO' : 'NARANJA', title: `Demora en atención operativa${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
+    }
+  });
 
-  const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPeso(movimiento, group) : null;
+  const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
   if (porcentajePeso != null && porcentajePeso > toleranciaPeso) {
-    agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', cita, fechaReferencia: movimiento.fechaSalidaBalanza ?? movimiento.fechaGarita!, porcentajePeso });
+    const ultimoMovimiento = movimientos.at(-1)!;
+    agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', cita, fechaReferencia: ultimoMovimiento.fechaSalidaBalanza ?? ultimoMovimiento.fechaGarita!, porcentajePeso });
   }
   return alertas;
 }
@@ -781,12 +792,12 @@ function alertDetail(item: SeguimientoLlegada) {
 function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; reportDate: string | null; onClose: () => void }) {
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
   const filas = grupos.flatMap((group) => {
-    const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+    const movimientos = movimientosConfirmados(group);
     return group.citas
       .filter((cita) => cita.fechaCita
         && (!reportDate || fechaLima(cita.fechaCita) === reportDate)
         && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
-      .map((cita) => {
+      .flatMap((cita) => (movimientos.length ? movimientos : [undefined]).map((movimiento) => {
         const estado = seguimientoPorCita.get(cita.id);
         const esRojo = Boolean(estado && esCritico(estado.estado));
         const esAmarillo = Boolean(estado && esProximo(estado.estado));
@@ -795,8 +806,10 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta, tono: esRojo ? 'alert' : esAmarillo ? 'warning' : movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
-      });
+        const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
+        const tonoTiempo = durationTone(atencion, 'ATENCION');
+        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+      }));
   });
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="hour-inspection-modal" role="dialog" aria-modal="true" aria-label={`Inspección de ${hora}`} onMouseDown={(event) => event.stopPropagation()}>
@@ -806,7 +819,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         <tbody>{filas.length ? filas.map(({ cita, movimiento, etiqueta, tono }) => {
           const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
           const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
-          return <tr key={cita.id}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+          return <tr key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
         }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
       <footer className="hour-inspection-footer"><button className="clear-filters" onClick={onClose}>Cerrar inspección</button></footer>
@@ -871,7 +884,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
   };
   if (seguimiento.length > 0) {
     grupos.forEach((group) => {
-      const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+      const movimientos = movimientosConfirmados(group);
       group.citas.forEach((cita) => {
       const seguimientoCita = seguimientoPorCita.get(cita.id);
       const estado = seguimientoCita?.estado;
@@ -880,8 +893,10 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       const row = add(cita.fechaCita, 'citas', critical, warning);
       if (!row) return;
       if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
-      if (movimiento?.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
-      if (movimiento && tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
+      movimientos.forEach((movimiento) => {
+        if (movimiento.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
+        if (tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
+      });
       if (estado === 'VINCULO_PENDIENTE') row.revisar += 1;
       if (estado === 'PESO_OBSERVADO') row.revisar += 1;
       if (estado === 'INCIDENCIA_OPERATIVA') row.incidencias += 1;
@@ -893,9 +908,10 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       const row = add(cita.fechaCita, 'citas', critical);
       if (!row) return;
       if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
-      const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
-      if (movimiento?.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
-      if (movimiento && tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
+      movimientosConfirmados(group).forEach((movimiento) => {
+        if (movimiento.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
+        if (tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
+      });
     }));
   }
   return [...data.values()].sort((a, b) => a.hora.localeCompare(b.hora));
@@ -919,13 +935,21 @@ function pesoAereoAsociado(group: GrupoFlujo) {
   return (group.aereosAsociados ?? []).reduce((total, aereo) => total + pesoNumerico(aereo.pesoDeclarado), 0);
 }
 
-function porcentajeDiferenciaPeso(movimiento: MovimientoFisico, group: GrupoFlujo) {
-  if (!tieneSegundoPesajeValido(movimiento)) return null;
+function pesoNetoMovimiento(movimiento: MovimientoFisico) {
   const netoDirecto = pesoNumericoOpcional(movimiento.pesoNetoBalanza);
   const inicial = pesoNumericoOpcional(movimiento.pesoInicial);
   const final = pesoNumericoOpcional(movimiento.pesoFinal);
-  const neto = netoDirecto ?? (inicial != null && final != null ? Math.abs(final - inicial) : null);
-  const declaradoMaritimo = pesoNumericoOpcional(movimiento.pesoMercaderiaDeclarado);
+  return netoDirecto ?? (inicial != null && final != null ? Math.abs(final - inicial) : null);
+}
+
+/** En retiro múltiple se suman los netos de todas las unidades, pero el peso declarado del volante se toma una sola vez. */
+function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
+  const movimientos = movimientosConfirmados(group);
+  if (!movimientos.length || movimientos.some((movimiento) => !tieneSegundoPesajeValido(movimiento))) return null;
+  const netos = movimientos.map(pesoNetoMovimiento);
+  if (netos.some((neto) => neto == null)) return null;
+  const neto = netos.reduce<number>((total, item) => total + (item ?? 0), 0);
+  const declaradoMaritimo = movimientos.map((movimiento) => pesoNumericoOpcional(movimiento.pesoMercaderiaDeclarado)).find((peso): peso is number => peso != null) ?? null;
   const declarado = declaradoMaritimo == null ? null : declaradoMaritimo + pesoAereoAsociado(group);
   if (neto == null || declarado == null || declarado <= 0) return null;
   return Math.abs(neto - declarado) / declarado;
@@ -959,16 +983,18 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
   return grupos.flatMap((grupo) => grupo.citas
     .filter((cita) => cita.modalidad !== 'AEREO' && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate)
     .map((cita) => {
-      const movimientoUnico = grupo.tipo === 'UNICO' ? grupo.movimientos[0] : undefined;
+      const movimientos = movimientosConfirmados(grupo);
+      const movimientoPrincipal = movimientos[0];
       const hayMovimientoHoy = grupo.movimientos.some((movimiento) => movimiento.fechaGarita && fechaLima(movimiento.fechaGarita) === reportDate);
-      const primerPesaje = movimientoUnico?.fechaGarita && fechaLima(movimientoUnico.fechaGarita) === reportDate ? movimientoUnico.fechaGarita : null;
-      const segundoPesaje = movimientoUnico && tieneSegundoPesajeValido(movimientoUnico) && fechaLima(movimientoUnico.fechaSalidaBalanza!) === reportDate ? movimientoUnico.fechaSalidaBalanza : null;
+      const primerPesaje = movimientoPrincipal?.fechaGarita && fechaLima(movimientoPrincipal.fechaGarita) === reportDate ? movimientoPrincipal.fechaGarita : null;
+      const todosConSalida = movimientos.length > 0 && movimientos.every((movimiento) => tieneSegundoPesajeValido(movimiento) && fechaLima(movimiento.fechaSalidaBalanza!) === reportDate);
+      const segundoPesaje = todosConSalida ? movimientos.at(-1)?.fechaSalidaBalanza ?? null : null;
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
       let minutosRetraso = 0;
       let porcentajePeso: number | null | undefined;
 
-      if (grupo.tipo !== 'UNICO' && hayMovimientoHoy) {
+      if (!movimientos.length && hayMovimientoHoy) {
         estado = 'VINCULO_PENDIENTE';
       } else if (!cita.fechaGarita) {
         const inicioPorVencer = new Date(new Date(cita.fechaCita!).getTime() + minutosCitaPorVencer * 60_000).toISOString();
@@ -995,7 +1021,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'PROGRAMADA';
       /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
-      } else if (cita.modalidad === 'LCL' && movimientoUnico && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPeso(movimientoUnico, grupo)) != null && porcentajePeso > toleranciaPeso) {
+      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso) {
         fechaReferencia = segundoPesaje;
         minutosRetraso = minutosEntre(now, segundoPesaje);
         estado = 'PESO_OBSERVADO';
@@ -1004,7 +1030,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       if (modalidadesEnIncidencia.has(cita.modalidad) && esProximo(estado)) estado = 'INCIDENCIA_OPERATIVA';
       return {
         id: cita.id, volante: cita.volante, modalidad: cita.modalidad, fechaCita: cita.fechaCita!,
-        placa: movimientoUnico?.placa ?? grupo.movimientos.find((movimiento) => movimiento.fechaGarita)?.placa ?? cita.unidad ?? null,
+        placa: movimientoPrincipal?.placa ?? grupo.movimientos.find((movimiento) => movimiento.fechaGarita)?.placa ?? cita.unidad ?? null,
         estado, minutosRetraso, fechaReferencia, porcentajePeso
       };
     }));

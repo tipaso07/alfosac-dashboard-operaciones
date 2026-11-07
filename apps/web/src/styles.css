@@ -197,6 +197,7 @@ td:first-child { font-weight: 700; }
 .alert-citation { display: block; margin-top: 12px; color: #60728a; }
 .no-alerts { margin: 0; padding: 15px; background: #effaf2; color: #28633b; font-weight: 700; }
 .flow-heading { margin-top: 26px !important; }
+.multiple-attention-note { margin: 14px 0 0; padding: 12px 14px; border-left: 4px solid #329AD6; background: #edf7fc; color: #173b63; }
 .timeline { list-style: none; padding: 0; margin: 0; }
 .timeline li { display: flex; justify-content: space-between; gap: 20px; padding: 14px 0 14px 18px; border-bottom: 1px solid #329AD6; position: relative; }
 .timeline li::before { content: ''; position: absolute; left: 0; top: 20px; width: 8px; height: 8px; border: 2px solid #329AD6; border-radius: 50%; background: #ffffff; }
