@@ -756,33 +756,33 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
     const espera = durationSeconds(cita.fechaGarita, movimiento.fechaGarita);
     const tonoEspera = durationTone(espera, 'ESPERA', cita);
     if (espera !== null && (tonoEspera === 'warning' || tonoEspera === 'alert')) {
-      agregar({ key: `espera-${cita.id}-${movimiento.movimiento}`, tone: tonoEspera, level: tonoEspera === 'alert' ? 'ROJO' : 'NARANJA', title: `Demora de garita a primer pesaje${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: cita.fechaGarita!, duracion: formatDuration(espera) });
+      agregar({ key: `espera-${cita.id}-${movimiento.movimiento}`, tone: tonoEspera, level: tonoEspera === 'alert' ? 'CRÍTICA' : 'SEGUIMIENTO', title: `Demora de garita a primer pesaje${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: cita.fechaGarita!, duracion: formatDuration(espera) });
     }
 
     const atencion = durationSeconds(movimiento.fechaGarita, tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
     const tonoAtencion = durationTone(atencion, 'ATENCION');
     if (atencion !== null && (tonoAtencion === 'warning' || tonoAtencion === 'alert')) {
-      agregar({ key: `atencion-${cita.id}-${movimiento.movimiento}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'ROJO' : 'NARANJA', title: `Demora en atención operativa${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
+      agregar({ key: `atencion-${cita.id}-${movimiento.movimiento}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'CRÍTICA' : 'SEGUIMIENTO', title: `Demora en atención operativa${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
     }
   });
 
   const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
   if (porcentajePeso != null && porcentajePeso > toleranciaPeso) {
     const ultimoMovimiento = movimientos.at(-1)!;
-    agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', cita, fechaReferencia: ultimoMovimiento.fechaSalidaBalanza ?? ultimoMovimiento.fechaGarita!, porcentajePeso });
+    agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'CRÍTICA', title: 'Diferencia de peso por validar', cita, fechaReferencia: ultimoMovimiento.fechaSalidaBalanza ?? ultimoMovimiento.fechaGarita!, porcentajePeso });
   }
   return alertas;
 }
 
 function alertDetail(item: SeguimientoLlegada) {
   switch (item.estado) {
-    case 'CITA_VENCIDA': return { tone: 'alert', level: 'ROJO', title: 'Cita vencida', contact: true, showElapsed: true };
-    case 'CITA_POR_VENCER': return { tone: 'warning', level: 'NARANJA', title: 'Cita por vencer', contact: true, showElapsed: true };
-    case 'GARITA_SIN_INGRESO': return { tone: 'alert', level: 'ROJO', title: 'Garita sin primer pesaje', contact: false, showElapsed: true };
-    case 'EN_GARITA': return { tone: 'warning', level: 'NARANJA', title: 'Demora desde garita', contact: false, showElapsed: true };
-    case 'BALANZA_SIN_SALIDA': return { tone: 'alert', level: 'ROJO', title: 'Primer pesaje sin salida', contact: false, showElapsed: true };
-    case 'EN_BALANZA': return { tone: 'warning', level: 'NARANJA', title: 'Demora en balanza / despacho', contact: false, showElapsed: true };
-    case 'PESO_OBSERVADO': return { tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', contact: false, showElapsed: false };
+    case 'CITA_VENCIDA': return { tone: 'alert', level: 'CRÍTICA', title: 'Cita vencida', contact: true, showElapsed: true };
+    case 'CITA_POR_VENCER': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Cita por vencer', contact: true, showElapsed: true };
+    case 'GARITA_SIN_INGRESO': return { tone: 'alert', level: 'CRÍTICA', title: 'Garita sin primer pesaje', contact: false, showElapsed: true };
+    case 'EN_GARITA': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Demora desde garita', contact: false, showElapsed: true };
+    case 'BALANZA_SIN_SALIDA': return { tone: 'alert', level: 'CRÍTICA', title: 'Primer pesaje sin salida', contact: false, showElapsed: true };
+    case 'EN_BALANZA': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Demora en balanza / despacho', contact: false, showElapsed: true };
+    case 'PESO_OBSERVADO': return { tone: 'alert', level: 'CRÍTICA', title: 'Diferencia de peso por validar', contact: false, showElapsed: false };
     case 'VINCULO_PENDIENTE': return { tone: 'warning', level: 'REVISAR', title: 'Vínculo de datos pendiente', contact: false, showElapsed: false };
     case 'INCIDENCIA_OPERATIVA': return { tone: 'warning', level: 'REVISAR', title: 'Incidencia operativa activa', contact: false, showElapsed: false };
     default: return { tone: 'ok', level: 'OK', title: 'Operación controlada', contact: false, showElapsed: false };
