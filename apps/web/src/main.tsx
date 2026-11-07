@@ -61,7 +61,8 @@ const minutosRojoEsperaVencida = 60;
 const minutosNaranjaEsperaVencida = 30;
 const minutosRojoAtencion = 45;
 const minutosNaranjaAtencion = 30;
-const toleranciaPeso = 0.03;
+/** Diferencia máxima aceptada entre peso neto y declarado, confirmada por operación. */
+const toleranciaPeso = 0.05;
 
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 /** BB y Aéreo se mantienen en los datos, pero se ocultan temporalmente de la operación visible. */
@@ -690,7 +691,7 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
       {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso sin dato' : `${formatWeight(aereo.pesoDeclarado)} declarado`}</strong><small>Primer pesaje: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
       <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
-      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight((movement.pesoMercaderiaDeclarado ?? 0) + pesoAereo)}</>}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
+      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight(pesoNumerico(movement.pesoMercaderiaDeclarado) + pesoAereo)}</>}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
 }
@@ -911,17 +912,31 @@ function esProximo(estado: EstadoSeguimiento) {
 }
 
 function pesoAereoAsociado(group: GrupoFlujo) {
-  return (group.aereosAsociados ?? []).reduce((total, aereo) => total + (aereo.pesoDeclarado ?? 0), 0);
+  // PostgreSQL entrega NUMERIC como texto en algunas respuestas JSON. Se
+  // normaliza aquí para que una suma de pesos nunca termine como "NaN".
+  return (group.aereosAsociados ?? []).reduce((total, aereo) => total + pesoNumerico(aereo.pesoDeclarado), 0);
 }
 
 function porcentajeDiferenciaPeso(movimiento: MovimientoFisico, group: GrupoFlujo) {
   if (!tieneSegundoPesajeValido(movimiento)) return null;
-  const neto = movimiento.pesoNetoBalanza ?? (movimiento.pesoInicial != null && movimiento.pesoFinal != null
-    ? Math.abs(movimiento.pesoFinal - movimiento.pesoInicial) : null);
-  const declaradoMaritimo = movimiento.pesoMercaderiaDeclarado;
+  const netoDirecto = pesoNumericoOpcional(movimiento.pesoNetoBalanza);
+  const inicial = pesoNumericoOpcional(movimiento.pesoInicial);
+  const final = pesoNumericoOpcional(movimiento.pesoFinal);
+  const neto = netoDirecto ?? (inicial != null && final != null ? Math.abs(final - inicial) : null);
+  const declaradoMaritimo = pesoNumericoOpcional(movimiento.pesoMercaderiaDeclarado);
   const declarado = declaradoMaritimo == null ? null : declaradoMaritimo + pesoAereoAsociado(group);
   if (neto == null || declarado == null || declarado <= 0) return null;
   return Math.abs(neto - declarado) / declarado;
+}
+
+function pesoNumericoOpcional(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function pesoNumerico(value: unknown) {
+  return pesoNumericoOpcional(value) ?? 0;
 }
 
 /** Un segundo pesaje debe tener peso final positivo y ocurrir después del primer pesaje. */
@@ -1047,7 +1062,8 @@ function formatDateTime(value: string) {
 }
 
 function formatWeight(value: number | null) {
-  return value === null ? '—' : new Intl.NumberFormat('es-PE', { maximumFractionDigits: 2 }).format(value);
+  const peso = pesoNumericoOpcional(value);
+  return peso === null ? '—' : new Intl.NumberFormat('es-PE', { maximumFractionDigits: 2 }).format(peso);
 }
 
 function formatLastUpdate(operacion: Operacion) {
