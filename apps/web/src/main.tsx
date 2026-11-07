@@ -35,6 +35,7 @@ type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
 type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
 type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null };
+type DiagnosticoAlerta = { key: string; tone: 'warning' | 'alert'; level: string; title: string; cita: Operacion; fechaReferencia: string; duracion?: string; porcentajePeso?: number | null; contact?: boolean };
 type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
 type ReporteOperativo = {
   periodo: 'DIARIO' | 'MENSUAL'; fecha: string; modalidad: 'TODAS' | 'FCL' | 'LCL';
@@ -672,8 +673,7 @@ function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose:
 }
 
 function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimiento: Map<string, SeguimientoLlegada>; onClose: () => void }) {
-  const estados = group.citas.map((cita) => ({ cita, seguimiento: seguimiento.get(cita.id) })).filter((item): item is { cita: Operacion; seguimiento: SeguimientoLlegada } => Boolean(item.seguimiento));
-  const alertas = estados.filter((item) => item.seguimiento.estado !== 'PROGRAMADA');
+  const alertas = alertasDiagnosticoGrupo(group, seguimiento);
   const visual = groupVisualState(group, seguimiento);
   const telefono = group.citas.map((cita) => cita.telefonoContacto).find(Boolean) ?? null;
   const aereos = group.aereosAsociados ?? [];
@@ -683,7 +683,7 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
       <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
       <section className="alerts-section">
         <div className="alerts-heading"><div><p className="brand">DIAGNÓSTICO</p><h3>{alertas.length ? 'Alertas detectadas' : 'Operación sin alertas activas'}</h3></div><span className={`alert-count alert-count-${visual}`}>{alertas.length || 'OK'}</span></div>
-        {alertas.length ? <div className="alert-cards">{alertas.map(({ cita, seguimiento: item }) => <AlertCard key={cita.id} cita={cita} item={item} telefono={telefono} />)}</div>
+        {alertas.length ? <div className="alert-cards">{alertas.map((alerta) => <DiagnosticAlertCard key={alerta.key} alerta={alerta} telefono={telefono} />)}</div>
           : <p className="no-alerts">Los hitos disponibles se encuentran dentro de los tiempos de referencia.</p>}
       </section>
       <h3>Citas Falcon ({group.citas.length})</h3>
@@ -695,18 +695,71 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
   </div>;
 }
 
-function AlertCard({ cita, item, telefono }: { cita: Operacion; item: SeguimientoLlegada; telefono: string | null }) {
-  const detail = alertDetail(item);
-  return <article className={`alert-card alert-card-${detail.tone}`}>
-    <div className="alert-card-top"><span className={`alert-severity alert-severity-${detail.tone}`}>{detail.level}</span><strong>{detail.title}</strong></div>
+function DiagnosticAlertCard({ alerta, telefono }: { alerta: DiagnosticoAlerta; telefono: string | null }) {
+  return <article className={`alert-card alert-card-${alerta.tone}`}>
+    <div className="alert-card-top"><span className={`alert-severity alert-severity-${alerta.tone}`}>{alerta.level}</span><strong>{alerta.title}</strong></div>
     <dl className="alert-metrics">
-      <div><dt>Referencia</dt><dd>{formatDateTime(item.fechaReferencia)}</dd></div>
-      {detail.showElapsed && <div><dt>Tiempo transcurrido</dt><dd>{formatMinutes(item.minutosRetraso)}</dd></div>}
-      {item.estado === 'PESO_OBSERVADO' && <div><dt>Diferencia</dt><dd>{((item.porcentajePeso ?? 0) * 100).toFixed(1)}%</dd></div>}
+      <div><dt>Referencia</dt><dd>{formatDateTime(alerta.fechaReferencia)}</dd></div>
+      {alerta.duracion && <div><dt>Tiempo</dt><dd>{alerta.duracion}</dd></div>}
+      {alerta.porcentajePeso != null && <div><dt>Diferencia</dt><dd>{(alerta.porcentajePeso * 100).toFixed(1)}%</dd></div>}
     </dl>
-    {detail.contact && <div className="alert-contact"><strong>Contacto</strong><span>{telefono ? telefono : 'Pendiente de registro en Falcon'}</span>{!telefono && <small>Cuando Falcon incorpore el teléfono, se mostrará aquí para que ATC contacte al responsable.</small>}</div>}
-    <small className="alert-citation">Cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'} · {cita.modalidad}</small>
+    {alerta.contact && <div className="alert-contact"><strong>Contacto</strong><span>{telefono ? telefono : 'Pendiente de registro en Falcon'}</span>{!telefono && <small>Cuando Falcon incorpore el teléfono, se mostrará aquí para que ATC contacte al responsable.</small>}</div>}
+    <small className="alert-citation">Cita {alerta.cita.fechaCita ? formatDateTime(alerta.cita.fechaCita) : 'sin fecha'} · {alerta.cita.modalidad}</small>
   </article>;
+}
+
+/**
+ * El detalle debe explicar la misma señal que dibuja la carita. El seguimiento
+ * en vivo solo existe para la fecha actual; estas reglas también revisan hitos
+ * ya terminados para que un reporte histórico no quede con una carita roja sin
+ * diagnóstico.
+ */
+function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, SeguimientoLlegada>): DiagnosticoAlerta[] {
+  const alertas: DiagnosticoAlerta[] = [];
+  const claves = new Set<string>();
+  const agregar = (alerta: DiagnosticoAlerta) => {
+    if (!claves.has(alerta.key)) {
+      claves.add(alerta.key);
+      alertas.push(alerta);
+    }
+  };
+
+  group.citas.forEach((cita) => {
+    const item = seguimiento.get(cita.id);
+    if (!item || item.estado === 'PROGRAMADA') return;
+    const detail = alertDetail(item);
+    if (detail.tone === 'ok') return;
+    agregar({
+      key: `seguimiento-${cita.id}-${item.estado}`,
+      tone: detail.tone as 'warning' | 'alert', level: detail.level, title: detail.title, cita,
+      fechaReferencia: item.fechaReferencia,
+      duracion: detail.showElapsed ? formatMinutes(item.minutosRetraso) : undefined,
+      porcentajePeso: item.estado === 'PESO_OBSERVADO' ? item.porcentajePeso : undefined,
+      contact: detail.contact
+    });
+  });
+
+  const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
+  const cita = group.citas[0];
+  if (!movimiento || !cita) return alertas;
+
+  const espera = durationSeconds(cita.fechaGarita, movimiento.fechaGarita);
+  const tonoEspera = durationTone(espera, 'ESPERA', cita);
+  if (espera !== null && (tonoEspera === 'warning' || tonoEspera === 'alert')) {
+    agregar({ key: `espera-${cita.id}`, tone: tonoEspera, level: tonoEspera === 'alert' ? 'ROJO' : 'NARANJA', title: 'Demora de garita a primer pesaje', cita, fechaReferencia: cita.fechaGarita!, duracion: formatDuration(espera) });
+  }
+
+  const atencion = durationSeconds(movimiento.fechaGarita, tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
+  const tonoAtencion = durationTone(atencion, 'ATENCION');
+  if (atencion !== null && (tonoAtencion === 'warning' || tonoAtencion === 'alert')) {
+    agregar({ key: `atencion-${cita.id}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'ROJO' : 'NARANJA', title: 'Demora en atención operativa', cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
+  }
+
+  const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPeso(movimiento, group) : null;
+  if (porcentajePeso != null && porcentajePeso > toleranciaPeso) {
+    agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'ROJO', title: 'Diferencia de peso por validar', cita, fechaReferencia: movimiento.fechaSalidaBalanza ?? movimiento.fechaGarita!, porcentajePeso });
+  }
+  return alertas;
 }
 
 function alertDetail(item: SeguimientoLlegada) {
