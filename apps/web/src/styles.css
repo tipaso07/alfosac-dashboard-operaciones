@@ -78,7 +78,7 @@ td:first-child { font-weight: 700; }
 .internal-header > p { margin: 0; color: #000059; opacity: .7; }
 .internal-actions { display: flex; align-items: center; justify-content: end; gap: 16px; }
 .internal-actions p { margin: 0; color: #000059; opacity: .7; }
-.logout-button { position: fixed; top: 18px; right: 22px; z-index: 30; display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 9px 13px; border-color: #c83f4b; background: #ffffff; color: #a22635; box-shadow: 0 5px 16px rgb(16 34 63 / 15%); font-size: .84rem; }
+.logout-button { position: fixed; right: 22px; bottom: 22px; z-index: 30; display: inline-grid; place-items: center; width: 46px; min-height: 46px; padding: 0; border-color: #c83f4b; background: #ffffff; color: #a22635; box-shadow: 0 5px 16px rgb(16 34 63 / 15%); font-size: .84rem; border-radius: 50%; }
 .logout-button:hover { background: #c83f4b; border-color: #c83f4b; color: #ffffff; }
 .logout-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .internal-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; margin: 28px 0; }

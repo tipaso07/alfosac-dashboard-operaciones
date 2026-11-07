@@ -298,7 +298,7 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
         </div>
         <p>{prioridadAlerta ? 'Alerta prioritaria · visible 25 segundos' : `${pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos`}</p>
       </footer>
-      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={modalidad} grupos={grupos} seguimiento={seguimiento} onClose={() => setHoraInspeccion(null)} />}
+      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={modalidad} grupos={grupos} seguimiento={seguimiento} reportDate={reportDate} onClose={() => setHoraInspeccion(null)} />}
     </main>
   );
 }
@@ -359,7 +359,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         </div>
         <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a><p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
       </header>
-      {authEnabled && user && <button className="logout-button" onClick={() => void onLogout()} aria-label={`Cerrar sesión de ${user.nombre}`} title="Cerrar sesión"><LogoutIcon /><span>Salir</span></button>}
+      {authEnabled && user && <button className="logout-button" onClick={() => void onLogout()} aria-label={`Cerrar sesión de ${user.nombre}`} title="Cerrar sesión"><LogoutIcon /></button>}
 
       <section className="internal-kpis" aria-label="Resumen general">
         <Kpi label="Citas / A.R." value={totales.agendadas} />
@@ -447,7 +447,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       <DisponibilidadHistoricaPanel reportDate={reportDate} />
 
       {seleccionado && <FlowModal group={seleccionado} seguimiento={seguimientoPorCita} onClose={() => setSeleccionado(null)} />}
-      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={filtro === 'TODAS' ? null : filtro} grupos={gruposFiltrados} seguimiento={seguimientoFiltrado} onClose={() => setHoraInspeccion(null)} />}
+      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={filtro === 'TODAS' ? null : filtro} grupos={gruposFiltrados} seguimiento={seguimientoFiltrado} reportDate={reportDate} onClose={() => setHoraInspeccion(null)} />}
     </main>
   );
 }
@@ -778,12 +778,14 @@ function alertDetail(item: SeguimientoLlegada) {
   }
 }
 
-function HourInspectionModal({ hora, modalidad, grupos, seguimiento, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; onClose: () => void }) {
+function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; reportDate: string | null; onClose: () => void }) {
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
   const filas = grupos.flatMap((group) => {
     const movimiento = group.tipo === 'UNICO' ? group.movimientos[0] : undefined;
     return group.citas
-      .filter((cita) => cita.fechaCita && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
+      .filter((cita) => cita.fechaCita
+        && (!reportDate || fechaLima(cita.fechaCita) === reportDate)
+        && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
       .map((cita) => {
         const estado = seguimientoPorCita.get(cita.id);
         const esRojo = Boolean(estado && esCritico(estado.estado));
@@ -1025,7 +1027,7 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita Falcon';
   if (item.estado === 'GARITA_SIN_INGRESO') return `Garita Falcon sin primer pesaje GITS · ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
-  if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 3%`;
+  if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 5%`;
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
   return 'Sin alerta activa';
 }
