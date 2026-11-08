@@ -123,6 +123,20 @@ td:first-child { font-weight: 700; }
 .availability-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
 .availability-panel .panel-heading label { display: grid; gap: 6px; color: #334155; font-size: .82rem; font-weight: 700; }
 .availability-panel input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
+.availability-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 0 8px; }
+.availability-toolbar p { margin: 0; color: #334155; font-size: .88rem; }
+.availability-key { display: inline-block; margin: 0 5px 0 12px; padding: 5px 8px; border-radius: 5px; font-weight: 800; }
+.availability-toolbar p .availability-key:first-child { margin-left: 0; }
+.availability-range-wrap { overflow-x: auto; border: 1px solid #d6e6f1; }
+.availability-range-table { min-width: 1080px; font-size: .9rem; }
+.availability-range-table th, .availability-range-table td { min-width: 65px; padding: 14px 9px; }
+.availability-range-table th:first-child, .availability-range-table td:first-child { position: sticky; left: 0; z-index: 1; min-width: 132px; background: #ffffff; }
+.availability-range-table th:first-child { background: #000059; }
+.availability-range-table td { font-weight: 800; }
+.availability-open { background: #e5f5e9; color: #28633b; }
+.availability-low { background: #fff6d8; color: #805d00; }
+.availability-full { background: #fee9e7; color: #a23025; }
+.availability-empty { background: #f1f3f6; color: #758092; }
 .availability-grids { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .availability-grids article { border: 1px solid #d6e6f1; padding: 14px; }
 .availability-grids h3 { margin: 0 0 12px; color: #000059; font-size: 1rem; }
@@ -247,6 +261,7 @@ td:first-child { font-weight: 700; }
   .alert-contact small { grid-column: 1; }
   .report-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
   .availability-grids { grid-template-columns: 1fr; }
+  .availability-toolbar { align-items: flex-start; flex-direction: column; }
   .operations-panel { padding: 16px; }
   .section-nav { gap: 8px; }
   .section-nav button { flex: 1 1 140px; }

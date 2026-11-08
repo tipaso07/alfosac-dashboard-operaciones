@@ -67,3 +67,35 @@ export async function listarDisponibilidadHistorica(fecha: string): Promise<Disp
     modalidades: [...modalities.entries()].map(([modalidad, horas]) => ({ modalidad, horas }))
   };
 }
+
+/** Devuelve la última captura disponible de cada fecha en el rango solicitado. */
+export async function listarDisponibilidadHistoricaRango(desde: string, hasta: string): Promise<DisponibilidadHistorica[]> {
+  const captures = await pool.query<{ id: string; fecha_operativa: string; capturada_en: string; fuente: string }>(`
+    SELECT DISTINCT ON (fecha_operativa) id, fecha_operativa::text, capturada_en, fuente
+    FROM disponibilidad_capturas
+    WHERE fecha_operativa >= $1::date AND fecha_operativa <= $2::date
+    ORDER BY fecha_operativa, capturada_en DESC;
+  `, [desde, hasta]);
+  if (!captures.rows.length) return [];
+  const ids = captures.rows.map((row) => row.id);
+  const rows = await pool.query<{ captura_id: string; modalidad: 'FCL' | 'LCL' | 'BB'; hora: number; cupos_disponibles: number | null }>(`
+    SELECT captura_id, modalidad, hora, cupos_disponibles
+    FROM disponibilidad_cupos
+    WHERE captura_id = ANY($1::bigint[])
+    ORDER BY captura_id, modalidad, hora;
+  `, [ids]);
+  const cupsByCapture = new Map<string, Map<'FCL' | 'LCL' | 'BB', Array<{ hora: number; cuposDisponibles: number | null }>>>();
+  for (const row of rows.rows) {
+    const modalities = cupsByCapture.get(row.captura_id) ?? new Map();
+    const values = modalities.get(row.modalidad) ?? [];
+    values.push({ hora: row.hora, cuposDisponibles: row.cupos_disponibles });
+    modalities.set(row.modalidad, values);
+    cupsByCapture.set(row.captura_id, modalities);
+  }
+  return captures.rows.map((capture) => ({
+    fecha: capture.fecha_operativa,
+    capturadaEn: capture.capturada_en,
+    fuente: capture.fuente,
+    modalidades: [...(cupsByCapture.get(capture.id) ?? new Map()).entries()].map(([modalidad, horas]) => ({ modalidad, horas }))
+  }));
+}

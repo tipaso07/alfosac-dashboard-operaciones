@@ -7,7 +7,7 @@ import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacio
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
-import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica } from './availability-store.js';
+import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
 import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, crearSesion, crearUsuario, leerSesion, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
 
 const app = express();
@@ -544,6 +544,17 @@ app.get('/api/availability/history', async (request, response) => {
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el historial de disponibilidad.' });
   }
+});
+
+app.get('/api/availability/history-range', async (request, response) => {
+  const desde = String(request.query.desde ?? '');
+  const hasta = String(request.query.hasta ?? '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || desde > hasta) {
+    response.status(400).json({ message: 'Indica desde y hasta con el formato AAAA-MM-DD.' });
+    return;
+  }
+  try { response.json({ desde, hasta, snapshots: await listarDisponibilidadHistoricaRango(desde, hasta) }); }
+  catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el historial.' }); }
 });
 
 app.get('/api/investigations/falcon-closeout', async (request, response) => {

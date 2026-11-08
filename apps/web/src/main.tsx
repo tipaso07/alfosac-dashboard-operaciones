@@ -600,29 +600,41 @@ function ExportacionPanel({ reportDate }: { reportDate: string | null }) {
   </section>;
 }
 
+function sumarDias(fecha: string, dias: number) {
+  const value = new Date(`${fecha}T12:00:00`);
+  value.setDate(value.getDate() + dias);
+  return value.toISOString().slice(0, 10);
+}
+
 function DisponibilidadHistoricaPanel({ reportDate }: { reportDate: string | null }) {
   const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
-  const [snapshot, setSnapshot] = useState<DisponibilidadHistorica | null>(null);
+  const [modalidad, setModalidad] = useState<'FCL' | 'LCL'>('LCL');
+  const [snapshots, setSnapshots] = useState<DisponibilidadHistorica[]>([]);
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  const dias = useMemo(() => Array.from({ length: 7 }, (_, index) => sumarDias(fecha, index)), [fecha]);
+  const hasta = dias.at(-1) ?? fecha;
 
   useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
   useEffect(() => {
     setCargando(true);
-    void fetch(`/api/availability/history?date=${fecha}`)
-      .then(async (response) => response.ok ? response.json() as Promise<{ snapshot: DisponibilidadHistorica | null }> : Promise.reject(await response.json()))
-      .then((value) => { setSnapshot(value.snapshot); setError(''); })
-      .catch((reason: { message?: string }) => { setSnapshot(null); setError(reason.message ?? 'No se pudo consultar el historial.'); })
+    void fetch(`/api/availability/history-range?desde=${fecha}&hasta=${hasta}`)
+      .then(async (response) => response.ok ? response.json() as Promise<{ snapshots: DisponibilidadHistorica[] }> : Promise.reject(await response.json()))
+      .then((value) => { setSnapshots(value.snapshots); setError(''); })
+      .catch((reason: { message?: string }) => { setSnapshots([]); setError(reason.message ?? 'No se pudo consultar el historial.'); })
       .finally(() => setCargando(false));
-  }, [fecha]);
+  }, [fecha, hasta]);
+
+  const horas = modalidad === 'FCL' ? Array.from({ length: 24 }, (_, index) => index) : Array.from({ length: 14 }, (_, index) => index + 7);
+  const cupo = (dia: string, hora: number) => snapshots.find((item) => item.fecha === dia)?.modalidades.find((item) => item.modalidad === modalidad)?.horas.find((item) => item.hora === hora)?.cuposDisponibles ?? null;
+  const estadoCupo = (value: number | null) => value === null ? 'availability-empty' : value === 0 ? 'availability-full' : value <= 2 ? 'availability-low' : 'availability-open';
 
   return <section className="availability-panel">
-    <div className="panel-heading"><div><p className="brand">DISPONIBILIDAD</p><h2>Historial de cupos publicados</h2></div><label>Fecha<input type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} /></label></div>
-    {error ? <p className="empty">{error}</p> : cargando ? <p className="empty">Consultando historial…</p> : !snapshot ? <p className="report-note">Aún no hay una captura guardada para esta fecha. El historial comenzará a poblarse cuando se habilite la captura programada desde la fuente publicada.</p> : <>
-      <p className="report-note">Capturada {formatDateTime(snapshot.capturadaEn)} · fuente: {snapshot.fuente}</p>
-      <div className="availability-grids">{snapshot.modalidades.map((modalidad) => <article key={modalidad.modalidad}>
-        <h3>{modalidad.modalidad} importación</h3><div className="availability-hours">{modalidad.horas.map((item) => <span key={item.hora}><strong>{String(item.hora).padStart(2, '0')}:00</strong>{item.cuposDisponibles ?? '—'}</span>)}</div>
-      </article>)}</div>
+    <div className="panel-heading"><div><p className="brand">DISPONIBILIDAD</p><h2>Cupos por día y horario</h2></div><label>Desde<input type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} /></label></div>
+    <div className="availability-toolbar"><div className="filter-row"><button className={modalidad === 'FCL' ? 'selected' : ''} onClick={() => setModalidad('FCL')}>FCL IMP</button><button className={modalidad === 'LCL' ? 'selected' : ''} onClick={() => setModalidad('LCL')}>LCL IMP</button></div><p><span className="availability-key availability-open">3+</span> Disponibles <span className="availability-key availability-low">1–2</span> Últimos cupos <span className="availability-key availability-full">0</span> Sin cupos <span className="availability-key availability-empty">—</span> Sin captura</p></div>
+    {error ? <p className="empty">{error}</p> : cargando ? <p className="empty">Consultando historial…</p> : <>
+      <p className="report-note">Se muestran siete días desde la fecha elegida. Hay {snapshots.length} día(s) con captura almacenada; los guiones indican que todavía no se guardó una captura de disponibilidad para ese día.</p>
+      <div className="availability-range-wrap"><table className="availability-range-table"><thead><tr><th>Fecha</th>{horas.map((hora) => <th key={hora}>{String(hora).padStart(2, '0')}:00</th>)}</tr></thead><tbody>{dias.map((dia) => <tr key={dia}><td>{formatDate(dia)}</td>{horas.map((hora) => { const value = cupo(dia, hora); return <td className={estadoCupo(value)} key={hora}>{value ?? '—'}</td>; })}</tr>)}</tbody></table></div>
     </>}
   </section>;
 }
