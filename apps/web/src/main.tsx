@@ -49,6 +49,7 @@ type DisponibilidadHistorica = {
   fuente: string;
   modalidades: Array<{ modalidad: 'FCL' | 'LCL' | 'BB'; horas: Array<{ hora: number; cuposDisponibles: number | null }> }>;
 };
+type ConteoCitasFalcon = { modalidad: 'FCL' | 'LCL' | 'BB'; hora: string; cantidad: number };
 type UsuarioSesion = { id: string; email: string; nombre: string; rol: 'ADMIN' | 'OPERADOR' | 'LECTURA' };
 type EstadoAutenticacion = { enabled: boolean; user: UsuarioSesion | null };
 
@@ -304,6 +305,7 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
 }
 
 function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode, incidentes, user, authEnabled, onLogout }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes'; incidentes: IncidenteOperativo[]; user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
+  const [seccion, setSeccion] = useState<'OPERACION' | 'CITAS' | 'REPORTES' | 'EXPORTAR'>('OPERACION');
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
@@ -361,6 +363,14 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       </header>
       {authEnabled && user && <button className="logout-button" onClick={() => void onLogout()} aria-label={`Cerrar sesión de ${user.nombre}`} title="Cerrar sesión"><LogoutIcon /></button>}
 
+      <nav className="section-nav" aria-label="Secciones del dashboard">
+        <button className={seccion === 'OPERACION' ? 'selected' : ''} onClick={() => setSeccion('OPERACION')}>Seguimiento en vivo</button>
+        <button className={seccion === 'CITAS' ? 'selected' : ''} onClick={() => setSeccion('CITAS')}>Citas agendadas</button>
+        <button className={seccion === 'REPORTES' ? 'selected' : ''} onClick={() => setSeccion('REPORTES')}>Reportes</button>
+        <button className={seccion === 'EXPORTAR' ? 'selected' : ''} onClick={() => setSeccion('EXPORTAR')}>Exportar</button>
+      </nav>
+
+      {seccion === 'OPERACION' && <>
       <section className="internal-kpis" aria-label="Resumen general">
         <Kpi label="Citas / A.R." value={totales.agendadas} />
         <Kpi label="Registro en garita" value={totales.garita} />
@@ -440,9 +450,11 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           </table>}
         </div>
       </section>
+      </>}
 
-      <ReportesPanel reportDate={reportDate} />
-      <DisponibilidadHistoricaPanel reportDate={reportDate} />
+      {seccion === 'CITAS' && <><CitasAgendadasPanel reportDate={reportDate} /><DisponibilidadHistoricaPanel reportDate={reportDate} /></>}
+      {seccion === 'REPORTES' && <ReportesPanel reportDate={reportDate} />}
+      {seccion === 'EXPORTAR' && <ExportacionPanel reportDate={reportDate} />}
 
       {seleccionado && <FlowModal group={seleccionado} seguimiento={seguimientoPorCita} onClose={() => setSeleccionado(null)} />}
       {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={filtro === 'TODAS' ? null : filtro} grupos={gruposFiltrados} seguimiento={seguimientoFiltrado} reportDate={reportDate} onClose={() => setHoraInspeccion(null)} />}
@@ -505,6 +517,36 @@ function DurationTableCell({ start, end, tipo, cita }: { start: string | null; e
   return <td className={`duration-cell duration-${durationTone(seconds, tipo, cita)}`}>{formatDuration(seconds)}</td>;
 }
 
+function CitasAgendadasPanel({ reportDate }: { reportDate: string | null }) {
+  const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
+  const [conteos, setConteos] = useState<ConteoCitasFalcon[]>([]);
+  const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(false);
+
+  useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
+  useEffect(() => {
+    setCargando(true);
+    void fetch(`/api/integrations/falcon/counts?date=${fecha}`)
+      .then(async (response) => response.ok ? response.json() as Promise<{ items: ConteoCitasFalcon[] }> : Promise.reject(await response.json()))
+      .then((value) => { setConteos(value.items.filter((item) => item.modalidad === 'FCL' || item.modalidad === 'LCL')); setError(''); })
+      .catch((reason: { message?: string }) => { setConteos([]); setError(reason.message ?? 'No se pudo consultar Falcon.'); })
+      .finally(() => setCargando(false));
+  }, [fecha]);
+
+  const horas = [...new Set(conteos.map((item) => item.hora))].sort((a, b) => Number(a) - Number(b));
+  const total = (modalidad: 'FCL' | 'LCL') => conteos.filter((item) => item.modalidad === modalidad).reduce((sum, item) => sum + item.cantidad, 0);
+  const cantidad = (hora: string, modalidad: 'FCL' | 'LCL') => conteos.find((item) => item.hora === hora && item.modalidad === modalidad)?.cantidad ?? 0;
+
+  return <section className="appointments-panel">
+    <div className="panel-heading"><div><p className="brand">PLANIFICACIÓN</p><h2>Citas agendadas</h2></div><label>Fecha<input type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} /></label></div>
+    <p className="report-note">Consulta directa y de solo lectura en Falcon. Muestra la cantidad programada por horario para la fecha elegida.</p>
+    {error ? <p className="empty">{error}</p> : cargando ? <p className="empty">Consultando citas…</p> : <>
+      <div className="report-kpis"><Kpi label="FCL programadas" value={total('FCL')} /><Kpi label="LCL programadas" value={total('LCL')} /><Kpi label="Total programadas" value={total('FCL') + total('LCL')} /></div>
+      <div className="operations-table-wrap"><table className="operations-table appointment-table"><thead><tr><th>Hora</th><th>FCL</th><th>LCL</th><th>Total</th></tr></thead><tbody>{horas.length ? horas.map((hora) => <tr key={hora}><td>{hora}:00</td><td>{cantidad(hora, 'FCL')}</td><td>{cantidad(hora, 'LCL')}</td><td>{cantidad(hora, 'FCL') + cantidad(hora, 'LCL')}</td></tr>) : <tr><td colSpan={4} className="empty">No hay citas registradas para esta fecha.</td></tr>}</tbody></table></div>
+    </>}
+  </section>;
+}
+
 function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const [periodo, setPeriodo] = useState<'DIARIO' | 'MENSUAL'>('DIARIO');
   const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
@@ -521,9 +563,8 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       .catch((reason: { message?: string }) => { setReporte(null); setError(reason.message ?? 'No se pudo generar el reporte.'); });
   }, [periodo, fecha, modalidad]);
 
-  const params = new URLSearchParams({ periodo, fecha, modalidad });
   return <section className="reports-panel">
-    <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar CSV</a></div>
+    <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div></div>
     <div className="reports-controls">
       <label>Período<select value={periodo} onChange={(event) => setPeriodo(event.target.value as 'DIARIO' | 'MENSUAL')}><option value="DIARIO">Diario</option><option value="MENSUAL">Mensual</option></select></label>
       <label>Fecha<input type={periodo === 'DIARIO' ? 'date' : 'month'} value={periodo === 'DIARIO' ? fecha : fecha.slice(0, 7)} onChange={(event) => setFecha(event.target.value)} /></label>
@@ -538,6 +579,24 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       <p className="report-note">{reporte.nota} {reporte.resumen.porConfirmar > 0 ? `${reporte.resumen.porConfirmar} cita(s) aún por confirmar.` : ''}</p>
       <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante</th><th>Placa</th><th>Estado</th></tr></thead><tbody>{reporte.filas.length ? reporte.filas.map((item) => <tr key={`${item.modalidad}-${item.volante}-${item.horaCita}`}><td>{item.fecha ?? '—'}</td><td>{item.horaCita ?? '—'}</td><td>{item.modalidad}</td><td>{item.volante}</td><td>{item.placa}</td><td><span className={item.clasificacion === 'NO_ATENDIDA' || item.clasificacion === 'PESAJE_LIBRE' ? 'state-badge state-alert' : 'state-badge'}>{item.clasificacion.replaceAll('_', ' ')}</span></td></tr>) : <tr><td colSpan={6} className="empty">No hay citas para este período.</td></tr>}</tbody></table></div>
     </> : <p className="empty">Cargando reporte…</p>}
+  </section>;
+}
+
+function ExportacionPanel({ reportDate }: { reportDate: string | null }) {
+  const [periodo, setPeriodo] = useState<'DIARIO' | 'MENSUAL'>('DIARIO');
+  const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
+  const [modalidad, setModalidad] = useState<'TODAS' | 'FCL' | 'LCL'>('TODAS');
+  useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
+  const params = new URLSearchParams({ periodo, fecha, modalidad });
+  return <section className="export-panel">
+    <div className="panel-heading"><div><p className="brand">EXPORTACIÓN</p><h2>Descargar reporte operativo</h2></div></div>
+    <p className="report-note">Genera un archivo CSV compatible con Excel. No realiza cambios en Falcon ni en GITS.</p>
+    <div className="reports-controls">
+      <label>Período<select value={periodo} onChange={(event) => setPeriodo(event.target.value as 'DIARIO' | 'MENSUAL')}><option value="DIARIO">Diario</option><option value="MENSUAL">Mensual</option></select></label>
+      <label>Fecha<input type={periodo === 'DIARIO' ? 'date' : 'month'} value={periodo === 'DIARIO' ? fecha : fecha.slice(0, 7)} onChange={(event) => setFecha(event.target.value)} /></label>
+      <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
+    </div>
+    <a className="export-download" href={`/api/reports/operations.csv?${params}`}>Descargar archivo para Excel</a>
   </section>;
 }
 
