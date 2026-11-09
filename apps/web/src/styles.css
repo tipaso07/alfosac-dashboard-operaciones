@@ -8,7 +8,9 @@
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; background: #ffffff; }
+html { min-width: 320px; background: #ffffff; }
+body { min-width: 320px; margin: 0; background: #ffffff; }
+button, input, select { max-width: 100%; }
 .auth-loading, .login-screen { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(135deg, #000059 0%, #123c78 100%); color: #ffffff; }
 .auth-loading { font-weight: 700; }
 .login-card { width: min(430px, 100%); padding: 38px; background: #ffffff; color: #000059; border-top: 7px solid #329AD6; box-shadow: 0 24px 60px rgb(0 0 0 / 30%); }
@@ -135,7 +137,7 @@ td:first-child { font-weight: 700; }
 .advanced-filters input, .advanced-filters select { min-height: 40px; min-width: 180px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
 .clear-filters { min-height: 40px; border: 1px solid #329AD6; background: #fff; color: #000059; padding: 8px 12px; cursor: pointer; font: inherit; font-weight: 700; }
 .clear-filters:hover { background: #edf8ff; }
-.operations-table-wrap { overflow-x: auto; }
+.operations-table-wrap, .availability-range-wrap, .hour-inspection-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .pending-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
 .pending-panel h2 { margin-bottom: 16px; }
 .pending-panel > p { margin-bottom: 0; }
@@ -283,33 +285,57 @@ td:first-child { font-weight: 700; }
 
 @media (max-width: 900px) {
   .tv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tv-panel-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .internal-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .internal-screen { padding-left: 28px; }
-  .internal-screen.sidebar-collapsed { padding-left: 28px; }
-  .section-nav { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin: 0 -28px 24px; padding: 14px 28px; box-shadow: none; }
-  .section-nav.collapsed { width: auto; padding: 14px 28px; }
+  .internal-screen, .internal-screen.sidebar-collapsed { padding: 28px; }
+  .section-nav, .section-nav.collapsed { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin: 0 -28px 24px; padding: 14px 28px; background: #000059; box-shadow: none; }
   .sidebar-brand, .sidebar-toggle { display: none; }
-  .collapsed a span:last-child { display: inline; }
+  .section-nav.collapsed a { display: flex; }
+  .panel-heading h2 { font-size: clamp(1.35rem, 4vw, 1.7rem); }
+  .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel { padding: 20px; }
+  .tv-screen { overflow: auto; height: auto; min-height: 100vh; }
+  .tv-modalities { min-height: 640px; }
 }
 
 @media (max-width: 620px) {
-  .tv-screen { padding: 24px 16px; }
+  .tv-screen { padding: 18px 12px; grid-template-rows: auto auto; }
   .tv-header, .internal-header, .tv-footer { align-items: start; flex-direction: column; }
+  .tv-header { gap: 12px; }
   .tv-clock { text-align: left; }
   .tv-kpis { grid-template-columns: 1fr; }
+  .tv-modalities { grid-template-columns: 1fr; min-height: auto; }
+  .tv-modality-panel { min-height: 560px; }
+  .tv-panel-table { overflow-x: auto; }
+  .tv-panel-table table { min-width: 560px; }
   th, td { padding: 10px 4px; }
   .rotation { gap: 6px; }
+  .internal-screen, .internal-screen.sidebar-collapsed { padding: 18px 14px 34px; }
+  .section-nav, .section-nav.collapsed { flex-wrap: nowrap; gap: 8px; margin: 0 -14px 20px; padding: 11px 14px; overflow-x: auto; }
+  .section-nav a { flex: 0 0 auto; padding: 10px 12px; font-size: .82rem; }
   .internal-kpis, .modal-summary { grid-template-columns: 1fr; }
   .alert-contact { grid-template-columns: 1fr; }
   .alert-contact small { grid-column: 1; }
   .report-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
   .availability-grids { grid-template-columns: 1fr; }
   .availability-toolbar { align-items: flex-start; flex-direction: column; }
-  .operations-panel { padding: 16px; }
-  .section-nav { gap: 8px; }
-  .section-nav a { flex: 1 1 140px; text-align: center; }
+  .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel { padding: 16px; }
   .toolbar-row { align-items: flex-start; flex-direction: column; }
+  .filter-row, .view-row { width: 100%; }
+  .filter-row button { flex: 1 1 115px; }
   .advanced-filters label, .advanced-filters input, .advanced-filters select { width: 100%; }
   .panel-heading, .timeline li { align-items: start; flex-direction: column; }
   .internal-actions { align-items: start; flex-direction: column; }
+  .panel-heading .detail-button, .export-download { width: 100%; justify-content: center; text-align: center; }
+  .reports-controls { display: grid; grid-template-columns: 1fr; }
+  .reports-controls select, .reports-controls input { width: 100%; }
+  .availability-title { padding: 6px 0 20px; }
+  .availability-title h2 { font-size: clamp(1.8rem, 10vw, 2.5rem); }
+  .availability-toolbar p { line-height: 2.1; }
+  .availability-key { margin-left: 4px; }
+  .operation-modal { max-height: 92vh; padding: 18px; }
+  .modal-header { padding-bottom: 14px; }
+  .modal-header h2 { font-size: 1.65rem; }
+  .hour-inspection-modal { width: 100%; max-height: 94vh; border-radius: 0; }
+  .hour-inspection-header, .hour-inspection-note, .hour-inspection-footer { padding: 14px; }
+  .logout-button { right: 14px; bottom: 14px; }
 }
