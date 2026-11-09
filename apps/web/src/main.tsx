@@ -68,9 +68,8 @@ const toleranciaPeso = 0.05;
 const orden: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
 /** BB y Aéreo se mantienen en los datos, pero se ocultan temporalmente de la operación visible. */
 const modalidadesVisibles: Modalidad[] = ['FCL', 'LCL'];
-const rotationMs = 15_000;
-const alertRotationMs = 25_000;
-const tvPageRows = 8;
+const rotationMs = 10_000;
+const tvInteractionIdleMs = 20_000;
 const dashboardCacheKey = 'alfosac.dashboard.operacion.v1';
 const dashboardCacheMaxAgeMs = 60_000;
 const nombres: Record<Modalidad, string> = {
@@ -146,7 +145,6 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
   const [reportDate, setReportDate] = useState<string | null>(() => cacheInicial?.reportDate ?? null);
   const [dataMode, setDataMode] = useState<'demo' | 'reportes'>(() => cacheInicial?.dataMode ?? 'demo');
   const [indice, setIndice] = useState(0);
-  const [alertaPriorizada, setAlertaPriorizada] = useState<string | null>(null);
   const [incidentes, setIncidentes] = useState<IncidenteOperativo[]>(() => cacheInicial?.incidentes ?? []);
   const [estadoCarga, setEstadoCarga] = useState<'CARGANDO' | 'LISTO'>(() => cacheInicial ? 'LISTO' : 'CARGANDO');
 
@@ -197,32 +195,16 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
   ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate, seguimiento]);
   const modalidadesConAlerta = useMemo(() => modalidadesVisibles.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && esCritico(alerta.estado))), [seguimiento]);
   const resumenSeguimiento = useMemo(() => crearResumenSeguimiento(seguimiento), [seguimiento]);
-  const claveAlertas = modalidadesConAlerta.join('|');
-  const prioridadActiva = Boolean(tv && claveAlertas && alertaPriorizada !== claveAlertas);
-
-  useEffect(() => {
-    if (!tv) return;
-    if (claveAlertas && alertaPriorizada !== claveAlertas) {
-      setIndice(modalidadesVisibles.indexOf(modalidadesConAlerta[0]));
-      const prioridad = window.setTimeout(() => setAlertaPriorizada(claveAlertas), alertRotationMs);
-      return () => window.clearTimeout(prioridad);
-    }
-    if (!claveAlertas && alertaPriorizada !== null) setAlertaPriorizada(null);
-    const rotate = window.setInterval(() => setIndice((actual) => (actual + 1) % modalidadesVisibles.length), rotationMs);
-    return () => window.clearInterval(rotate);
-  }, [tv, claveAlertas, alertaPriorizada, modalidadesConAlerta]);
-
   const modalidad = modalidadesVisibles[indice];
   const summary = resumen.find((item) => item.modalidad === modalidad) ?? { modalidad, agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 };
   const detalle = detallesTv[modalidad];
-  const alertaActiva = modalidadesConAlerta.includes(modalidad);
   const seguimientoModalidad = seguimiento.filter((item) => item.modalidad === modalidad);
   const resumenModalidad = resumenSeguimiento[modalidad];
 
   if (estadoCarga !== 'LISTO') return <DataLoadingScreen />;
 
   return tv
-    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} grupos={grupos.filter((group) => group.modalidad === modalidad)} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} onModalidadChange={(next) => { setIndice(modalidadesVisibles.indexOf(next)); setAlertaPriorizada(claveAlertas); }} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
+    ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} grupos={grupos.filter((group) => group.modalidad === modalidad)} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} modalidadesConAlerta={modalidadesConAlerta} onModalidadChange={(next) => setIndice(modalidadesVisibles.indexOf(next))} />
     : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} user={user} authEnabled={authEnabled} onLogout={onLogout} />;
 }
 
@@ -259,7 +241,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: UsuarioSesion) => void }) {
   </section></main>;
 }
 
-function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, onModalidadChange, alertaActiva, prioridadAlerta, incidentes }: {
+function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, indice, modalidadesConAlerta, onModalidadChange }: {
   modalidad: Modalidad;
   summary: Resumen;
   detalle: DetalleHora[];
@@ -269,23 +251,34 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
   updatedAt: string;
   reportDate: string | null;
   indice: number;
+  modalidadesConAlerta: Modalidad[];
   onModalidadChange: (modalidad: Modalidad) => void;
-  alertaActiva: boolean;
-  prioridadAlerta: boolean;
-  incidentes: IncidenteOperativo[];
 }) {
-  const [page, setPage] = useState(0);
   const [horaInspeccion, setHoraInspeccion] = useState<string | null>(null);
-  const pageCount = Math.max(1, Math.ceil(detalle.length / tvPageRows));
-  const visibleRows = detalle.slice(page * tvPageRows, (page + 1) * tvPageRows);
-  const alertRow = detalle.findIndex((item) => item.critical);
-  const alertPage = alertRow >= 0 ? Math.floor(alertRow / tvPageRows) : 0;
-  useEffect(() => { setPage(prioridadAlerta ? alertPage : 0); }, [modalidad, prioridadAlerta, alertPage]);
+  const [interaccionHasta, setInteraccionHasta] = useState<number | null>(null);
+  const [ahora, setAhora] = useState(() => new Date());
+  const horaActual = horaLima(ahora);
+  const visibleRows = useMemo(() => ventanaOperativaPorHora(detalle, horaActual), [detalle, horaActual]);
+  const interactuando = horaInspeccion !== null || interaccionHasta !== null;
+  const registrarInteraccion = () => setInteraccionHasta(Date.now() + tvInteractionIdleMs);
+
   useEffect(() => {
-    if (prioridadAlerta || pageCount <= 1) return;
-    const interval = window.setInterval(() => setPage((current) => (current + 1) % pageCount), 7_500);
+    const interval = window.setInterval(() => setAhora(new Date()), 30_000);
     return () => window.clearInterval(interval);
-  }, [pageCount, prioridadAlerta]);
+  }, []);
+
+  useEffect(() => {
+    if (interaccionHasta === null) return;
+    const espera = Math.max(0, interaccionHasta - Date.now());
+    const timer = window.setTimeout(() => setInteraccionHasta(null), espera);
+    return () => window.clearTimeout(timer);
+  }, [interaccionHasta]);
+
+  useEffect(() => {
+    if (interactuando) return;
+    const interval = window.setInterval(() => onModalidadChange(modalidadesVisibles[(indice + 1) % modalidadesVisibles.length]), rotationMs);
+    return () => window.clearInterval(interval);
+  }, [indice, interactuando, onModalidadChange]);
 
   return (
     <main className="tv-screen">
@@ -295,7 +288,7 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
           <h1>{nombres[modalidad]}</h1>
         </div>
         <div className="tv-clock">
-          <strong>{formatHour(new Date().toISOString())}</strong>
+          <strong>{formatHour(ahora.toISOString())}</strong>
           <span>{reportDate ? formatDate(reportDate) : 'Hoy'} · actualizado {formatHour(updatedAt)}</span>
           <a className="exit-tv" href="/">Salir TV</a>
         </div>
@@ -325,7 +318,7 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
           </thead>
           <tbody>
             {visibleRows.length > 0 ? visibleRows.map((item) => (
-              <tr key={item.hora} className={`tv-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion(item.hora)}>
+              <tr key={item.hora} className={`tv-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => { registrarInteraccion(); setHoraInspeccion(item.hora); }}>
                 <td>{item.hora}</td>
                 <td>{item.citas}</td>
                 <td>{item.garita}</td>
@@ -341,11 +334,11 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
 
       <footer className="tv-footer">
         <div className="rotation" aria-label="Cambiar operación visible">
-          {modalidadesVisibles.map((item, position) => <button className={position === indice ? 'active' : ''} onClick={() => onModalidadChange(item)} key={item}>{nombres[item]}</button>)}
+          {modalidadesVisibles.map((item, position) => <button className={position === indice ? 'active' : ''} onClick={() => { registrarInteraccion(); onModalidadChange(item); }} key={item}>{nombres[item]}{modalidadesConAlerta.includes(item) && <span className="rotation-alert-dot" aria-label="Tiene alertas activas" />}</button>)}
         </div>
-        <p>{prioridadAlerta ? 'Alerta prioritaria · visible 25 segundos' : `${pageCount > 1 ? `Página ${page + 1} de ${pageCount} · ` : ''}Cambio automático cada 15 segundos`}</p>
+        <p>{horaInspeccion ? 'Cambio automático pausado mientras revisas el detalle' : interaccionHasta ? 'Cambio automático se reanudará tras 20 segundos sin interacción' : 'Cambio automático cada 10 segundos'}</p>
       </footer>
-      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={modalidad} grupos={grupos} seguimiento={seguimiento} reportDate={reportDate} onClose={() => setHoraInspeccion(null)} />}
+      {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={modalidad} grupos={grupos} seguimiento={seguimiento} reportDate={reportDate} onClose={() => { setHoraInspeccion(null); registrarInteraccion(); }} />}
     </main>
   );
 }
@@ -969,6 +962,23 @@ function LogoutIcon() {
 }
 
 type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; despachoDemorado: number; incidencias: number; revisar: number; critical: boolean; warning: boolean };
+
+function horaLima(fecha: Date) {
+  return Number(new Intl.DateTimeFormat('en-US', { hour: '2-digit', hourCycle: 'h23', timeZone: 'America/Lima' }).format(fecha));
+}
+
+function detalleHoraVacio(hora: number): DetalleHora {
+  return { hora: `${String(hora).padStart(2, '0')}:00`, citas: 0, garita: 0, ingreso: 0, despacho: 0, proximas: 0, pendientes: 0, despachoDemorado: 0, incidencias: 0, revisar: 0, critical: false, warning: false };
+}
+
+/** Muestra solo la ventana operativa: dos horas previas, la actual y dos posteriores. */
+function ventanaOperativaPorHora(detalle: DetalleHora[], horaActual: number) {
+  const porHora = new Map(detalle.map((item) => [Number(item.hora.slice(0, 2)), item]));
+  return [-2, -1, 0, 1, 2].map((desfase) => {
+    const hora = (horaActual + desfase + 24) % 24;
+    return porHora.get(hora) ?? detalleHoraVacio(hora);
+  });
+}
 
 function crearDetalle(operaciones: Operacion[], reportDate: string | null): DetalleHora[] {
   const data = new Map<string, DetalleHora>();

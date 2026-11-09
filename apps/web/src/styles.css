@@ -78,8 +78,9 @@ td:first-child { font-weight: 700; }
 .tv-mode-button { margin: 0; }
 .tv-mode-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
 .rotation { display: flex; flex-wrap: wrap; gap: .6vw; }
-.rotation button { border: 1px solid #329AD6; background: #ffffff; color: #000059; padding: .45em .9em; cursor: pointer; font: inherit; font-weight: 700; }
+.rotation button { position: relative; border: 1px solid #329AD6; background: #ffffff; color: #000059; padding: .45em .9em; cursor: pointer; font: inherit; font-weight: 700; }
 .rotation button.active { background: #329AD6; color: #ffffff; }
+.rotation-alert-dot { position: absolute; top: -5px; right: -5px; width: 10px; height: 10px; border: 2px solid #ffffff; border-radius: 50%; background: #c83f4b; box-shadow: 0 1px 4px rgb(0 0 0 / 24%); }
 
 .internal-screen { min-height: 100vh; padding: 52px 6vw 52px calc(280px + 4vw); background: #ffffff; transition: padding-left .22s ease; }
 .internal-screen.sidebar-collapsed { padding-left: calc(72px + 4vw); }
