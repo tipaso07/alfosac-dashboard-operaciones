@@ -27,7 +27,7 @@ body { margin: 0; background: #ffffff; }
 .data-loading section { max-width: 430px; }
 .data-loading h1 { margin: 16px 0 10px; font-size: clamp(1.5rem, 3vw, 2.2rem); }
 .data-loading p { margin: 0; color: #52627a; line-height: 1.5; }
-.data-loading-dot { width: 42px; height: 42px; display: inline-block; border: 5px solid #d8edf9; border-top-color: #329AD6; border-radius: 50%; animation: data-loading-spin .8s linear infinite; }
+.data-loading-dot { width: 42px; height: 42px; display: inline-block; border: 5px solid #d8edf9; border-top-color: #329AD6; border-radius: 50%; animation: data-loading-spin .8s linear infinite !important; }
 @keyframes data-loading-spin { to { transform: rotate(360deg); } }
 
 .tv-screen { height: 100vh; overflow: hidden; padding: 1.6vh 2.4vw 1.2vh; background: #ffffff; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; }

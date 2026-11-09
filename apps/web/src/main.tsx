@@ -110,7 +110,7 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
   const [indice, setIndice] = useState(0);
   const [alertaPriorizada, setAlertaPriorizada] = useState<string | null>(null);
   const [incidentes, setIncidentes] = useState<IncidenteOperativo[]>([]);
-  const [estadoCarga, setEstadoCarga] = useState<'CARGANDO' | 'LISTO' | 'ERROR'>('CARGANDO');
+  const [estadoCarga, setEstadoCarga] = useState<'CARGANDO' | 'LISTO'>('CARGANDO');
 
   useEffect(() => {
     const cargar = async () => {
@@ -131,7 +131,8 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
         setDataMode(summaryData.mode);
         setEstadoCarga('LISTO');
       } catch {
-        setEstadoCarga((actual) => actual === 'LISTO' ? actual : 'ERROR');
+        // Mantiene el indicador hasta el siguiente intento automático, sin mostrar cifras incompletas.
+        setEstadoCarga((actual) => actual === 'LISTO' ? actual : 'CARGANDO');
       }
     };
 
@@ -170,17 +171,16 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
   const seguimientoModalidad = seguimiento.filter((item) => item.modalidad === modalidad);
   const resumenModalidad = resumenSeguimiento[modalidad];
 
-  if (estadoCarga !== 'LISTO') return <DataLoadingScreen error={estadoCarga === 'ERROR'} />;
+  if (estadoCarga !== 'LISTO') return <DataLoadingScreen />;
 
   return tv
     ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} grupos={grupos.filter((group) => group.modalidad === modalidad)} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} onModalidadChange={(next) => { setIndice(modalidadesVisibles.indexOf(next)); setAlertaPriorizada(claveAlertas); }} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
     : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} user={user} authEnabled={authEnabled} onLogout={onLogout} />;
 }
 
-function DataLoadingScreen({ error }: { error: boolean }) {
+function DataLoadingScreen() {
   return <main className="data-loading"><section><span className="data-loading-dot" aria-hidden="true" />
-    <h1>{error ? 'No se pudo cargar la información' : 'Cargando información operativa…'}</h1>
-    <p>{error ? 'Verifica que la API esté disponible y actualiza la página.' : 'Consultando Falcon y GITS. No se muestran datos de ejemplo.'}</p>
+    <h1>Cargando información…</h1>
   </section></main>;
 }
 
