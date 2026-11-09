@@ -280,11 +280,6 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
   const visibleRows = detalle.slice(page * tvPageRows, (page + 1) * tvPageRows);
   const alertRow = detalle.findIndex((item) => item.critical);
   const alertPage = alertRow >= 0 ? Math.floor(alertRow / tvPageRows) : 0;
-  const pendientesPrioritarios = seguimiento
-    .filter((item) => esCritico(item.estado))
-    .sort((a, b) => b.minutosRetraso - a.minutosRetraso)
-    .slice(0, 3);
-
   useEffect(() => { setPage(prioridadAlerta ? alertPage : 0); }, [modalidad, prioridadAlerta, alertPage]);
   useEffect(() => {
     if (prioridadAlerta || pageCount <= 1) return;
@@ -307,7 +302,6 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
       </header>
 
       <section className="tv-summary">
-        {resumenSeguimiento.criticas > 0 && <div className="tv-alert"><strong>{resumenSeguimiento.criticas} alerta(s) que requieren atención</strong><span>{pendientesPrioritarios.map((item) => `${item.volante} · ${etiquetaSeguimiento(item)}`).join('   |   ')}</span></div>}
         <section className="tv-kpis" aria-label="Resumen de la operación">
           <Kpi label="Citas programadas" value={summary.agendadas} />
           <Kpi label="Registro en garita" value={summary.garita} />
