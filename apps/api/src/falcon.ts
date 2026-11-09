@@ -28,6 +28,12 @@ export interface FalconPreviewItem {
   negocio: string | null;
 }
 
+/** Cupos calculados con la configuración y las citas vigentes de Falcon. Solo lectura. */
+export interface FalconAvailabilityDay {
+  fecha: string;
+  modalidades: Array<{ modalidad: 'FCL' | 'LCL' | 'BB'; horas: Array<{ hora: number; cuposDisponibles: number | null }> }>;
+}
+
 /** Campos operativos de un retiro aéreo, para validar su registro manual en Falcon. */
 export interface FalconAerialTrace {
   volante: string;
@@ -576,6 +582,74 @@ export async function contarCitasPorHora(date: string) {
       hora: text(value(row, ['hora']))?.padStart(2, '0') ?? '—',
       cantidad: Number(value(row, ['cantidad']) ?? 0)
     })).filter((item) => item.modalidad !== 'OTRA');
+  } finally { await pool.close(); }
+}
+
+/**
+ * Replica la disponibilidad operativa a partir de la capacidad configurada,
+ * los bloqueos y las citas vigentes de Falcon. No modifica Falcon.
+ */
+export async function consultarDisponibilidadFalcon(desde: string, dias: number): Promise<FalconAvailabilityDay[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const totalDias = Math.max(1, Math.min(14, Math.floor(dias)));
+  const fechas = Array.from({ length: totalDias }, (_, index) => {
+    const value = new Date(`${desde}T12:00:00Z`);
+    value.setUTCDate(value.getUTCDate() + index);
+    return value.toISOString().slice(0, 10);
+  });
+  const hasta = fechas.at(-1) ?? desde;
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const [configResult, blocksResult, appointmentsResult] = await Promise.all([
+      pool.request().query<SourceRow>(`
+        SELECT id_negocio, num_dia, hora_ini, hora_fin, slots_hora
+        FROM dbo.citas_negocio_configuracion
+        WHERE id_negocio IN (3, 4, 5);`),
+      pool.request().input('desde', sql.Date, desde).input('hasta', sql.Date, hasta).query<SourceRow>(`
+        SELECT CONVERT(char(10), fecha_bloqueo, 23) AS fecha, id_negocio, hora_ini, hora_fin
+        FROM dbo.citas_negocio_bloqueos
+        WHERE fecha_bloqueo >= @desde AND fecha_bloqueo <= @hasta;`),
+      pool.request().input('desde', sql.Date, desde).input('hasta', sql.Date, hasta).query<SourceRow>(`
+        SELECT CONVERT(char(10), fecha, 23) AS fecha, cod_negocio, TRY_CONVERT(int, hora) AS hora, COUNT(*) AS cantidad
+        FROM dbo.citas_programadas
+        WHERE cod_negocio IN (3, 4, 5)
+          AND fecha >= @desde AND fecha <= @hasta
+          AND ISNULL(flag_cita, 0) = 1
+        GROUP BY CONVERT(char(10), fecha, 23), cod_negocio, TRY_CONVERT(int, hora);`)
+    ]);
+    const business: Record<number, 'FCL' | 'LCL' | 'BB'> = { 3: 'FCL', 4: 'LCL', 5: 'BB' };
+    const used = new Map<string, number>();
+    for (const row of appointmentsResult.recordset) {
+      const fecha = text(value(row, ['fecha'])) ?? '';
+      const negocio = Number(value(row, ['cod_negocio']));
+      const hora = Number(value(row, ['hora']));
+      if (business[negocio] && Number.isFinite(hora)) used.set(`${fecha}-${negocio}-${hora}`, Number(value(row, ['cantidad']) ?? 0));
+    }
+    const blocked = new Set<string>();
+    for (const row of blocksResult.recordset) {
+      const fecha = text(value(row, ['fecha'])) ?? '';
+      const negocio = Number(value(row, ['id_negocio']));
+      const inicio = Number(value(row, ['hora_ini']));
+      const fin = Number(value(row, ['hora_fin']));
+      for (let hora = inicio; hora <= fin; hora += 1) blocked.add(`${fecha}-${negocio}-${hora}`);
+    }
+    return fechas.map((fecha) => {
+      const dayOfWeek = (() => { const day = new Date(`${fecha}T12:00:00Z`).getUTCDay(); return day === 0 ? 7 : day; })();
+      const modalidades = [3, 4, 5].map((negocio) => {
+        const config = configResult.recordset.find((row) => Number(value(row, ['id_negocio'])) === negocio && Number(value(row, ['num_dia'])) === dayOfWeek);
+        if (!config) return { modalidad: business[negocio], horas: [] };
+        const inicio = Number(value(config, ['hora_ini']));
+        const fin = Number(value(config, ['hora_fin']));
+        const capacidad = Number(value(config, ['slots_hora']));
+        const horas = Array.from({ length: Math.max(0, fin - inicio + 1) }, (_, offset) => {
+          const hora = inicio + offset;
+          const ocupadas = used.get(`${fecha}-${negocio}-${hora}`) ?? 0;
+          return { hora, cuposDisponibles: blocked.has(`${fecha}-${negocio}-${hora}`) ? 0 : Math.max(0, capacidad - ocupadas) };
+        });
+        return { modalidad: business[negocio], horas };
+      });
+      return { fecha, modalidades };
+    });
   } finally { await pool.close(); }
 }
 

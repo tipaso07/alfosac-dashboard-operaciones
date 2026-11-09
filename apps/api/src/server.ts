@@ -3,11 +3,11 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
+import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
-import { asegurarEsquemaDisponibilidad, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
+import { asegurarEsquemaDisponibilidad, guardarDisponibilidadHistorica, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
 import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, crearSesion, crearUsuario, leerSesion, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
 
 const app = express();
@@ -113,6 +113,22 @@ let lastFalconSyncAt: string | null = null;
 let lastFalconSyncError: string | null = null;
 let syncRunning = false;
 let flowCache: { date: string; expiresAt: number; groups: ReturnType<typeof crearFlujoOperativo>; summary: ReturnType<typeof resumenDeFlujo> } | null = null;
+let lastAvailabilityCaptureKey: string | null = null;
+
+function fechaHoraPeru() {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts();
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '';
+  return { fecha: `${value('year')}-${value('month')}-${value('day')}`, hora: `${value('hour')}:${value('minute')}` };
+}
+
+async function capturarDisponibilidadNocturna() {
+  if (process.env.AVAILABILITY_CAPTURE_ENABLED === 'false') return;
+  const peru = fechaHoraPeru();
+  if (peru.hora !== '23:59' || lastAvailabilityCaptureKey === peru.fecha) return;
+  const days = await consultarDisponibilidadFalcon(peru.fecha, 7);
+  await guardarDisponibilidadHistorica(days.map((day) => ({ ...day, capturadaEn: new Date().toISOString(), fuente: 'FALCON_2359' })));
+  lastAvailabilityCaptureKey = peru.fecha;
+}
 
 async function cargarFlujoDashboard() {
   const date = fechaReporteActual();
@@ -533,6 +549,17 @@ app.get('/api/integrations/falcon/counts', async (request, response) => {
   catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar Falcon.' }); }
 });
 
+app.get('/api/availability/current', async (request, response) => {
+  const desde = String(request.query.desde ?? '');
+  const dias = Number(request.query.dias ?? 7);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !Number.isInteger(dias) || dias < 1 || dias > 14) {
+    response.status(400).json({ message: 'Indica desde=AAAA-MM-DD y dias entre 1 y 14.' });
+    return;
+  }
+  try { response.json({ desde, dias, fuente: 'FALCON_ACTUAL', snapshots: await consultarDisponibilidadFalcon(desde, dias) }); }
+  catch (error) { response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar la disponibilidad actual.' }); }
+});
+
 app.get('/api/availability/history', async (request, response) => {
   const date = String(request.query.date ?? '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
@@ -874,6 +901,7 @@ async function iniciarServidor() {
     const intervalSeconds = Number.isFinite(configuredInterval) ? Math.max(60, Math.floor(configuredInterval)) : 300;
     void syncFalconIfEnabled();
     setInterval(() => void syncFalconIfEnabled(), intervalSeconds * 1_000);
+    setInterval(() => void capturarDisponibilidadNocturna().catch((error) => console.error('No se pudo capturar la disponibilidad:', error)), 30_000);
   });
 }
 

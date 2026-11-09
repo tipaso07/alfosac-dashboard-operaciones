@@ -73,15 +73,16 @@ td:first-child { font-weight: 700; }
 .rotation button { border: 1px solid #329AD6; background: #ffffff; color: #000059; padding: .45em .9em; cursor: pointer; font: inherit; font-weight: 700; }
 .rotation button.active { background: #329AD6; color: #ffffff; }
 
-.internal-screen { min-height: 100vh; padding: 52px clamp(24px, 6vw, 100px); background: #ffffff; }
+.internal-screen { min-height: 100vh; padding: 52px 6vw 52px calc(238px + 4vw); background: #ffffff; }
 .internal-header h1 { font-size: clamp(2rem, 4vw, 3.5rem); }
 .internal-header > p { margin: 0; color: #000059; opacity: .7; }
 .internal-actions { display: flex; align-items: center; justify-content: end; gap: 16px; }
 .internal-actions p { margin: 0; color: #000059; opacity: .7; }
-.section-nav { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 4px; border-bottom: 1px solid #c7ddeb; padding-bottom: 14px; }
-.section-nav button { border: 1px solid #329AD6; background: #ffffff; color: #000059; padding: 10px 16px; font: inherit; font-weight: 800; cursor: pointer; }
-.section-nav button:hover { background: #edf8ff; }
-.section-nav button.selected { background: #000059; border-color: #000059; color: #ffffff; }
+.section-nav { position: fixed; inset: 0 auto 0 0; z-index: 20; display: flex; flex-direction: column; gap: 10px; width: 238px; padding: 36px 18px; background: #000059; box-shadow: 5px 0 18px rgb(0 0 0 / 12%); }
+.section-nav::before { content: 'ALFOSAC'; margin: 0 10px 28px; color: #ffffff; font-size: 1.25rem; font-weight: 900; letter-spacing: .08em; }
+.section-nav a { border: 1px solid rgb(255 255 255 / 30%); color: #ffffff; padding: 12px 14px; font: inherit; font-weight: 800; cursor: pointer; text-decoration: none; }
+.section-nav a:hover { background: rgb(255 255 255 / 13%); }
+.section-nav a.selected { background: #329AD6; border-color: #329AD6; color: #ffffff; }
 .logout-button { position: fixed; right: 22px; bottom: 22px; z-index: 30; display: inline-grid; place-items: center; width: 46px; min-height: 46px; padding: 0; border-color: #c83f4b; background: #ffffff; color: #a22635; box-shadow: 0 5px 16px rgb(16 34 63 / 15%); font-size: .84rem; border-radius: 50%; }
 .logout-button:hover { background: #c83f4b; border-color: #c83f4b; color: #ffffff; }
 .logout-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -121,6 +122,12 @@ td:first-child { font-weight: 700; }
 .export-download { display: inline-flex; margin-top: 4px; border: 1px solid #000059; background: #000059; color: #ffffff; padding: 12px 16px; text-decoration: none; font-weight: 800; }
 .export-download:hover { background: #329AD6; border-color: #329AD6; }
 .availability-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
+.availability-title { display: grid; justify-items: center; gap: 10px; padding: 18px 12px 24px; text-align: center; }
+.availability-title .brand { margin: 0; }
+.availability-title h2 { margin: 0; color: #000059; font-size: clamp(2rem, 4vw, 3.5rem); }
+.availability-title > p { margin: 0; color: #334155; font-size: 1.1rem; }
+.availability-title label { display: grid; gap: 6px; margin-top: 8px; color: #334155; font-size: .82rem; font-weight: 700; text-align: left; }
+.availability-title input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
 .availability-panel .panel-heading label { display: grid; gap: 6px; color: #334155; font-size: .82rem; font-weight: 700; }
 .availability-panel input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
 .availability-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 0 8px; }
@@ -247,6 +254,9 @@ td:first-child { font-weight: 700; }
 @media (max-width: 900px) {
   .tv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .internal-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .internal-screen { padding-left: 28px; }
+  .section-nav { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin: 0 -28px 24px; padding: 14px 28px; box-shadow: none; }
+  .section-nav::before { display: none; }
 }
 
 @media (max-width: 620px) {
@@ -264,7 +274,7 @@ td:first-child { font-weight: 700; }
   .availability-toolbar { align-items: flex-start; flex-direction: column; }
   .operations-panel { padding: 16px; }
   .section-nav { gap: 8px; }
-  .section-nav button { flex: 1 1 140px; }
+  .section-nav a { flex: 1 1 140px; text-align: center; }
   .toolbar-row { align-items: flex-start; flex-direction: column; }
   .advanced-filters label, .advanced-filters input, .advanced-filters select { width: 100%; }
   .panel-heading, .timeline li { align-items: start; flex-direction: column; }

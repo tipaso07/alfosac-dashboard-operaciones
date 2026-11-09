@@ -99,3 +99,29 @@ export async function listarDisponibilidadHistoricaRango(desde: string, hasta: s
     modalidades: [...(cupsByCapture.get(capture.id) ?? new Map()).entries()].map(([modalidad, horas]) => ({ modalidad, horas }))
   }));
 }
+
+/** Guarda una captura en la base del dashboard. Nunca escribe en Falcon. */
+export async function guardarDisponibilidadHistorica(days: DisponibilidadHistorica[]) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const day of days) {
+      const capture = await client.query<{ id: string }>(`
+        INSERT INTO disponibilidad_capturas (fecha_operativa, fuente)
+        VALUES ($1::date, $2)
+        RETURNING id;
+      `, [day.fecha, day.fuente]);
+      const captureId = capture.rows[0].id;
+      for (const modalidad of day.modalidades) for (const hour of modalidad.horas) {
+        await client.query(`
+          INSERT INTO disponibilidad_cupos (captura_id, modalidad, hora, cupos_disponibles)
+          VALUES ($1, $2, $3, $4);
+        `, [captureId, modalidad.modalidad, hour.hora, hour.cuposDisponibles]);
+      }
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally { client.release(); }
+}
