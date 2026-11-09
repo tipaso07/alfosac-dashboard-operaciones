@@ -78,13 +78,6 @@ const nombres: Record<Modalidad, string> = {
   AEREO: 'Aéreo / A.R.'
 };
 
-const demoResumen: Resumen[] = [
-  { modalidad: 'FCL', agendadas: 0, garita: 1, despacho: 1, completadas: 0, noCompletadas: 0 },
-  { modalidad: 'LCL', agendadas: 1, garita: 0, despacho: 0, completadas: 0, noCompletadas: 1 },
-  { modalidad: 'BB', agendadas: 0, garita: 0, despacho: 0, completadas: 1, noCompletadas: 0 },
-  { modalidad: 'AEREO', agendadas: 0, garita: 0, despacho: 1, completadas: 0, noCompletadas: 0 }
-];
-
 function App() {
   const [auth, setAuth] = useState<EstadoAutenticacion | null>(null);
 
@@ -107,7 +100,7 @@ function App() {
 
 function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
   const tv = window.location.pathname === '/tv';
-  const [resumen, setResumen] = useState<Resumen[]>(demoResumen);
+  const [resumen, setResumen] = useState<Resumen[]>([]);
   const [operaciones, setOperaciones] = useState<Operacion[]>([]);
   const [grupos, setGrupos] = useState<GrupoFlujo[]>([]);
   const [pendientes, setPendientes] = useState<Operacion[]>([]);
@@ -117,12 +110,13 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
   const [indice, setIndice] = useState(0);
   const [alertaPriorizada, setAlertaPriorizada] = useState<string | null>(null);
   const [incidentes, setIncidentes] = useState<IncidenteOperativo[]>([]);
+  const [estadoCarga, setEstadoCarga] = useState<'CARGANDO' | 'LISTO' | 'ERROR'>('CARGANDO');
 
   useEffect(() => {
     const cargar = async () => {
       try {
         const respuestas = await Promise.all([fetch('/api/dashboard/summary'), fetch('/api/dashboard/operations'), fetch('/api/dashboard/pending-arrivals'), fetch('/api/dashboard/flow')]);
-        if (!respuestas.every((response) => response.ok)) return;
+        if (!respuestas.every((response) => response.ok)) throw new Error('No se pudo consultar el resumen operativo.');
         const summaryData = await respuestas[0].json() as { mode: 'demo' | 'reportes'; summary: Resumen[]; updatedAt: string; reportDate: string | null };
         const operationsData = await respuestas[1].json() as { operations: Operacion[]; reportDate: string | null };
         const pendingData = await respuestas[2].json() as { operations: Operacion[] };
@@ -135,8 +129,9 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
         setUpdatedAt(summaryData.updatedAt);
         setReportDate(summaryData.reportDate ?? operationsData.reportDate ?? null);
         setDataMode(summaryData.mode);
+        setEstadoCarga('LISTO');
       } catch {
-        // Se conserva el último dato visible si la API se reinicia.
+        setEstadoCarga((actual) => actual === 'LISTO' ? actual : 'ERROR');
       }
     };
 
@@ -169,15 +164,24 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
   }, [tv, claveAlertas, alertaPriorizada, modalidadesConAlerta]);
 
   const modalidad = modalidadesVisibles[indice];
-  const summary = resumen.find((item) => item.modalidad === modalidad) ?? demoResumen.find((item) => item.modalidad === modalidad)!;
+  const summary = resumen.find((item) => item.modalidad === modalidad) ?? { modalidad, agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 };
   const detalle = detallesTv[modalidad];
   const alertaActiva = modalidadesConAlerta.includes(modalidad);
   const seguimientoModalidad = seguimiento.filter((item) => item.modalidad === modalidad);
   const resumenModalidad = resumenSeguimiento[modalidad];
 
+  if (estadoCarga !== 'LISTO') return <DataLoadingScreen error={estadoCarga === 'ERROR'} />;
+
   return tv
     ? <TvScreen modalidad={modalidad} summary={summary} detalle={detalle} grupos={grupos.filter((group) => group.modalidad === modalidad)} seguimiento={seguimientoModalidad} resumenSeguimiento={resumenModalidad} updatedAt={updatedAt} reportDate={reportDate} indice={indice} onModalidadChange={(next) => { setIndice(modalidadesVisibles.indexOf(next)); setAlertaPriorizada(claveAlertas); }} alertaActiva={alertaActiva} prioridadAlerta={prioridadActiva && alertaActiva} incidentes={incidentes} />
     : <InternalScreen resumen={resumen} grupos={grupos} seguimiento={seguimiento} resumenSeguimiento={resumenSeguimiento} updatedAt={updatedAt} reportDate={reportDate} dataMode={dataMode} incidentes={incidentes} user={user} authEnabled={authEnabled} onLogout={onLogout} />;
+}
+
+function DataLoadingScreen({ error }: { error: boolean }) {
+  return <main className="data-loading"><section><span className="data-loading-dot" aria-hidden="true" />
+    <h1>{error ? 'No se pudo cargar la información' : 'Cargando información operativa…'}</h1>
+    <p>{error ? 'Verifica que la API esté disponible y actualiza la página.' : 'Consultando Falcon y GITS. No se muestran datos de ejemplo.'}</p>
+  </section></main>;
 }
 
 function LoginScreen({ onLogin }: { onLogin: (user: UsuarioSesion) => void }) {
