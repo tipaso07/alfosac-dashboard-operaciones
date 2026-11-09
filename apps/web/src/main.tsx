@@ -858,7 +858,7 @@ function alertDetail(item: SeguimientoLlegada) {
   switch (item.estado) {
     case 'CITA_VENCIDA': return { tone: 'alert', level: 'CRÍTICA', title: 'Cita vencida', contact: true, showElapsed: true };
     case 'CITA_POR_VENCER': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Cita por vencer', contact: true, showElapsed: true };
-    case 'GARITA_SIN_INGRESO': return { tone: 'alert', level: 'CRÍTICA', title: 'Garita sin primer pesaje', contact: false, showElapsed: true };
+    case 'GARITA_SIN_INGRESO': return { tone: 'alert', level: 'CRÍTICA', title: 'Demora para ingreso al DT', contact: true, showElapsed: true };
     case 'EN_GARITA': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Demora desde garita', contact: false, showElapsed: true };
     case 'BALANZA_SIN_SALIDA': return { tone: 'alert', level: 'CRÍTICA', title: 'Primer pesaje sin salida', contact: false, showElapsed: true };
     case 'EN_BALANZA': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Demora en balanza / despacho', contact: false, showElapsed: true };
@@ -1131,7 +1131,7 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
   if (item.estado === 'CITA_VENCIDA') return `Cita vencida: sin registro en garita Falcon · ${item.minutosRetraso} min`;
   if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita Falcon';
-  if (item.estado === 'GARITA_SIN_INGRESO') return `Garita Falcon sin primer pesaje GITS · ${item.minutosRetraso} min`;
+  if (item.estado === 'GARITA_SIN_INGRESO') return `Demora para ingreso al DT · ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
   if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 5%`;
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
