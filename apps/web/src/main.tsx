@@ -190,7 +190,6 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
     modalidad,
     crearDetalleFlujo(grupos.filter((group) => group.modalidad === modalidad), reportDate, seguimiento.filter((item) => item.modalidad === modalidad))
   ])) as Record<Modalidad, DetalleHora[]>, [grupos, reportDate, seguimiento]);
-  const modalidadesConAlerta = useMemo(() => modalidadesVisibles.filter((item) => seguimiento.some((alerta) => alerta.modalidad === item && esCritico(alerta.estado))), [seguimiento]);
   const resumenSeguimiento = useMemo(() => crearResumenSeguimiento(seguimiento), [seguimiento]);
   if (estadoCarga !== 'LISTO') return <DataLoadingScreen />;
 
@@ -268,10 +267,14 @@ function TvScreen({ resumen, detalles, grupos, seguimiento, resumenSeguimiento, 
         {modalidadesVisibles.map((modalidad) => {
           const summary = resumen.find((item) => item.modalidad === modalidad) ?? { modalidad, agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 };
           const filas = ventanaOperativaPorHora(detalles[modalidad], horaActual);
-          const alertas = resumenSeguimiento[modalidad].criticas;
           return <section className="tv-modality-panel" key={modalidad}>
-            <div className="tv-modality-heading"><div><h2>{nombres[modalidad]}</h2><span>Ventana: {filas[0]?.hora} a {filas.at(-1)?.hora}</span></div><strong className={alertas > 0 ? 'tv-alert-count active' : 'tv-alert-count'}>{alertas}</strong></div>
-            <div className="tv-panel-kpis"><Kpi label="Citas" value={summary.agendadas} /><Kpi label="Garita" value={summary.garita} /><Kpi label="Alertas" value={alertas} /></div>
+            <div className="tv-modality-heading"><div><h2>{nombres[modalidad]}</h2><span>Ventana: {filas[0]?.hora} a {filas.at(-1)?.hora}</span></div></div>
+            <div className="tv-panel-kpis">
+              <Kpi label="Citas agendadas" value={summary.agendadas} />
+              <Kpi label="Registro en garita" value={summary.garita} />
+              <Kpi label="Ingreso" value={summary.despacho} />
+              <Kpi label="Despacho" value={summary.completadas} />
+            </div>
             <div className="tv-panel-table"><table><thead><tr><th>Hora</th><th>Citas</th><th>Garita</th><th>Ingreso</th><th>Salida</th><th>Revisar</th><th>Estado</th></tr></thead><tbody>
               {filas.map((item) => <tr key={item.hora} className={`tv-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion({ hora: item.hora, modalidad })}>
                 <td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td>

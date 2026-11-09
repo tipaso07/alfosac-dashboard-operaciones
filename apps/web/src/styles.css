@@ -57,9 +57,7 @@ h1 { margin-bottom: 0; font-size: clamp(2rem, 4.2vw, 4.5rem); line-height: 1; }
 .tv-modality-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: .85vh .9vw; border-bottom: 1px solid #b8d9ea; }
 .tv-modality-heading h2 { margin: 0; color: #000059; font-size: clamp(1rem, 1.45vw, 1.6rem); }
 .tv-modality-heading span { display: block; margin-top: 3px; color: #64748b; font-size: clamp(.58rem, .75vw, .78rem); font-weight: 700; }
-.tv-alert-count { min-width: 32px; padding: 5px 8px; border-radius: 999px; background: #dff5e5; color: #28633b; text-align: center; font-size: clamp(.72rem, .95vw, 1rem); }
-.tv-alert-count.active { background: #c83f4b; color: #ffffff; }
-.tv-panel-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; padding: .6vh .6vw; background: #f7fbfe; }
+.tv-panel-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; padding: .6vh .6vw; background: #f7fbfe; }
 .tv-panel-kpis .tv-kpi { min-height: 5.6vh; border-top-width: 3px; padding: .45vh .35vw; }
 .tv-panel-kpis .tv-kpi span { font-size: clamp(.48rem, .65vw, .7rem); }
 .tv-panel-kpis .tv-kpi strong { font-size: clamp(1.1rem, 1.8vw, 2rem); }
