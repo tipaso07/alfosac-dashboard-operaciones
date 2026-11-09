@@ -306,6 +306,7 @@ function TvScreen({ modalidad, summary, detalle, grupos, seguimiento, resumenSeg
 
 function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode, incidentes, user, authEnabled, onLogout }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes'; incidentes: IncidenteOperativo[]; user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
   const seccion = window.location.pathname === '/citas-agendadas' ? 'CITAS' : window.location.pathname === '/reportes' ? 'REPORTES' : 'OPERACION';
+  const [menuContraido, setMenuContraido] = useState(false);
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
   const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
@@ -352,7 +353,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   }), { criticas: 0, proximas: 0, pesoObservado: 0 });
 
   return (
-    <main className="internal-screen">
+    <main className={`internal-screen ${menuContraido ? 'sidebar-collapsed' : ''}`}>
       <header className="internal-header">
         <div>
           <p className="brand">ALMACENES FORWARDER S.A.C.</p>
@@ -363,10 +364,12 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       </header>
       {authEnabled && user && <button className="logout-button" onClick={() => void onLogout()} aria-label={`Cerrar sesión de ${user.nombre}`} title="Cerrar sesión"><LogoutIcon /></button>}
 
-      <nav className="section-nav" aria-label="Secciones del dashboard">
-        <a className={seccion === 'OPERACION' ? 'selected' : ''} href="/">Seguimiento en vivo</a>
-        <a className={seccion === 'CITAS' ? 'selected' : ''} href="/citas-agendadas">Citas agendadas</a>
-        <a className={seccion === 'REPORTES' ? 'selected' : ''} href="/reportes">Reportes</a>
+      <nav className={`section-nav ${menuContraido ? 'collapsed' : ''}`} aria-label="Secciones del dashboard">
+        <div className="sidebar-brand"><img src="/alfosac-logo-blanco.png" alt="Alfosac" /></div>
+        <button className="sidebar-toggle" onClick={() => setMenuContraido((value) => !value)} aria-label={menuContraido ? 'Desplegar menú' : 'Contraer menú'} title={menuContraido ? 'Desplegar menú' : 'Contraer menú'}>{menuContraido ? '›' : '‹'}</button>
+        <a className={seccion === 'OPERACION' ? 'selected' : ''} href="/" title="Seguimiento en vivo"><span className="nav-symbol">◉</span><span>Seguimiento en vivo</span></a>
+        <a className={seccion === 'CITAS' ? 'selected' : ''} href="/citas-agendadas" title="Citas agendadas"><span className="nav-symbol">▦</span><span>Citas agendadas</span></a>
+        <a className={seccion === 'REPORTES' ? 'selected' : ''} href="/reportes" title="Reportes"><span className="nav-symbol">⇩</span><span>Reportes</span></a>
       </nav>
 
       {seccion === 'OPERACION' && <>
