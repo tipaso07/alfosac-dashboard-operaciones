@@ -71,6 +71,8 @@ const modalidadesVisibles: Modalidad[] = ['FCL', 'LCL'];
 const rotationMs = 15_000;
 const alertRotationMs = 25_000;
 const tvPageRows = 8;
+const dashboardCacheKey = 'alfosac.dashboard.operacion.v1';
+const dashboardCacheMaxAgeMs = 60_000;
 const nombres: Record<Modalidad, string> = {
   FCL: 'FCL importación',
   LCL: 'LCL importación',
@@ -98,19 +100,55 @@ function App() {
   return <DashboardApp user={auth.user} authEnabled={auth.enabled} onLogout={logout} />;
 }
 
+type DashboardCache = {
+  cachedAt: number;
+  resumen: Resumen[];
+  operaciones: Operacion[];
+  pendientes: Operacion[];
+  grupos: GrupoFlujo[];
+  incidentes: IncidenteOperativo[];
+  updatedAt: string;
+  reportDate: string | null;
+  dataMode: 'demo' | 'reportes';
+};
+
+function leerCacheDashboard(): DashboardCache | null {
+  try {
+    const raw = window.sessionStorage.getItem(dashboardCacheKey);
+    if (!raw) return null;
+    const cache = JSON.parse(raw) as DashboardCache;
+    if (!cache.cachedAt || Date.now() - cache.cachedAt > dashboardCacheMaxAgeMs) {
+      window.sessionStorage.removeItem(dashboardCacheKey);
+      return null;
+    }
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
+function guardarCacheDashboard(cache: Omit<DashboardCache, 'cachedAt'>) {
+  try {
+    window.sessionStorage.setItem(dashboardCacheKey, JSON.stringify({ ...cache, cachedAt: Date.now() }));
+  } catch {
+    // La caché mejora la navegación, pero el panel sigue funcionando si el navegador la bloquea.
+  }
+}
+
 function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
   const tv = window.location.pathname === '/tv';
-  const [resumen, setResumen] = useState<Resumen[]>([]);
-  const [operaciones, setOperaciones] = useState<Operacion[]>([]);
-  const [grupos, setGrupos] = useState<GrupoFlujo[]>([]);
-  const [pendientes, setPendientes] = useState<Operacion[]>([]);
-  const [updatedAt, setUpdatedAt] = useState(new Date().toISOString());
-  const [reportDate, setReportDate] = useState<string | null>(null);
-  const [dataMode, setDataMode] = useState<'demo' | 'reportes'>('demo');
+  const cacheInicial = leerCacheDashboard();
+  const [resumen, setResumen] = useState<Resumen[]>(() => cacheInicial?.resumen ?? []);
+  const [operaciones, setOperaciones] = useState<Operacion[]>(() => cacheInicial?.operaciones ?? []);
+  const [grupos, setGrupos] = useState<GrupoFlujo[]>(() => cacheInicial?.grupos ?? []);
+  const [pendientes, setPendientes] = useState<Operacion[]>(() => cacheInicial?.pendientes ?? []);
+  const [updatedAt, setUpdatedAt] = useState(() => cacheInicial?.updatedAt ?? new Date().toISOString());
+  const [reportDate, setReportDate] = useState<string | null>(() => cacheInicial?.reportDate ?? null);
+  const [dataMode, setDataMode] = useState<'demo' | 'reportes'>(() => cacheInicial?.dataMode ?? 'demo');
   const [indice, setIndice] = useState(0);
   const [alertaPriorizada, setAlertaPriorizada] = useState<string | null>(null);
-  const [incidentes, setIncidentes] = useState<IncidenteOperativo[]>([]);
-  const [estadoCarga, setEstadoCarga] = useState<'CARGANDO' | 'LISTO'>('CARGANDO');
+  const [incidentes, setIncidentes] = useState<IncidenteOperativo[]>(() => cacheInicial?.incidentes ?? []);
+  const [estadoCarga, setEstadoCarga] = useState<'CARGANDO' | 'LISTO'>(() => cacheInicial ? 'LISTO' : 'CARGANDO');
 
   useEffect(() => {
     const cargar = async () => {
@@ -129,6 +167,16 @@ function DashboardApp({ user, authEnabled, onLogout }: { user: UsuarioSesion | n
         setUpdatedAt(summaryData.updatedAt);
         setReportDate(summaryData.reportDate ?? operationsData.reportDate ?? null);
         setDataMode(summaryData.mode);
+        guardarCacheDashboard({
+          resumen: summaryData.summary,
+          operaciones: operationsData.operations,
+          pendientes: pendingData.operations,
+          grupos: flowData.groups,
+          incidentes: flowData.incidents ?? [],
+          updatedAt: summaryData.updatedAt,
+          reportDate: summaryData.reportDate ?? operationsData.reportDate ?? null,
+          dataMode: summaryData.mode
+        });
         setEstadoCarga('LISTO');
       } catch {
         // Mantiene el indicador hasta el siguiente intento automático, sin mostrar cifras incompletas.
