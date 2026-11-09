@@ -610,12 +610,12 @@ export async function consultarDisponibilidadFalcon(desde: string, dias: number)
         FROM dbo.citas_negocio_bloqueos
         WHERE fecha_bloqueo >= @desde AND fecha_bloqueo <= @hasta;`),
       pool.request().input('desde', sql.Date, desde).input('hasta', sql.Date, hasta).query<SourceRow>(`
-        SELECT CONVERT(char(10), fecha, 23) AS fecha, cod_negocio, TRY_CONVERT(int, hora) AS hora, COUNT(*) AS cantidad
+        SELECT CONVERT(char(10), fecha, 23) AS fecha, cod_negocio, CONVERT(int, hora) AS hora, COUNT(*) AS cantidad
         FROM dbo.citas_programadas
         WHERE cod_negocio IN (3, 4, 5)
           AND fecha >= @desde AND fecha <= @hasta
           AND ISNULL(flag_cita, 0) = 1
-        GROUP BY CONVERT(char(10), fecha, 23), cod_negocio, TRY_CONVERT(int, hora);`)
+        GROUP BY CONVERT(char(10), fecha, 23), cod_negocio, CONVERT(int, hora);`)
     ]);
     const business: Record<number, 'FCL' | 'LCL' | 'BB'> = { 3: 'FCL', 4: 'LCL', 5: 'BB' };
     const used = new Map<string, number>();
