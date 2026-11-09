@@ -354,14 +354,13 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
   return (
     <main className={`internal-screen ${menuContraido ? 'sidebar-collapsed' : ''}`}>
-      <header className="internal-header">
+      {seccion === 'OPERACION' && <header className="internal-header">
         <div>
-          <p className="brand">ALMACENES FORWARDER S.A.C.</p>
           <h1>Dashboard operativo</h1>
           {reportDate && <p>Información del {formatDate(reportDate)}</p>}
         </div>
         <div className="internal-actions"><a className="tv-mode-button" href="/tv"><TvIcon />Modo TV</a><p>{dataMode === 'reportes' ? 'Datos importados' : 'Modo demostración'} · actualizado {formatHour(updatedAt)}</p></div>
-      </header>
+      </header>}
       {authEnabled && user && <button className="logout-button" onClick={() => void onLogout()} aria-label={`Cerrar sesión de ${user.nombre}`} title="Cerrar sesión"><LogoutIcon /></button>}
 
       <nav className={`section-nav ${menuContraido ? 'collapsed' : ''}`} aria-label="Secciones del dashboard">
