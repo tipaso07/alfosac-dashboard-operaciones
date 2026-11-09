@@ -828,7 +828,11 @@ app.get('/api/reports/operations', async (request, response) => {
   }
   try {
     const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha);
-    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad));
+    let movimientos = null;
+    if (periodo === 'DIARIO' && process.env.GITS_SYNC_ENABLED === 'true') {
+      try { movimientos = await consultarFlujoDiarioGits(fecha, 1_000); } catch { /* El reporte conserva Falcon si GITS no responde. */ }
+    }
+    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, movimientos));
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo generar el reporte.' });
   }

@@ -40,6 +40,7 @@ type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number;
 type ReporteOperativo = {
   periodo: 'DIARIO' | 'MENSUAL'; fecha: string; modalidad: 'TODAS' | 'FCL' | 'LCL';
   resumen: { programadas: number; atendidas: number; noAtendidas: number; pendientesAnulacion: number; anuladas: number; pesajesLibres: number; porConfirmar: number };
+  estadisticas: { citasAgendadas: number; registroGarita: number; primerPesaje: number | null; salidaBalanza: number | null; esperaPromedioMinutos: number | null; atencionPromedioMinutos: number | null; gitsDisponible: boolean };
   filas: Array<{ fecha: string | null; horaCita: string | null; modalidad: Modalidad; volante: string; placa: string; estado: Estado; clasificacion: string }>;
   nota: string;
 };
@@ -253,7 +254,6 @@ function TvScreen({ resumen, detalles, grupos, seguimiento, resumenSeguimiento, 
     <main className="tv-screen">
       <header className="tv-header">
         <div>
-          <p className="brand">ALFOSAC · SEGUIMIENTO OPERATIVO</p>
           <h1>Seguimiento por horario</h1>
         </div>
         <div className="tv-clock">
@@ -558,12 +558,15 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
     </div>
     {error ? <p className="empty">{error}</p> : reporte ? <>
-      <div className="report-kpis">
-        <Kpi label="Programadas" value={reporte.resumen.programadas} /><Kpi label="Atendidas" value={reporte.resumen.atendidas} />
-        <Kpi label="No atendidas" value={reporte.resumen.noAtendidas} /><Kpi label="Pendientes de anular" value={reporte.resumen.pendientesAnulacion} />
-        <Kpi label="Anuladas" value={reporte.resumen.anuladas} /><Kpi label="Pesaje libre" value={reporte.resumen.pesajesLibres} />
+      <div className="report-kpis report-kpis-operativos">
+        <Kpi label="Citas agendadas" value={reporte.estadisticas.citasAgendadas} />
+        <Kpi label="Registro en garita" value={reporte.estadisticas.registroGarita} />
+        <Kpi label="Primer pesaje" value={reporte.estadisticas.primerPesaje ?? '—'} />
+        <Kpi label="Salida por balanza" value={reporte.estadisticas.salidaBalanza ?? '—'} />
+        <Kpi label="Espera promedio" value={reporte.estadisticas.esperaPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.esperaPromedioMinutos * 60)} />
+        <Kpi label="Atención promedio" value={reporte.estadisticas.atencionPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.atencionPromedioMinutos * 60)} />
       </div>
-      <p className="report-note">{reporte.nota} {reporte.resumen.porConfirmar > 0 ? `${reporte.resumen.porConfirmar} cita(s) aún por confirmar.` : ''}</p>
+      <p className="report-note">{reporte.estadisticas.gitsDisponible ? 'Los tiempos promedio se calculan con primer y segundo pesaje de GITS; los hitos de cita y garita provienen de Falcon.' : 'Los indicadores de pesaje no están disponibles porque GITS no respondió para este período.'}</p>
       <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante</th><th>Placa</th><th>Estado</th></tr></thead><tbody>{reporte.filas.length ? reporte.filas.map((item) => <tr key={`${item.modalidad}-${item.volante}-${item.horaCita}`}><td>{item.fecha ?? '—'}</td><td>{item.horaCita ?? '—'}</td><td>{item.modalidad}</td><td>{item.volante}</td><td>{item.placa}</td><td><span className={item.clasificacion === 'NO_ATENDIDA' || item.clasificacion === 'PESAJE_LIBRE' ? 'state-badge state-alert' : 'state-badge'}>{item.clasificacion.replaceAll('_', ' ')}</span></td></tr>) : <tr><td colSpan={6} className="empty">No hay citas para este período.</td></tr>}</tbody></table></div>
     </> : <p className="empty">Cargando reporte…</p>}
   </section>;

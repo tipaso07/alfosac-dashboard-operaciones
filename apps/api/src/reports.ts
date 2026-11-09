@@ -1,4 +1,5 @@
 import type { Modalidad, Operacion } from './domain.js';
+import type { GitsDailyFlowItem } from './gits.js';
 
 export type PeriodoReporte = 'DIARIO' | 'MENSUAL';
 export type ModalidadReporte = Extract<Modalidad, 'FCL' | 'LCL'> | 'TODAS';
@@ -25,6 +26,15 @@ export interface ReporteOperativo {
     anuladas: number;
     pesajesLibres: number;
     porConfirmar: number;
+  };
+  estadisticas: {
+    citasAgendadas: number;
+    registroGarita: number;
+    primerPesaje: number | null;
+    salidaBalanza: number | null;
+    esperaPromedioMinutos: number | null;
+    atencionPromedioMinutos: number | null;
+    gitsDisponible: boolean;
   };
   filas: FilaReporteOperativo[];
   nota: string;
@@ -59,12 +69,26 @@ function clasificar(estado: Operacion['estado']): FilaReporteOperativo['clasific
   return 'POR_CONFIRMAR';
 }
 
+function volanteNormalizado(value: string | null | undefined) {
+  return value?.trim().replace(/\s+/g, '').replace(/^0+(?=\d)/, '') ?? '';
+}
+
+function minutosEntre(inicio: string, fin: string) {
+  const minutos = (new Date(fin).getTime() - new Date(inicio).getTime()) / 60_000;
+  return Number.isFinite(minutos) && minutos >= 0 && minutos <= 24 * 60 ? minutos : null;
+}
+
+function promedio(values: number[]) {
+  return values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : null;
+}
+
 /** Reporte de negocio: no interpreta un pesaje como atención de una cita. */
 export function crearReporteOperativo(
   operaciones: Operacion[],
   periodo: PeriodoReporte,
   fecha: string,
-  modalidad: ModalidadReporte
+  modalidad: ModalidadReporte,
+  movimientosGits: GitsDailyFlowItem[] | null = null
 ): ReporteOperativo {
   const candidatas = operaciones.filter((item) => {
     const fechaPrincipal = item.fechaCita ?? item.fechaGarita ?? item.fechaIngresoDespacho ?? item.fechaCompletado;
@@ -83,6 +107,26 @@ export function crearReporteOperativo(
   })).sort((a, b) => `${a.fecha ?? ''}${a.horaCita ?? ''}${a.volante}`.localeCompare(`${b.fecha ?? ''}${b.horaCita ?? ''}${b.volante}`));
 
   const contar = (clasificacion: FilaReporteOperativo['clasificacion']) => filas.filter((item) => item.clasificacion === clasificacion).length;
+  const porVolante = new Map<string, Operacion[]>();
+  for (const cita of candidatas) {
+    const volante = volanteNormalizado(cita.volante);
+    if (volante) porVolante.set(volante, [...(porVolante.get(volante) ?? []), cita]);
+  }
+  const movimientos = movimientosGits === null ? null : movimientosGits.filter((movimiento) => {
+    const citas = porVolante.get(volanteNormalizado(movimiento.volante)) ?? [];
+    return Boolean(movimiento.fechaGarita) && citas.some((cita) => cita.modalidad === 'FCL' || cita.modalidad === 'LCL');
+  });
+  const esperas = (movimientos ?? []).flatMap((movimiento) => {
+    if (!movimiento.fechaGarita) return [];
+    const citas = porVolante.get(volanteNormalizado(movimiento.volante)) ?? [];
+    const opciones = citas
+      .map((cita) => cita.fechaGarita ? minutosEntre(cita.fechaGarita, movimiento.fechaGarita!) : null)
+      .filter((valor): valor is number => valor !== null);
+    return opciones.length ? [Math.min(...opciones)] : [];
+  });
+  const atenciones = (movimientos ?? []).flatMap((movimiento) => movimiento.fechaGarita && movimiento.fechaSalidaBalanza
+    ? [minutosEntre(movimiento.fechaGarita, movimiento.fechaSalidaBalanza)].filter((valor): valor is number => valor !== null)
+    : []);
   return {
     periodo, fecha, modalidad,
     resumen: {
@@ -93,6 +137,15 @@ export function crearReporteOperativo(
       anuladas: contar('ANULADA'),
       pesajesLibres: contar('PESAJE_LIBRE'),
       porConfirmar: contar('POR_CONFIRMAR')
+    },
+    estadisticas: {
+      citasAgendadas: candidatas.filter((item) => item.fechaCita && dentroDelPeriodo(item.fechaCita, periodo, fecha)).length,
+      registroGarita: candidatas.filter((item) => item.fechaGarita && dentroDelPeriodo(item.fechaGarita, periodo, fecha)).length,
+      primerPesaje: movimientos === null ? null : movimientos.length,
+      salidaBalanza: movimientos === null ? null : movimientos.filter((item) => Boolean(item.fechaSalidaBalanza)).length,
+      esperaPromedioMinutos: movimientos === null ? null : promedio(esperas),
+      atencionPromedioMinutos: movimientos === null ? null : promedio(atenciones),
+      gitsDisponible: movimientos !== null
     },
     filas,
     nota: 'Atendida, anulada y pendiente de anulación solo se informan desde su estado de negocio. Un pesaje GITS no se interpreta como atención.'
