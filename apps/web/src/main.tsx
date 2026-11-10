@@ -256,10 +256,12 @@ function TvScreen({ resumen, detalles, grupos, seguimiento, resumenSeguimiento, 
         <div>
           <h1>Seguimiento por horario</h1>
         </div>
-        <div className="tv-clock">
-          <strong>{formatHour(ahora.toISOString())}</strong>
-          <span>{reportDate ? formatDate(reportDate) : 'Hoy'} · actualizado {formatHour(updatedAt)}</span>
-          <a className="exit-tv" href="/">Salir TV</a>
+        <div className="tv-header-actions">
+          <a className="exit-tv" href="/" aria-label="Salir del modo TV" title="Salir del modo TV"><LogoutIcon /></a>
+          <div className="tv-clock">
+            <strong>{formatHour(ahora.toISOString())}</strong>
+            <span>{reportDate ? formatDate(reportDate) : 'Hoy'} · actualizado {formatHour(updatedAt)}</span>
+          </div>
         </div>
       </header>
 

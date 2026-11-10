@@ -41,6 +41,7 @@ h1 { margin-bottom: 0; font-size: clamp(2rem, 4.2vw, 4.5rem); line-height: 1; }
 .tv-header h1 { font-size: clamp(1.45rem, 2.2vw, 2.7rem); }
 .tv-header .brand { margin-bottom: 4px; font-size: clamp(.62rem, .9vw, .82rem); }
 .tv-header p:not(.brand) { margin-bottom: 0; font-size: clamp(.7rem, 1vw, .95rem); }
+.tv-header-actions { display: grid; justify-items: end; gap: .5vh; }
 .tv-clock { text-align: right; }
 .tv-clock strong, .tv-clock span { display: block; }
 .tv-clock strong { font-size: clamp(1.3rem, 2vw, 2.25rem); line-height: 1; }
@@ -90,6 +91,8 @@ td:first-child { font-weight: 700; }
 .tv-footer p { margin: 0; }
 .exit-tv, .tv-mode-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #329AD6; background: #ffffff; color: #000059; font-weight: 700; text-decoration: none; padding: 6px 10px; margin-top: 6px; }
 .exit-tv:hover, .tv-mode-button:hover { background: #329AD6; color: #ffffff; }
+.exit-tv { width: 32px; height: 32px; padding: 5px; margin: 0; }
+.exit-tv svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
 .tv-mode-button { margin: 0; }
 .tv-mode-button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; }
 .rotation { display: flex; flex-wrap: wrap; gap: .6vw; }
@@ -301,6 +304,7 @@ td:first-child { font-weight: 700; }
   .tv-screen { padding: 18px 12px; grid-template-rows: auto auto; }
   .tv-header, .internal-header, .tv-footer { align-items: start; flex-direction: column; }
   .tv-header { gap: 12px; }
+  .tv-header-actions { justify-items: start; }
   .tv-clock { text-align: left; }
   .tv-kpis { grid-template-columns: 1fr; }
   .tv-modalities { grid-template-columns: 1fr; min-height: auto; }

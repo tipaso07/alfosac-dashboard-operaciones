@@ -614,7 +614,10 @@ export async function consultarDisponibilidadFalcon(desde: string, dias: number)
         FROM dbo.citas_programadas
         WHERE cod_negocio IN (3, 4, 5)
           AND fecha >= @desde AND fecha <= @hasta
-          AND ISNULL(flag_cita, 0) = 1
+          -- La tabla contiene las citas vigentes, incluidas las adelantadas.
+          -- Las anuladas se trasladan a citas_programadas_anuladas; no deben
+          -- excluirse por flag_cita porque la web pública también descuenta
+          -- las adelantadas al mostrar los cupos restantes.
         GROUP BY CONVERT(char(10), fecha, 23), cod_negocio, CONVERT(int, hora);`)
     ]);
     const business: Record<number, 'FCL' | 'LCL' | 'BB'> = { 3: 'FCL', 4: 'LCL', 5: 'BB' };
