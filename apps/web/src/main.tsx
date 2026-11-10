@@ -41,6 +41,7 @@ type ReporteOperativo = {
   periodo: 'DIARIO' | 'MENSUAL'; fecha: string; modalidad: 'TODAS' | 'FCL' | 'LCL';
   resumen: { programadas: number; atendidas: number; noAtendidas: number; pendientesAnulacion: number; anuladas: number; pesajesLibres: number; porConfirmar: number };
   estadisticas: { citasAgendadas: number; registroGarita: number; primerPesaje: number | null; salidaBalanza: number | null; esperaPromedioMinutos: number | null; atencionPromedioMinutos: number | null; gitsDisponible: boolean };
+  cierre: { atendidas: number | null; anuladas: number | null; sinAtencion: number | null; pendienteAnulacion: number | null; disponible: boolean };
   filas: Array<{ fecha: string | null; horaCita: string | null; modalidad: Modalidad; volante: string; placa: string; estado: Estado; clasificacion: string }>;
   nota: string;
 };
@@ -552,6 +553,11 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   }, [periodo, fecha, modalidad]);
 
   const params = new URLSearchParams({ periodo, fecha, modalidad });
+  const estadoCierre = reporte ? [
+    { label: 'Atendidas', value: reporte.cierre.atendidas, tone: 'ok' },
+    { label: 'Anuladas', value: reporte.cierre.anuladas, tone: 'neutral' },
+    { label: 'Canceladas / no atendidas', value: reporte.cierre.sinAtencion, tone: 'alert' }
+  ] : [];
   return <section className="reports-panel">
     <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar para Excel</a></div>
     <div className="reports-controls">
@@ -560,18 +566,40 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
     </div>
     {error ? <p className="empty">{error}</p> : reporte ? <>
-      <div className="report-kpis report-kpis-operativos">
-        <Kpi label="Citas agendadas" value={reporte.estadisticas.citasAgendadas} />
-        <Kpi label="Registro en garita" value={reporte.estadisticas.registroGarita} />
-        <Kpi label="Primer pesaje" value={reporte.estadisticas.primerPesaje ?? '—'} />
-        <Kpi label="Salida por balanza" value={reporte.estadisticas.salidaBalanza ?? '—'} />
-        <Kpi label="Espera promedio" value={reporte.estadisticas.esperaPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.esperaPromedioMinutos * 60)} />
-        <Kpi label="Atención promedio" value={reporte.estadisticas.atencionPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.atencionPromedioMinutos * 60)} />
+      <div className="report-summary-grid">
+        <section className="report-chart-card">
+          <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3></div><strong>{reporte.estadisticas.citasAgendadas}<small>agendadas</small></strong></div>
+          <ReportBarChart items={estadoCierre} />
+          <p className="report-card-note">Atendidas: cita con salida por balanza. Anuladas y no atendidas: consulta directa en Falcon.</p>
+        </section>
+        <section className="report-performance-card">
+          <div className="report-card-heading"><div><p className="brand">DESEMPEÑO OPERATIVO</p><h3>Hitos y tiempos</h3></div></div>
+          <div className="report-metrics">
+            <Kpi label="Registro en garita" value={reporte.estadisticas.registroGarita} />
+            <Kpi label="Primer pesaje" value={reporte.estadisticas.primerPesaje ?? '—'} />
+            <Kpi label="Salida por balanza" value={reporte.estadisticas.salidaBalanza ?? '—'} />
+            <Kpi label="Espera promedio" value={reporte.estadisticas.esperaPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.esperaPromedioMinutos * 60)} />
+            <Kpi label="Atención promedio" value={reporte.estadisticas.atencionPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.atencionPromedioMinutos * 60)} />
+          </div>
+          <p className="report-card-note">{reporte.estadisticas.gitsDisponible ? 'Los tiempos se calculan desde garita Falcon y los pesajes de GITS.' : 'Los indicadores de pesaje no están disponibles porque GITS no respondió para este período.'}</p>
+        </section>
       </div>
-      <p className="report-note">{reporte.estadisticas.gitsDisponible ? 'Los tiempos promedio se calculan con primer y segundo pesaje de GITS; los hitos de cita y garita provienen de Falcon.' : 'Los indicadores de pesaje no están disponibles porque GITS no respondió para este período.'}</p>
-      <div className="operations-table-wrap"><table className="operations-table"><thead><tr><th>Fecha</th><th>Hora</th><th>Modalidad</th><th>Volante</th><th>Placa</th><th>Estado</th></tr></thead><tbody>{reporte.filas.length ? reporte.filas.map((item) => <tr key={`${item.modalidad}-${item.volante}-${item.horaCita}`}><td>{item.fecha ?? '—'}</td><td>{item.horaCita ?? '—'}</td><td>{item.modalidad}</td><td>{item.volante}</td><td>{item.placa}</td><td><span className={item.clasificacion === 'NO_ATENDIDA' || item.clasificacion === 'PESAJE_LIBRE' ? 'state-badge state-alert' : 'state-badge'}>{item.clasificacion.replaceAll('_', ' ')}</span></td></tr>) : <tr><td colSpan={6} className="empty">No hay citas para este período.</td></tr>}</tbody></table></div>
+      <div className="report-footnotes"><span>Por confirmar: {reporte.resumen.porConfirmar}</span><span>Pesaje libre: {reporte.resumen.pesajesLibres}</span></div>
     </> : <p className="empty">Cargando reporte…</p>}
   </section>;
+}
+
+function ReportBarChart({ items }: { items: Array<{ label: string; value: number | null; tone: string }> }) {
+  const max = Math.max(1, ...items.map((item) => item.value ?? 0));
+  return <div className="report-bars" role="img" aria-label="Gráfico de cierre de citas">
+    {items.map((item) => {
+      const value = item.value ?? 0;
+      return <div className="report-bar-row" key={item.label}>
+        <div className="report-bar-label"><span>{item.label}</span><strong>{item.value ?? '—'}</strong></div>
+        <div className="report-bar-track"><i className={`report-bar report-bar-${item.tone}`} style={{ width: `${item.value === null ? 0 : Math.max(3, (value / max) * 100)}%` }} /></div>
+      </div>;
+    })}
+  </div>;
 }
 
 function ExportacionPanel({ reportDate }: { reportDate: string | null }) {

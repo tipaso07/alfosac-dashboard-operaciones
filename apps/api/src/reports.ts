@@ -36,6 +36,13 @@ export interface ReporteOperativo {
     atencionPromedioMinutos: number | null;
     gitsDisponible: boolean;
   };
+  cierre: {
+    atendidas: number | null;
+    anuladas: number | null;
+    sinAtencion: number | null;
+    pendienteAnulacion: number | null;
+    disponible: boolean;
+  };
   filas: FilaReporteOperativo[];
   nota: string;
 }
@@ -88,7 +95,8 @@ export function crearReporteOperativo(
   periodo: PeriodoReporte,
   fecha: string,
   modalidad: ModalidadReporte,
-  movimientosGits: GitsDailyFlowItem[] | null = null
+  movimientosGits: GitsDailyFlowItem[] | null = null,
+  cierreFalcon: { anuladas: number; sinAtencion: number } | null = null
 ): ReporteOperativo {
   const candidatas = operaciones.filter((item) => {
     const fechaPrincipal = item.fechaCita ?? item.fechaGarita ?? item.fechaIngresoDespacho ?? item.fechaCompletado;
@@ -127,6 +135,12 @@ export function crearReporteOperativo(
   const atenciones = (movimientos ?? []).flatMap((movimiento) => movimiento.fechaGarita && movimiento.fechaSalidaBalanza
     ? [minutosEntre(movimiento.fechaGarita, movimiento.fechaSalidaBalanza)].filter((valor): valor is number => valor !== null)
     : []);
+  const atendidas = movimientos === null ? null : new Set(
+    movimientos
+      .filter((movimiento) => Boolean(movimiento.fechaSalidaBalanza))
+      .map((movimiento) => volanteNormalizado(movimiento.volante))
+      .filter(Boolean)
+  ).size;
   return {
     periodo, fecha, modalidad,
     resumen: {
@@ -146,6 +160,13 @@ export function crearReporteOperativo(
       esperaPromedioMinutos: movimientos === null ? null : promedio(esperas),
       atencionPromedioMinutos: movimientos === null ? null : promedio(atenciones),
       gitsDisponible: movimientos !== null
+    },
+    cierre: {
+      atendidas,
+      anuladas: cierreFalcon?.anuladas ?? null,
+      sinAtencion: cierreFalcon?.sinAtencion ?? null,
+      pendienteAnulacion: cierreFalcon?.sinAtencion ?? null,
+      disponible: movimientos !== null || cierreFalcon !== null
     },
     filas,
     nota: 'Atendida, anulada y pendiente de anulación solo se informan desde su estado de negocio. Un pesaje GITS no se interpreta como atención.'

@@ -829,10 +829,21 @@ app.get('/api/reports/operations', async (request, response) => {
   try {
     const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha);
     let movimientos = null;
+    let cierreFalcon: { anuladas: number; sinAtencion: number } | null = null;
     if (periodo === 'DIARIO' && process.env.GITS_SYNC_ENABLED === 'true') {
       try { movimientos = await consultarFlujoDiarioGits(fecha, 1_000); } catch { /* El reporte conserva Falcon si GITS no responde. */ }
     }
-    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, movimientos));
+    if (periodo === 'DIARIO' && !modoDemostracion()) {
+      try {
+        const modalidades = modalidad === 'TODAS' ? ['FCL', 'LCL'] as const : [modalidad];
+        const auditorias = await Promise.all(modalidades.map((item) => auditarAnulacionesFalcon(fecha, item)));
+        cierreFalcon = {
+          anuladas: auditorias.reduce((total, item) => total + item.anuladas.length, 0),
+          sinAtencion: auditorias.reduce((total, item) => total + item.pendientes.length, 0)
+        };
+      } catch { /* Si Falcon no responde, el reporte muestra el indicador como no disponible. */ }
+    }
+    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, movimientos, cierreFalcon));
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo generar el reporte.' });
   }

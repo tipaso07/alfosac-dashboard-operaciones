@@ -33,4 +33,7 @@ test('reporte calcula hitos y tiempos desde los pesajes GITS asociados al volant
     citasAgendadas: 1, registroGarita: 1, primerPesaje: 1, salidaBalanza: 1,
     esperaPromedioMinutos: 7, atencionPromedioMinutos: 30, gitsDisponible: true
   });
+  assert.deepEqual(report.cierre, {
+    atendidas: 1, anuladas: null, sinAtencion: null, pendienteAnulacion: null, disponible: true
+  });
 });

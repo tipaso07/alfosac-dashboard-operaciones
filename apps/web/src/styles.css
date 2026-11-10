@@ -190,6 +190,29 @@ td:first-child { font-weight: 700; }
 .reports-controls select, .reports-controls input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
 .report-kpis { display: grid; grid-template-columns: repeat(6, minmax(130px, 1fr)); gap: 12px; margin-bottom: 16px; overflow-x: auto; }
 .report-kpis .tv-kpi { min-width: 130px; padding: 14px; }
+.report-summary-grid { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(440px, 1.3fr); gap: 18px; margin: 4px 0 16px; }
+.report-chart-card, .report-performance-card { border: 1px solid #c7ddeb; border-top: 5px solid #329AD6; padding: 20px; background: linear-gradient(180deg, #ffffff 0%, #f8fcff 100%); }
+.report-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.report-card-heading .brand { margin-bottom: 4px; }
+.report-card-heading h3 { margin: 0; color: #0b1b44; font-size: 1.25rem; }
+.report-card-heading > strong { color: #000059; font-size: 2rem; line-height: .85; text-align: right; }
+.report-card-heading > strong small { display: block; margin-top: 7px; color: #60728a; font-size: .68rem; font-weight: 700; text-transform: uppercase; }
+.report-bars { display: grid; gap: 15px; }
+.report-bar-row { display: grid; gap: 7px; }
+.report-bar-label { display: flex; justify-content: space-between; gap: 12px; color: #2d405d; font-size: .88rem; font-weight: 700; }
+.report-bar-label strong { color: #000059; font-size: 1rem; }
+.report-bar-track { height: 12px; overflow: hidden; border-radius: 999px; background: #e7eff5; }
+.report-bar { display: block; height: 100%; border-radius: inherit; background: #329AD6; transition: width .3s ease; }
+.report-bar-ok { background: #3e9a61; }
+.report-bar-alert { background: #c83f4b; }
+.report-bar-neutral { background: #708095; }
+.report-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.report-metrics .tv-kpi { min-height: 98px; padding: 12px 8px; border-top-width: 3px; }
+.report-metrics .tv-kpi span { font-size: .65rem; }
+.report-metrics .tv-kpi strong { font-size: clamp(1.25rem, 2vw, 2rem); }
+.report-card-note { margin: 18px 0 0; color: #60728a; font-size: .82rem; line-height: 1.45; }
+.report-footnotes { display: flex; flex-wrap: wrap; gap: 8px; }
+.report-footnotes span { border: 1px solid #d7e4ee; background: #f7fafc; color: #52627a; padding: 7px 10px; font-size: .78rem; font-weight: 700; }
 .report-note { margin: 0 0 16px; color: #52627a; font-size: .9rem; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
@@ -320,7 +343,7 @@ td:first-child { font-weight: 700; }
   .alert-contact { grid-template-columns: 1fr; }
   .alert-contact small { grid-column: 1; }
   .report-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
-  .availability-grids { grid-template-columns: 1fr; }
+  .availability-grids, .report-summary-grid { grid-template-columns: 1fr; }
   .availability-toolbar { align-items: flex-start; flex-direction: column; }
   .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel { padding: 16px; }
   .toolbar-row { align-items: flex-start; flex-direction: column; }
@@ -333,6 +356,7 @@ td:first-child { font-weight: 700; }
   .reports-controls { display: grid; grid-template-columns: 1fr; }
   .reports-controls select, .reports-controls input { width: 100%; }
   .availability-title { padding: 6px 0 20px; }
+  .report-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .availability-title h2 { font-size: clamp(1.8rem, 10vw, 2.5rem); }
   .availability-toolbar p { line-height: 2.1; }
   .availability-key { margin-left: 4px; }
