@@ -1155,12 +1155,12 @@ function formatHourShort(value: string) {
 }
 
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Lima' })
+  return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima' })
     .format(new Date(`${value}T12:00:00-05:00`));
 }
 
 function formatDateShort(value: string) {
-  return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: 'America/Lima' }).format(new Date(value));
+  return new Intl.DateTimeFormat('es-PE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Lima' }).format(new Date(value));
 }
 
 function formatTime(value: string) {
@@ -1169,7 +1169,8 @@ function formatTime(value: string) {
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat('es-PE', {
-    dateStyle: 'short', timeStyle: 'medium', timeZone: 'America/Lima'
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Lima'
   }).format(new Date(value));
 }
 
