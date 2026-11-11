@@ -507,36 +507,6 @@ function DurationTableCell({ start, end, tipo, cita }: { start: string | null; e
   return <td className={`duration-cell duration-${durationTone(seconds, tipo, cita)}`}>{formatDuration(seconds)}</td>;
 }
 
-function CitasAgendadasPanel({ reportDate }: { reportDate: string | null }) {
-  const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
-  const [conteos, setConteos] = useState<ConteoCitasFalcon[]>([]);
-  const [error, setError] = useState('');
-  const [cargando, setCargando] = useState(false);
-
-  useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
-  useEffect(() => {
-    setCargando(true);
-    void fetch(`/api/integrations/falcon/counts?date=${fecha}`)
-      .then(async (response) => response.ok ? response.json() as Promise<{ items: ConteoCitasFalcon[] }> : Promise.reject(await response.json()))
-      .then((value) => { setConteos(value.items.filter((item) => item.modalidad === 'FCL' || item.modalidad === 'LCL')); setError(''); })
-      .catch((reason: { message?: string }) => { setConteos([]); setError(reason.message ?? 'No se pudo consultar Falcon.'); })
-      .finally(() => setCargando(false));
-  }, [fecha]);
-
-  const horas = [...new Set(conteos.map((item) => item.hora))].sort((a, b) => Number(a) - Number(b));
-  const total = (modalidad: 'FCL' | 'LCL') => conteos.filter((item) => item.modalidad === modalidad).reduce((sum, item) => sum + item.cantidad, 0);
-  const cantidad = (hora: string, modalidad: 'FCL' | 'LCL') => conteos.find((item) => item.hora === hora && item.modalidad === modalidad)?.cantidad ?? 0;
-
-  return <section className="appointments-panel">
-    <div className="panel-heading"><div><p className="brand">PLANIFICACIÓN</p><h2>Citas agendadas</h2></div><label>Fecha<input type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} /></label></div>
-    <p className="report-note">Consulta directa y de solo lectura en Falcon. Muestra la cantidad programada por horario para la fecha elegida.</p>
-    {error ? <p className="empty">{error}</p> : cargando ? <p className="empty">Consultando citas…</p> : <>
-      <div className="report-kpis"><Kpi label="FCL programadas" value={total('FCL')} /><Kpi label="LCL programadas" value={total('LCL')} /><Kpi label="Total programadas" value={total('FCL') + total('LCL')} /></div>
-      <div className="operations-table-wrap"><table className="operations-table appointment-table"><thead><tr><th>Hora</th><th>FCL</th><th>LCL</th><th>Total</th></tr></thead><tbody>{horas.length ? horas.map((hora) => <tr key={hora}><td>{hora}:00</td><td>{cantidad(hora, 'FCL')}</td><td>{cantidad(hora, 'LCL')}</td><td>{cantidad(hora, 'FCL') + cantidad(hora, 'LCL')}</td></tr>) : <tr><td colSpan={4} className="empty">No hay citas registradas para esta fecha.</td></tr>}</tbody></table></div>
-    </>}
-  </section>;
-}
-
 function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const [periodo, setPeriodo] = useState<'DIARIO' | 'MENSUAL' | 'RANGO'>('DIARIO');
   const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
@@ -647,7 +617,7 @@ function ConfiguracionPanel({ user }: { user: UsuarioSesion }) {
     <div className="panel-heading"><div><p className="brand">CONFIGURACIÓN</p><h2>Acceso y usuarios</h2></div><p>{user.email}</p></div>
     <div className="settings-grid">
       <form className="settings-card" onSubmit={(event) => void guardarClave(event)}>
-        <div><p className="brand">MI CONTRASEÑA</p><h3>Actualizar acceso</h3><p>Usa una contraseña de al menos 14 caracteres. Por seguridad, se cerrarán las demás sesiones de tu cuenta.</p></div>
+        <div><h3>Actualizar contraseña</h3></div>
         <label>Contraseña actual<input type="password" autoComplete="current-password" value={actual} onChange={(event) => setActual(event.target.value)} required /></label>
         <label>Nueva contraseña<input type="password" autoComplete="new-password" minLength={14} value={nueva} onChange={(event) => setNueva(event.target.value)} required /></label>
         <label>Confirmar nueva contraseña<input type="password" autoComplete="new-password" minLength={14} value={confirmacion} onChange={(event) => setConfirmacion(event.target.value)} required /></label>
@@ -655,7 +625,7 @@ function ConfiguracionPanel({ user }: { user: UsuarioSesion }) {
         <button className="settings-submit" type="submit">Guardar contraseña</button>
       </form>
       {user.rol === 'ADMIN' && <form className="settings-card" onSubmit={(event) => void crearCuenta(event)}>
-        <div><p className="brand">ADMINISTRACIÓN</p><h3>Crear usuario</h3><p>Define el perfil según el nivel de acceso que necesita cada persona.</p></div>
+        <div><h3>Crear usuario</h3></div>
         <label>Nombre<input value={nombre} onChange={(event) => setNombre(event.target.value)} minLength={2} required /></label>
         <label>Correo<input type="email" value={correo} onChange={(event) => setCorreo(event.target.value)} required /></label>
         <label>Contraseña inicial<input type="password" autoComplete="new-password" value={claveUsuario} onChange={(event) => setClaveUsuario(event.target.value)} minLength={14} required /></label>
