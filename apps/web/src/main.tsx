@@ -38,7 +38,7 @@ type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; f
 type DiagnosticoAlerta = { key: string; tone: 'warning' | 'alert'; level: string; title: string; cita: Operacion; fechaReferencia: string; duracion?: string; porcentajePeso?: number | null; contact?: boolean };
 type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
 type ReporteOperativo = {
-  periodo: 'DIARIO' | 'MENSUAL'; fecha: string; modalidad: 'TODAS' | 'FCL' | 'LCL';
+  periodo: 'DIARIO' | 'MENSUAL' | 'RANGO'; fecha: string; hasta: string | null; modalidad: 'TODAS' | 'FCL' | 'LCL';
   resumen: { programadas: number; atendidas: number; noAtendidas: number; pendientesAnulacion: number; anuladas: number; pesajesLibres: number; porConfirmar: number };
   estadisticas: { citasAgendadas: number; registroGarita: number; primerPesaje: number | null; salidaBalanza: number | null; esperaPromedioMinutos: number | null; atencionPromedioMinutos: number | null; gitsDisponible: boolean };
   cierre: { atendidas: number | null; anuladas: number | null; sinAtencion: number | null; pendienteAnulacion: number | null; disponible: boolean };
@@ -53,6 +53,7 @@ type DisponibilidadHistorica = {
 };
 type ConteoCitasFalcon = { modalidad: 'FCL' | 'LCL' | 'BB'; hora: string; cantidad: number };
 type UsuarioSesion = { id: string; email: string; nombre: string; rol: 'ADMIN' | 'OPERADOR' | 'LECTURA' };
+type UsuarioAdministrable = UsuarioSesion & { activo: boolean; creadoEn: string };
 type EstadoAutenticacion = { enabled: boolean; user: UsuarioSesion | null };
 
 /** Reglas operativas confirmadas por ATC para FCL y LCL. */
@@ -294,7 +295,7 @@ function TvScreen({ resumen, detalles, grupos, seguimiento, resumenSeguimiento, 
 }
 
 function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, updatedAt, reportDate, dataMode, incidentes, user, authEnabled, onLogout }: { resumen: Resumen[]; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; resumenSeguimiento: Record<Modalidad, ResumenSeguimiento>; updatedAt: string; reportDate: string | null; dataMode: 'demo' | 'reportes'; incidentes: IncidenteOperativo[]; user: UsuarioSesion | null; authEnabled: boolean; onLogout: () => Promise<void> }) {
-  const seccion = window.location.pathname === '/citas-agendadas' ? 'CITAS' : window.location.pathname === '/reportes' ? 'REPORTES' : 'OPERACION';
+  const seccion = window.location.pathname === '/configuracion' ? 'CONFIGURACION' : window.location.pathname === '/reportes' ? 'REPORTES' : 'OPERACION';
   const [menuContraido, setMenuContraido] = useState(false);
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
@@ -356,8 +357,8 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         <div className="sidebar-brand"><img src="/alfosac-logo-blanco.png" alt="Alfosac" /></div>
         <button className="sidebar-toggle" onClick={() => setMenuContraido((value) => !value)} aria-label={menuContraido ? 'Desplegar menú' : 'Contraer menú'} title={menuContraido ? 'Desplegar menú' : 'Contraer menú'}>{menuContraido ? '›' : '‹'}</button>
         <a className={seccion === 'OPERACION' ? 'selected' : ''} href="/" title="Seguimiento en vivo"><span className="nav-symbol">◉</span><span>Seguimiento en vivo</span></a>
-        <a className={seccion === 'CITAS' ? 'selected' : ''} href="/citas-agendadas" title="Citas agendadas"><span className="nav-symbol">▦</span><span>Citas agendadas</span></a>
         <a className={seccion === 'REPORTES' ? 'selected' : ''} href="/reportes" title="Reportes"><span className="nav-symbol">⇩</span><span>Reportes</span></a>
+        <a className={seccion === 'CONFIGURACION' ? 'selected' : ''} href="/configuracion" title="Configuración"><span className="nav-symbol">⚙</span><span>Configuración</span></a>
       </nav>
 
       {seccion === 'OPERACION' && <>
@@ -442,8 +443,8 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       </section>
       </>}
 
-      {seccion === 'CITAS' && <DisponibilidadHistoricaPanel reportDate={reportDate} />}
       {seccion === 'REPORTES' && <ReportesPanel reportDate={reportDate} />}
+      {seccion === 'CONFIGURACION' && user && <ConfiguracionPanel user={user} />}
 
       {seleccionado && <FlowModal group={seleccionado} seguimiento={seguimientoPorCita} onClose={() => setSeleccionado(null)} />}
       {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={filtro === 'TODAS' ? null : filtro} grupos={gruposFiltrados} seguimiento={seguimientoFiltrado} reportDate={reportDate} onClose={() => setHoraInspeccion(null)} />}
@@ -537,8 +538,9 @@ function CitasAgendadasPanel({ reportDate }: { reportDate: string | null }) {
 }
 
 function ReportesPanel({ reportDate }: { reportDate: string | null }) {
-  const [periodo, setPeriodo] = useState<'DIARIO' | 'MENSUAL'>('DIARIO');
+  const [periodo, setPeriodo] = useState<'DIARIO' | 'MENSUAL' | 'RANGO'>('DIARIO');
   const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
+  const [hasta, setHasta] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
   const [modalidad, setModalidad] = useState<'TODAS' | 'FCL' | 'LCL'>('TODAS');
   const [reporte, setReporte] = useState<ReporteOperativo | null>(null);
   const [error, setError] = useState('');
@@ -546,23 +548,26 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
   useEffect(() => {
     const params = new URLSearchParams({ periodo, fecha, modalidad });
+    if (periodo === 'RANGO') params.set('hasta', hasta);
     void fetch(`/api/reports/operations?${params}`)
       .then(async (response) => response.ok ? response.json() as Promise<ReporteOperativo> : Promise.reject(await response.json()))
       .then((value) => { setReporte(value); setError(''); })
       .catch((reason: { message?: string }) => { setReporte(null); setError(reason.message ?? 'No se pudo generar el reporte.'); });
-  }, [periodo, fecha, modalidad]);
+  }, [periodo, fecha, hasta, modalidad]);
 
   const params = new URLSearchParams({ periodo, fecha, modalidad });
+  if (periodo === 'RANGO') params.set('hasta', hasta);
   const estadoCierre = reporte ? [
-    { label: 'Atendidas', value: reporte.cierre.atendidas, tone: 'ok' },
-    { label: 'Anuladas', value: reporte.cierre.anuladas, tone: 'neutral' },
-    { label: 'Canceladas / no atendidas', value: reporte.cierre.sinAtencion, tone: 'alert' }
+    { label: 'Atendidas', value: reporte.cierre.atendidas ?? reporte.resumen.atendidas, tone: 'ok' },
+    { label: 'Anuladas', value: reporte.cierre.anuladas ?? reporte.resumen.anuladas, tone: 'neutral' },
+    { label: 'Canceladas / no atendidas', value: reporte.cierre.sinAtencion ?? reporte.resumen.noAtendidas, tone: 'alert' }
   ] : [];
   return <section className="reports-panel">
     <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar para Excel</a></div>
     <div className="reports-controls">
-      <label>Período<select value={periodo} onChange={(event) => setPeriodo(event.target.value as 'DIARIO' | 'MENSUAL')}><option value="DIARIO">Diario</option><option value="MENSUAL">Mensual</option></select></label>
-      <label>Fecha<input type={periodo === 'DIARIO' ? 'date' : 'month'} value={periodo === 'DIARIO' ? fecha : fecha.slice(0, 7)} onChange={(event) => setFecha(event.target.value)} /></label>
+      <label>Período<select value={periodo} onChange={(event) => setPeriodo(event.target.value as 'DIARIO' | 'MENSUAL' | 'RANGO')}><option value="DIARIO">Diario</option><option value="RANGO">Rango de fechas</option><option value="MENSUAL">Mensual</option></select></label>
+      <label>{periodo === 'RANGO' ? 'Desde' : 'Fecha'}<input type={periodo === 'MENSUAL' ? 'month' : 'date'} value={periodo === 'MENSUAL' ? fecha.slice(0, 7) : fecha} onChange={(event) => setFecha(event.target.value)} /></label>
+      {periodo === 'RANGO' && <label>Hasta<input type="date" min={fecha} value={hasta} onChange={(event) => setHasta(event.target.value)} /></label>}
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
     </div>
     {error ? <p className="empty">{error}</p> : reporte ? <>
@@ -570,7 +575,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
         <section className="report-chart-card">
           <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3></div><strong>{reporte.estadisticas.citasAgendadas}<small>agendadas</small></strong></div>
           <ReportBarChart items={estadoCierre} />
-          <p className="report-card-note">Atendidas: cita con salida por balanza. Anuladas y no atendidas: consulta directa en Falcon.</p>
+          <p className="report-card-note">En la fecha diaria, anuladas y no atendidas se contrastan con Falcon. En rangos se consolidan los registros almacenados por el dashboard.</p>
         </section>
         <section className="report-performance-card">
           <div className="report-card-heading"><div><p className="brand">DESEMPEÑO OPERATIVO</p><h3>Hitos y tiempos</h3></div></div>
@@ -586,6 +591,80 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       </div>
       <div className="report-footnotes"><span>Por confirmar: {reporte.resumen.porConfirmar}</span><span>Pesaje libre: {reporte.resumen.pesajesLibres}</span></div>
     </> : <p className="empty">Cargando reporte…</p>}
+  </section>;
+}
+
+function ConfiguracionPanel({ user }: { user: UsuarioSesion }) {
+  const [actual, setActual] = useState('');
+  const [nueva, setNueva] = useState('');
+  const [confirmacion, setConfirmacion] = useState('');
+  const [mensajeClave, setMensajeClave] = useState('');
+  const [usuarios, setUsuarios] = useState<UsuarioAdministrable[]>([]);
+  const [nombre, setNombre] = useState('');
+  const [correo, setCorreo] = useState('');
+  const [claveUsuario, setClaveUsuario] = useState('');
+  const [rol, setRol] = useState<UsuarioSesion['rol']>('LECTURA');
+  const [mensajeUsuarios, setMensajeUsuarios] = useState('');
+
+  const cargarUsuarios = () => {
+    if (user.rol !== 'ADMIN') return;
+    void fetch('/api/auth/users', { credentials: 'same-origin' })
+      .then(async (response) => response.ok ? response.json() as Promise<{ users: UsuarioAdministrable[] }> : Promise.reject(await response.json()))
+      .then((value) => setUsuarios(value.users))
+      .catch(() => setMensajeUsuarios('No se pudo cargar la lista de usuarios.'));
+  };
+
+  useEffect(() => { cargarUsuarios(); }, [user.rol]);
+
+  const guardarClave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (nueva !== confirmacion) { setMensajeClave('La confirmación no coincide.'); return; }
+    try {
+      const response = await fetch('/api/auth/password', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contrasenaActual: actual, contrasenaNueva: nueva })
+      });
+      if (!response.ok) throw await response.json();
+      setActual(''); setNueva(''); setConfirmacion(''); setMensajeClave('Contraseña actualizada. Las demás sesiones de esta cuenta se cerraron.');
+    } catch (reason: unknown) { setMensajeClave(reason instanceof Error ? reason.message : (typeof reason === 'object' && reason && 'message' in reason ? String(reason.message) : 'No se pudo actualizar la contraseña.')); }
+  };
+
+  const crearCuenta = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    try {
+      const response = await fetch('/api/auth/users', {
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, email: correo, password: claveUsuario, rol })
+      });
+      if (!response.ok) throw await response.json();
+      setNombre(''); setCorreo(''); setClaveUsuario(''); setRol('LECTURA');
+      setMensajeUsuarios('Usuario creado correctamente.');
+      cargarUsuarios();
+    } catch (reason: unknown) { setMensajeUsuarios(reason instanceof Error ? reason.message : (typeof reason === 'object' && reason && 'message' in reason ? String(reason.message) : 'No se pudo crear el usuario.')); }
+  };
+
+  return <section className="settings-panel">
+    <div className="panel-heading"><div><p className="brand">CONFIGURACIÓN</p><h2>Acceso y usuarios</h2></div><p>{user.email}</p></div>
+    <div className="settings-grid">
+      <form className="settings-card" onSubmit={(event) => void guardarClave(event)}>
+        <div><p className="brand">MI CONTRASEÑA</p><h3>Actualizar acceso</h3><p>Usa una contraseña de al menos 14 caracteres. Por seguridad, se cerrarán las demás sesiones de tu cuenta.</p></div>
+        <label>Contraseña actual<input type="password" autoComplete="current-password" value={actual} onChange={(event) => setActual(event.target.value)} required /></label>
+        <label>Nueva contraseña<input type="password" autoComplete="new-password" minLength={14} value={nueva} onChange={(event) => setNueva(event.target.value)} required /></label>
+        <label>Confirmar nueva contraseña<input type="password" autoComplete="new-password" minLength={14} value={confirmacion} onChange={(event) => setConfirmacion(event.target.value)} required /></label>
+        {mensajeClave && <p className="settings-message">{mensajeClave}</p>}
+        <button className="settings-submit" type="submit">Guardar contraseña</button>
+      </form>
+      {user.rol === 'ADMIN' && <form className="settings-card" onSubmit={(event) => void crearCuenta(event)}>
+        <div><p className="brand">ADMINISTRACIÓN</p><h3>Crear usuario</h3><p>Define el perfil según el nivel de acceso que necesita cada persona.</p></div>
+        <label>Nombre<input value={nombre} onChange={(event) => setNombre(event.target.value)} minLength={2} required /></label>
+        <label>Correo<input type="email" value={correo} onChange={(event) => setCorreo(event.target.value)} required /></label>
+        <label>Contraseña inicial<input type="password" autoComplete="new-password" value={claveUsuario} onChange={(event) => setClaveUsuario(event.target.value)} minLength={14} required /></label>
+        <label>Perfil<select value={rol} onChange={(event) => setRol(event.target.value as UsuarioSesion['rol'])}><option value="LECTURA">Lectura</option><option value="OPERADOR">Operador</option><option value="ADMIN">Administrador</option></select></label>
+        {mensajeUsuarios && <p className="settings-message">{mensajeUsuarios}</p>}
+        <button className="settings-submit" type="submit">Crear usuario</button>
+      </form>}
+    </div>
+    {user.rol === 'ADMIN' && <section className="settings-users"><h3>Usuarios registrados</h3><div className="operations-table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Perfil</th><th>Estado</th></tr></thead><tbody>{usuarios.map((item) => <tr key={item.id}><td>{item.nombre}</td><td>{item.email}</td><td>{item.rol}</td><td>{item.activo ? 'Activo' : 'Inactivo'}</td></tr>)}</tbody></table></div></section>}
   </section>;
 }
 

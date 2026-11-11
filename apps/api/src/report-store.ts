@@ -89,13 +89,16 @@ export async function listarOperaciones() {
 }
 
 /** Lee el período solicitado desde la base propia del dashboard. */
-export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL', fecha: string) {
+export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL' | 'RANGO', fecha: string, hasta?: string) {
   const fechaEvento = 'COALESCE(fecha_cita, fecha_garita, fecha_ingreso_despacho, fecha_completado)';
   const condition = periodo === 'DIARIO'
     ? `${fechaEvento} >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
        AND ${fechaEvento} < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')`
-    : `${fechaEvento} >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
-       AND ${fechaEvento} < (((($1::date + INTERVAL '1 month'))::timestamp) AT TIME ZONE 'America/Lima')`;
+    : periodo === 'MENSUAL'
+      ? `${fechaEvento} >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+         AND ${fechaEvento} < (((($1::date + INTERVAL '1 month'))::timestamp) AT TIME ZONE 'America/Lima')`
+      : `${fechaEvento} >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+         AND ${fechaEvento} < ((($2::date + 1)::timestamp) AT TIME ZONE 'America/Lima')`;
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
     volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
@@ -103,7 +106,7 @@ export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL'
   }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
     fecha_ingreso_despacho, fecha_completado, peso_declarado, fuente_origen
       FROM operaciones WHERE ${condition}
-      ORDER BY fecha_cita ASC LIMIT 5000`, [fecha]);
+      ORDER BY fecha_cita ASC LIMIT 5000`, periodo === 'RANGO' ? [fecha, hasta] : [fecha]);
   return result.rows.map((row) => ({
     id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
     volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',

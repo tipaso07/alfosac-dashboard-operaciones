@@ -150,6 +150,21 @@ td:first-child { font-weight: 700; }
 .pending-list article.pending-warning { border-left-color: #e5ad28; background: #fff8e7; }
 .pending-list strong, .pending-list span { display: block; }
 .reports-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
+.settings-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
+.settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.settings-card { display: grid; gap: 13px; padding: 22px; border: 1px solid #c7ddeb; border-top: 5px solid #329AD6; background: linear-gradient(180deg, #ffffff 0%, #f8fcff 100%); }
+.settings-card h3, .settings-users h3 { margin: 0; color: #0b1b44; font-size: 1.25rem; }
+.settings-card p { margin: 7px 0 0; color: #52627a; font-size: .88rem; line-height: 1.45; }
+.settings-card .brand { margin: 0; color: #329AD6; font-size: .72rem; font-weight: 800; letter-spacing: .08em; }
+.settings-card label { display: grid; gap: 6px; color: #334155; font-size: .84rem; font-weight: 700; }
+.settings-card input, .settings-card select { min-height: 42px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
+.settings-message { margin: 0 !important; padding: 10px 12px; background: #edf8ff; color: #173b63 !important; font-weight: 700; }
+.settings-submit { border: 1px solid #000059; background: #000059; color: #fff; padding: 12px 16px; font: inherit; font-weight: 800; cursor: pointer; }
+.settings-submit:hover { background: #329AD6; border-color: #329AD6; }
+.settings-users { margin-top: 18px; padding: 20px; border: 1px solid #c7ddeb; }
+.settings-users table { width: 100%; min-width: 520px; border-collapse: collapse; }
+.settings-users th { background: #000059; color: #fff; text-align: left; }
+.settings-users th, .settings-users td { padding: 12px; border-bottom: 1px solid #d7e4ee; }
 .appointments-panel, .export-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
 .appointments-panel .panel-heading label { display: grid; gap: 6px; color: #334155; font-size: .82rem; font-weight: 700; }
 .appointments-panel input { min-height: 40px; border: 1px solid #b9c7d8; border-radius: 4px; padding: 8px 10px; color: #0b1b44; background: #fff; font: inherit; }
@@ -318,7 +333,7 @@ td:first-child { font-weight: 700; }
   .sidebar-brand, .sidebar-toggle { display: none; }
   .section-nav.collapsed a { display: flex; }
   .panel-heading h2 { font-size: clamp(1.35rem, 4vw, 1.7rem); }
-  .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel { padding: 20px; }
+  .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel, .settings-panel { padding: 20px; }
   .tv-screen { overflow: auto; height: auto; min-height: 100vh; }
   .tv-modalities { min-height: 640px; }
 }
@@ -343,9 +358,9 @@ td:first-child { font-weight: 700; }
   .alert-contact { grid-template-columns: 1fr; }
   .alert-contact small { grid-column: 1; }
   .report-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
-  .availability-grids, .report-summary-grid { grid-template-columns: 1fr; }
+  .availability-grids, .report-summary-grid, .settings-grid { grid-template-columns: 1fr; }
   .availability-toolbar { align-items: flex-start; flex-direction: column; }
-  .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel { padding: 16px; }
+  .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel, .settings-panel { padding: 16px; }
   .toolbar-row { align-items: flex-start; flex-direction: column; }
   .filter-row, .view-row { width: 100%; }
   .filter-row button { flex: 1 1 115px; }

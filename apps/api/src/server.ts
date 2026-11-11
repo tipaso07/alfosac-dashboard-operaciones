@@ -8,7 +8,7 @@ import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, guardarDisponibilidadHistorica, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
-import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, crearSesion, crearUsuario, leerSesion, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
+import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, cambiarContrasena, crearSesion, crearUsuario, leerSesion, listarUsuarios, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 5100);
@@ -265,6 +265,35 @@ app.post('/api/auth/users', exigirAdministrador, async (request: RequestAutentic
     response.status(201).json({ user });
   } catch (error) {
     response.status(400).json({ message: error instanceof Error ? error.message : 'No se pudo crear el usuario.' });
+  }
+});
+
+app.get('/api/auth/users', exigirAdministrador, async (_request: RequestAutenticado, response) => {
+  try {
+    response.json({ users: await listarUsuarios() });
+  } catch {
+    response.status(503).json({ message: 'No se pudo listar los usuarios.' });
+  }
+});
+
+app.post('/api/auth/password', async (request: RequestAutenticado, response) => {
+  const contrasenaActual = typeof request.body?.contrasenaActual === 'string' ? request.body.contrasenaActual : '';
+  const contrasenaNueva = typeof request.body?.contrasenaNueva === 'string' ? request.body.contrasenaNueva : '';
+  if (!request.usuario) {
+    response.status(401).json({ message: 'Inicia sesión para cambiar la contraseña.' });
+    return;
+  }
+  try {
+    await cambiarContrasena({
+      usuarioId: request.usuario.id,
+      contrasenaActual,
+      contrasenaNueva,
+      tokenActual: cookieValue(request, 'alfosac_dashboard_session')
+    });
+    await registrarAuditoria('CONTRASENA_ACTUALIZADA', { email: request.usuario.email, usuarioId: request.usuario.id, ip: clientIp(request) });
+    response.status(204).end();
+  } catch (error) {
+    response.status(400).json({ message: error instanceof Error ? error.message : 'No se pudo actualizar la contraseña.' });
   }
 });
 
@@ -813,13 +842,18 @@ app.get('/api/dashboard/operations', (_request, response) => {
 app.get('/api/reports/operations', async (request, response) => {
   const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
   const fecha = String(request.query.fecha ?? fechaReporteActual());
+  const hasta = typeof request.query.hasta === 'string' ? request.query.hasta : null;
   const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
-  if (!['DIARIO', 'MENSUAL'].includes(periodo)) {
-    response.status(400).json({ message: 'Indica periodo=DIARIO o periodo=MENSUAL.' });
+  if (!['DIARIO', 'MENSUAL', 'RANGO'].includes(periodo)) {
+    response.status(400).json({ message: 'Indica periodo=DIARIO, MENSUAL o RANGO.' });
     return;
   }
-  if (!(periodo === 'DIARIO' ? /^\d{4}-\d{2}-\d{2}$/ : /^\d{4}-\d{2}(-\d{2})?$/.test(fecha))) {
+  if (!(periodo === 'DIARIO' || periodo === 'RANGO' ? /^\d{4}-\d{2}-\d{2}$/.test(fecha) : /^\d{4}-\d{2}(-\d{2})?$/.test(fecha))) {
     response.status(400).json({ message: periodo === 'DIARIO' ? 'Indica fecha=AAAA-MM-DD.' : 'Indica fecha=AAAA-MM o AAAA-MM-DD.' });
+    return;
+  }
+  if (periodo === 'RANGO' && (!hasta || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || hasta < fecha)) {
+    response.status(400).json({ message: 'Para un rango indica desde y hasta como AAAA-MM-DD.' });
     return;
   }
   if (!['TODAS', 'FCL', 'LCL'].includes(modalidad)) {
@@ -827,7 +861,7 @@ app.get('/api/reports/operations', async (request, response) => {
     return;
   }
   try {
-    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha);
+    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
     let movimientos = null;
     let cierreFalcon: { anuladas: number; sinAtencion: number } | null = null;
     if (periodo === 'DIARIO' && process.env.GITS_SYNC_ENABLED === 'true') {
@@ -843,7 +877,7 @@ app.get('/api/reports/operations', async (request, response) => {
         };
       } catch { /* Si Falcon no responde, el reporte muestra el indicador como no disponible. */ }
     }
-    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, movimientos, cierreFalcon));
+    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, movimientos, cierreFalcon, hasta));
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo generar el reporte.' });
   }
@@ -852,14 +886,16 @@ app.get('/api/reports/operations', async (request, response) => {
 app.get('/api/reports/operations.csv', async (request, response) => {
   const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
   const fecha = String(request.query.fecha ?? fechaReporteActual());
+  const hasta = typeof request.query.hasta === 'string' ? request.query.hasta : null;
   const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
-  if (!['DIARIO', 'MENSUAL'].includes(periodo) || !['TODAS', 'FCL', 'LCL'].includes(modalidad)) {
+  if (!['DIARIO', 'MENSUAL', 'RANGO'].includes(periodo) || !['TODAS', 'FCL', 'LCL'].includes(modalidad)
+    || (periodo === 'RANGO' && (!hasta || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || hasta < fecha))) {
     response.status(400).json({ message: 'Parámetros de reporte no válidos.' });
     return;
   }
   try {
-    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha);
-    const report = crearReporteOperativo(operations, periodo, fecha, modalidad);
+    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
+    const report = crearReporteOperativo(operations, periodo, fecha, modalidad, null, null, hasta);
     response.setHeader('Content-Type', 'text/csv; charset=utf-8');
     response.setHeader('Content-Disposition', `attachment; filename="reporte-${periodo.toLowerCase()}-${fecha}-${modalidad.toLowerCase()}.csv"`);
     response.send(`\uFEFF${reporteACsv(report)}`);

@@ -7,6 +7,7 @@ const scrypt = promisify(scryptCallback);
 
 export type RolUsuario = 'ADMIN' | 'OPERADOR' | 'LECTURA';
 export type UsuarioSesion = { id: string; email: string; nombre: string; rol: RolUsuario };
+export type UsuarioAdministrable = UsuarioSesion & { activo: boolean; creadoEn: string };
 
 function normalizarEmail(value: string) {
   return value.trim().toLowerCase();
@@ -78,6 +79,43 @@ export async function crearUsuario(input: { email: string; nombre: string; passw
     RETURNING id, email, nombre, rol
   `, [randomUUID(), email, nombre, input.rol, passwordHash]);
   return result.rows[0]!;
+}
+
+/** Lista únicamente datos administrativos; nunca expone credenciales ni hashes. */
+export async function listarUsuarios() {
+  const result = await pool.query<UsuarioAdministrable>(`
+    SELECT id, email, nombre, rol, activo, created_at AS "creadoEn"
+    FROM dashboard_usuarios
+    ORDER BY email ASC
+  `);
+  return result.rows;
+}
+
+/** Actualiza la clave propia y mantiene activa solo la sesión desde la que se realizó el cambio. */
+export async function cambiarContrasena(input: { usuarioId: string; contrasenaActual: string; contrasenaNueva: string; tokenActual?: string }) {
+  if (input.contrasenaNueva.length < 14) throw new Error('La nueva contraseña debe tener al menos 14 caracteres.');
+  const result = await pool.query<{ password_hash: string }>(`
+    SELECT password_hash FROM dashboard_usuarios WHERE id = $1 AND activo = TRUE
+  `, [input.usuarioId]);
+  const usuario = result.rows[0];
+  if (!usuario || !(await verifyPassword(input.contrasenaActual, usuario.password_hash))) {
+    throw new Error('La contraseña actual no es válida.');
+  }
+
+  const passwordHash = await hashPassword(input.contrasenaNueva);
+  await pool.query(`
+    UPDATE dashboard_usuarios
+    SET password_hash = $2, updated_at = NOW()
+    WHERE id = $1
+  `, [input.usuarioId, passwordHash]);
+
+  if (input.tokenActual) {
+    await pool.query(`
+      UPDATE dashboard_sesiones
+      SET revocada_en = NOW()
+      WHERE usuario_id = $1 AND token_hash <> $2 AND revocada_en IS NULL
+    `, [input.usuarioId, hashToken(input.tokenActual)]);
+  }
 }
 
 export async function autenticarUsuario(emailInput: string, password: string) {

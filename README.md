@@ -38,7 +38,9 @@ AUTH_BOOTSTRAP_NAME=Administrador Alfosac
 AUTH_SESSION_HOURS=12
 ```
 
-El primer arranque crea ese administrador en la base propia del dashboard. Luego un administrador puede crear cuentas por la ruta protegida `POST /api/auth/users` con los roles `ADMIN`, `OPERADOR` o `LECTURA`.
+El primer arranque crea ese administrador en la base propia del dashboard. Luego, desde **Configuración**, un administrador puede crear cuentas con los roles `ADMIN`, `OPERADOR` o `LECTURA`; cada usuario puede cambiar únicamente su propia contraseña. El cambio cierra las demás sesiones de esa cuenta.
+
+La sección **Reportes** permite filtrar por día, mes o rango de fechas y descargar el mismo resultado en CSV compatible con Excel. El rango usa los registros conservados por la base propia del dashboard; no realiza cambios ni consultas de escritura en Falcon o GITS.
 
 Para la prueba dentro de la red local se usa `AUTH_COOKIE_SECURE=false`. Para acceso externo se requiere HTTPS mediante un túnel o proxy corporativo y se debe cambiar a:
 

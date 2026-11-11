@@ -1,7 +1,7 @@
 import type { Modalidad, Operacion } from './domain.js';
 import type { GitsDailyFlowItem } from './gits.js';
 
-export type PeriodoReporte = 'DIARIO' | 'MENSUAL';
+export type PeriodoReporte = 'DIARIO' | 'MENSUAL' | 'RANGO';
 export type ModalidadReporte = Extract<Modalidad, 'FCL' | 'LCL'> | 'TODAS';
 
 export interface FilaReporteOperativo {
@@ -17,6 +17,7 @@ export interface FilaReporteOperativo {
 export interface ReporteOperativo {
   periodo: PeriodoReporte;
   fecha: string;
+  hasta: string | null;
   modalidad: ModalidadReporte;
   resumen: {
     programadas: number;
@@ -61,10 +62,12 @@ function horaLima(value: string | null) {
   return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(value));
 }
 
-function dentroDelPeriodo(date: string | null, period: PeriodoReporte, requested: string) {
+function dentroDelPeriodo(date: string | null, period: PeriodoReporte, requested: string, hasta: string | null) {
   const normalized = fechaLima(date);
   if (!normalized) return false;
-  return period === 'DIARIO' ? normalized === requested : normalized.slice(0, 7) === requested.slice(0, 7);
+  if (period === 'DIARIO') return normalized === requested;
+  if (period === 'MENSUAL') return normalized.slice(0, 7) === requested.slice(0, 7);
+  return hasta !== null && normalized >= requested && normalized <= hasta;
 }
 
 function clasificar(estado: Operacion['estado']): FilaReporteOperativo['clasificacion'] {
@@ -96,11 +99,12 @@ export function crearReporteOperativo(
   fecha: string,
   modalidad: ModalidadReporte,
   movimientosGits: GitsDailyFlowItem[] | null = null,
-  cierreFalcon: { anuladas: number; sinAtencion: number } | null = null
+  cierreFalcon: { anuladas: number; sinAtencion: number } | null = null,
+  hasta: string | null = null
 ): ReporteOperativo {
   const candidatas = operaciones.filter((item) => {
     const fechaPrincipal = item.fechaCita ?? item.fechaGarita ?? item.fechaIngresoDespacho ?? item.fechaCompletado;
-    return dentroDelPeriodo(fechaPrincipal, periodo, fecha)
+    return dentroDelPeriodo(fechaPrincipal, periodo, fecha, hasta)
       && (modalidad === 'TODAS' || item.modalidad === modalidad)
       && (item.modalidad === 'FCL' || item.modalidad === 'LCL');
   });
@@ -142,7 +146,7 @@ export function crearReporteOperativo(
       .filter(Boolean)
   ).size;
   return {
-    periodo, fecha, modalidad,
+    periodo, fecha, hasta, modalidad,
     resumen: {
       programadas: filas.length,
       atendidas: contar('ATENDIDA'),
@@ -153,8 +157,8 @@ export function crearReporteOperativo(
       porConfirmar: contar('POR_CONFIRMAR')
     },
     estadisticas: {
-      citasAgendadas: candidatas.filter((item) => item.fechaCita && dentroDelPeriodo(item.fechaCita, periodo, fecha)).length,
-      registroGarita: candidatas.filter((item) => item.fechaGarita && dentroDelPeriodo(item.fechaGarita, periodo, fecha)).length,
+      citasAgendadas: candidatas.filter((item) => item.fechaCita && dentroDelPeriodo(item.fechaCita, periodo, fecha, hasta)).length,
+      registroGarita: candidatas.filter((item) => item.fechaGarita && dentroDelPeriodo(item.fechaGarita, periodo, fecha, hasta)).length,
       primerPesaje: movimientos === null ? null : movimientos.length,
       salidaBalanza: movimientos === null ? null : movimientos.filter((item) => Boolean(item.fechaSalidaBalanza)).length,
       esperaPromedioMinutos: movimientos === null ? null : promedio(esperas),
