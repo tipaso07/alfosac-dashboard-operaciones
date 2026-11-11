@@ -170,7 +170,7 @@ async function importarFalcon() {
   const [maritimasSource, aereas] = await Promise.all([leerOperacionesMaritimas(), leerOperacionesAereas()]);
   const maritimas = await enriquecerMaritimasConGits(maritimasSource);
   const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
-    id: item.id, modalidad: item.modalidad, estado: item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+    id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
     volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
     fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
     pesoDeclarado: item.pesoDeclarado ?? null, fuente: 'FALCON' as const
@@ -919,7 +919,7 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
   try {
     const source = await leerOperacionesMaritimas();
     const operations = source.map((item) => ({
-      id: item.id, modalidad: item.modalidad, estado: item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+      id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
       fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
       pesoDeclarado: item.pesoDeclarado ?? null, fuente: 'FALCON' as const

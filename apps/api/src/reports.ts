@@ -115,7 +115,9 @@ export function crearReporteOperativo(
     volante: item.volante,
     placa: item.unidad,
     estado: item.estado,
-    clasificacion: clasificar(item.estado)
+    // Las cargas históricas previas podían conservar EN_DESPACHO aun con salida registrada.
+    // La salida/completado es la evidencia operativa definitiva para el cierre del reporte.
+    clasificacion: item.fechaCompletado ? 'ATENDIDA' : clasificar(item.estado)
   })).sort((a, b) => `${a.fecha ?? ''}${a.horaCita ?? ''}${a.volante}`.localeCompare(`${b.fecha ?? ''}${b.horaCita ?? ''}${b.volante}`));
 
   const contar = (clasificacion: FilaReporteOperativo['clasificacion']) => filas.filter((item) => item.clasificacion === clasificacion).length;
