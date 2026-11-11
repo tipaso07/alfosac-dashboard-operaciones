@@ -6,7 +6,7 @@ import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type Periodo
 import { reporteAExcel } from './excel-report.js';
 import { auditarAnulacionesFalcon, auditarCierreFalcon, auditarCierreFalconRango, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
+import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoPesajeLibreGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, guardarDisponibilidadHistorica, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
 import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, cambiarContrasena, crearSesion, crearUsuario, leerSesion, listarUsuarios, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
@@ -531,6 +531,17 @@ app.get('/api/integrations/gits/flow-objects', async (_request, response) => {
     });
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudieron consultar los objetos de GITS.' });
+  }
+});
+
+app.get('/api/integrations/gits/free-weighing-catalog', async (_request, response) => {
+  try {
+    response.json({
+      message: 'Catálogo técnico para ubicar Balanza Libre y sus campos. Consulta de solo lectura; no lee ni modifica operaciones.',
+      candidates: await catalogoPesajeLibreGits()
+    });
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo consultar el catálogo de Balanza Libre.' });
   }
 });
 

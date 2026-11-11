@@ -995,6 +995,55 @@ export async function listarObjetosFlujoGits(): Promise<GitsFlowObject[]> {
 }
 
 /**
+ * Ubica la fuente técnica de Balanza Libre sin leer movimientos ni modificar
+ * GITS. La fuente exacta se valida después contra un caso real de retiro vacío.
+ */
+export async function catalogoPesajeLibreGits(): Promise<GitsSchemaCandidate[]> {
+  if (!enabled()) throw new Error('GITS está desactivado.');
+  if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
+
+  const pool = await new sql.ConnectionPool(connection()).connect();
+  try {
+    const result = await pool.request().query<{
+      schema_name: string;
+      table_name: string;
+      column_name: string;
+    }>(`
+      SELECT
+        TABLE_SCHEMA AS schema_name,
+        TABLE_NAME AS table_name,
+        COLUMN_NAME AS column_name
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = 'dbo'
+        AND (
+          UPPER(TABLE_NAME) LIKE '%BALANZA%LIBRE%'
+          OR UPPER(TABLE_NAME) LIKE '%PESAJE%LIBRE%'
+          OR (
+            UPPER(TABLE_NAME) LIKE '%BALANZA%'
+            AND (
+              UPPER(COLUMN_NAME) LIKE '%OBSERV%'
+              OR UPPER(COLUMN_NAME) LIKE '%PRIMER%PESO%'
+              OR UPPER(COLUMN_NAME) LIKE '%SEGUNDO%PESO%'
+            )
+          )
+        )
+      ORDER BY TABLE_NAME, ORDINAL_POSITION;
+    `);
+
+    const candidates = new Map<string, GitsSchemaCandidate>();
+    for (const row of result.recordset) {
+      const key = `${row.schema_name}.${row.table_name}`;
+      const candidate = candidates.get(key) ?? { schema: row.schema_name, table: row.table_name, columns: [] };
+      candidate.columns.push(row.column_name);
+      candidates.set(key, candidate);
+    }
+    return [...candidates.values()];
+  } finally {
+    await pool.close();
+  }
+}
+
+/**
  * Estructura de las tablas puente que enlazan volante, autorización, balanza y documento.
  * Solo lee catálogo de SQL Server; nunca registros operativos.
  */
