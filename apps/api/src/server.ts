@@ -3,6 +3,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
+import { reporteAExcel } from './excel-report.js';
 import { auditarAnulacionesFalcon, auditarCierreFalcon, auditarCierreFalconRango, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
@@ -935,7 +936,7 @@ app.get('/api/reports/operations', async (request, response) => {
   }
 });
 
-app.get('/api/reports/operations.csv', async (request, response) => {
+app.get('/api/reports/operations.xlsx', async (request, response) => {
   const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
   const fechaRecibida = String(request.query.fecha ?? fechaReporteActual());
   const fecha = periodo === 'MENSUAL' && /^\d{4}-\d{2}$/.test(fechaRecibida) ? `${fechaRecibida}-01` : fechaRecibida;
@@ -959,6 +960,29 @@ app.get('/api/reports/operations.csv', async (request, response) => {
         report = crearReporteOperativo(operations, periodo, fecha, modalidad, null, null, hasta);
       }
     }
+    const excel = await reporteAExcel(report);
+    response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    response.setHeader('Content-Disposition', `attachment; filename="reporte-${periodo.toLowerCase()}-${fecha}-${modalidad.toLowerCase()}.xlsx"`);
+    response.send(excel);
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo descargar el reporte.' });
+  }
+});
+
+app.get('/api/reports/operations.csv', async (request, response) => {
+  const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
+  const fechaRecibida = String(request.query.fecha ?? fechaReporteActual());
+  const fecha = periodo === 'MENSUAL' && /^\d{4}-\d{2}$/.test(fechaRecibida) ? `${fechaRecibida}-01` : fechaRecibida;
+  const hasta = typeof request.query.hasta === 'string' ? request.query.hasta : null;
+  const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
+  if (!['DIARIO', 'MENSUAL', 'RANGO'].includes(periodo) || !['TODAS', 'FCL', 'LCL'].includes(modalidad)
+    || (periodo === 'RANGO' && (!hasta || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || hasta < fecha))) {
+    response.status(400).json({ message: 'Parámetros de reporte no válidos.' });
+    return;
+  }
+  try {
+    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
+    const report = crearReporteOperativo(operations, periodo, fecha, modalidad, null, null, hasta);
     response.setHeader('Content-Type', 'text/csv; charset=utf-8');
     response.setHeader('Content-Disposition', `attachment; filename="reporte-${periodo.toLowerCase()}-${fecha}-${modalidad.toLowerCase()}.csv"`);
     response.send(`\uFEFF${reporteACsv(report)}`);

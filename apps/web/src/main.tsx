@@ -547,7 +547,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const citasActivas = reporte?.estadisticas.citasAgendadas ?? 0;
   const totalCitasReporte = citasActivas + anuladasReporte;
   return <section className="reports-panel">
-    <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar para Excel</a></div>
+    <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.xlsx?${params}`}>Descargar para Excel</a></div>
     <div className="reports-controls">
       <label>Período<select value={periodo} onChange={(event) => cambiarPeriodo(event.target.value as 'DIARIO' | 'MENSUAL' | 'RANGO')}><option value="DIARIO">Diario</option><option value="RANGO">Rango de fechas</option><option value="MENSUAL">Mensual</option></select></label>
       <label>{periodo === 'RANGO' ? 'Desde' : 'Fecha'}<input type={periodo === 'MENSUAL' ? 'month' : 'date'} value={periodo === 'MENSUAL' ? fecha.slice(0, 7) : fecha} onChange={(event) => setFecha(event.target.value)} /></label>
@@ -684,7 +684,7 @@ function ExportacionPanel({ reportDate }: { reportDate: string | null }) {
       <label>Fecha<input type={periodo === 'DIARIO' ? 'date' : 'month'} value={periodo === 'DIARIO' ? fecha : fecha.slice(0, 7)} onChange={(event) => setFecha(event.target.value)} /></label>
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
     </div>
-    <a className="export-download" href={`/api/reports/operations.csv?${params}`}>Descargar archivo para Excel</a>
+    <a className="export-download" href={`/api/reports/operations.xlsx?${params}`}>Descargar archivo para Excel</a>
   </section>;
 }
 
