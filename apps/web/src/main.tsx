@@ -543,6 +543,9 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
     { label: 'Anuladas', value: reporte.cierre.anuladas ?? reporte.resumen.anuladas, tone: 'neutral' },
     { label: 'Canceladas / no atendidas', value: reporte.cierre.sinAtencion ?? reporte.resumen.noAtendidas, tone: 'alert' }
   ] : [];
+  const anuladasReporte = reporte ? (reporte.cierre.anuladas ?? reporte.resumen.anuladas) : 0;
+  const citasActivas = reporte?.estadisticas.citasAgendadas ?? 0;
+  const totalCitasReporte = citasActivas + anuladasReporte;
   return <section className="reports-panel">
     <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar para Excel</a></div>
     <div className="reports-controls">
@@ -554,7 +557,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
     {error ? <p className="empty">{error}</p> : reporte ? <>
       <div className="report-summary-grid">
         <section className="report-chart-card">
-          <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3></div><strong>{reporte.estadisticas.citasAgendadas}<small>agendadas</small></strong></div>
+          <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3><p className="report-active-caption">Citas activas: <b>{citasActivas}</b></p></div><strong>{totalCitasReporte}<small>total de citas</small></strong></div>
           <ReportBarChart items={estadoCierre} />
         </section>
         <section className="report-performance-card">

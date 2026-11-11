@@ -208,6 +208,7 @@ td:first-child { font-weight: 700; }
 .report-summary-grid { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(440px, 1.3fr); gap: 18px; margin: 4px 0 16px; }
 .report-chart-card, .report-performance-card { border: 1px solid #c7ddeb; border-top: 5px solid #329AD6; padding: 20px; background: linear-gradient(180deg, #ffffff 0%, #f8fcff 100%); }
 .report-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.report-active-caption { margin: 6px 0 0; color: #5a6982; font-size: .9rem; }
 .report-card-heading .brand { margin-bottom: 4px; }
 .report-card-heading h3 { margin: 0; color: #0b1b44; font-size: 1.25rem; }
 .report-card-heading > strong { color: #000059; font-size: 2rem; line-height: .85; text-align: right; }
