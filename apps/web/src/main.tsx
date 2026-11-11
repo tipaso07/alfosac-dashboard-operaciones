@@ -1007,7 +1007,6 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
           return <tr key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
         }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
-      <footer className="hour-inspection-footer"><button className="clear-filters" onClick={onClose}>Cerrar inspección</button></footer>
     </section>
   </div>;
 }
