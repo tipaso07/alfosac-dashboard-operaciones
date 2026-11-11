@@ -3,7 +3,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { auditarAnulacionesFalcon, auditarCierreFalcon, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
+import { auditarAnulacionesFalcon, auditarCierreFalcon, auditarCierreFalconRango, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada } from './report-store.js';
@@ -177,6 +177,61 @@ async function importarFalcon() {
   });
   await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
   return { maritime: maritimas.length, aereo: aereas.length, gitsEnrichment: process.env.GITS_ENRICH_FALCON_ENABLED === 'true' };
+}
+
+function volanteNormalizado(value: string | null | undefined) {
+  return value?.trim().replace(/\s+/g, '').replace(/^0+(?=\d)/, '') ?? '';
+}
+
+function limiteReporte(periodo: PeriodoReporte, fecha: string, hasta: string | null) {
+  const desde = fecha;
+  let fin = hasta ?? fecha;
+  if (periodo === 'MENSUAL') {
+    const [year, month] = fecha.slice(0, 7).split('-').map(Number);
+    fin = `${year}-${String(month).padStart(2, '0')}-${String(new Date(Date.UTC(year, month, 0)).getUTCDate()).padStart(2, '0')}`;
+  }
+  const dias = Math.floor((Date.parse(`${fin}T12:00:00Z`) - Date.parse(`${desde}T12:00:00Z`)) / 86_400_000) + 1;
+  if (!Number.isFinite(dias) || dias < 1 || dias > 62) throw new Error('El rango máximo para consultar directamente es de 62 días.');
+  return { desde, hasta: fin };
+}
+
+/** Consulta fuentes operativas en modo solo lectura y refresca la copia local. */
+async function consultarReporteDirecto(periodo: PeriodoReporte, fecha: string, hasta: string | null, modalidad: ModalidadReporte) {
+  const rango = limiteReporte(periodo, fecha, hasta);
+  const [maritimas, movimientos] = await Promise.all([
+    leerOperacionesMaritimas(10_000, rango.desde, rango.hasta),
+    process.env.GITS_SYNC_ENABLED === 'true' ? consultarFlujoDiarioGits(rango.desde, 10_000, rango.hasta) : Promise.resolve(null)
+  ]);
+  const movimientosPorVolante = new Map<string, NonNullable<typeof movimientos>>();
+  for (const movimiento of movimientos ?? []) {
+    const volante = volanteNormalizado(movimiento.volante);
+    if (volante) movimientosPorVolante.set(volante, [...(movimientosPorVolante.get(volante) ?? []), movimiento]);
+  }
+  const operations = maritimas.map((item) => {
+    const asociados = movimientosPorVolante.get(volanteNormalizado(item.volante)) ?? [];
+    const primerPesaje = asociados.find((movimiento) => movimiento.fechaGarita)?.fechaGarita ?? null;
+    const salida = asociados.find((movimiento) => movimiento.fechaSalidaBalanza)?.fechaSalidaBalanza ?? null;
+    const fechaIngresoDespacho = item.fechaIngresoDespacho ?? primerPesaje;
+    const fechaCompletado = item.fechaCompletado ?? salida;
+    return {
+      id: item.id,
+      modalidad: item.modalidad,
+      estado: fechaCompletado ? 'COMPLETADA' as const : fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
+      volante: item.volante,
+      unidad: item.unidad,
+      fechaCita: item.fechaCita,
+      fechaGarita: item.fechaGarita,
+      fechaIngresoDespacho,
+      fechaCompletado,
+      pesoDeclarado: item.pesoDeclarado ?? null,
+      fuente: 'FALCON' as const
+    };
+  });
+  await guardarOperaciones(operations);
+  const modalidades = modalidad === 'TODAS' ? ['FCL', 'LCL'] as const : [modalidad];
+  let cierre: { anuladas: number; sinAtencion: number } | null = null;
+  try { cierre = await auditarCierreFalconRango(rango.desde, rango.hasta, modalidades); } catch { /* El reporte conserva los hitos aunque no esté disponible el cierre. */ }
+  return { operations, movimientos, cierre, hasta: rango.hasta };
 }
 
 async function syncFalconIfEnabled() {
@@ -862,23 +917,19 @@ app.get('/api/reports/operations', async (request, response) => {
     return;
   }
   try {
-    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
-    let movimientos = null;
-    let cierreFalcon: { anuladas: number; sinAtencion: number } | null = null;
-    if (periodo === 'DIARIO' && process.env.GITS_SYNC_ENABLED === 'true') {
-      try { movimientos = await consultarFlujoDiarioGits(fecha, 1_000); } catch { /* El reporte conserva Falcon si GITS no responde. */ }
+    if (modoDemostracion()) {
+      response.json(crearReporteOperativo(operacionesDemo, periodo, fecha, modalidad, movimientosDemo, null, hasta));
+      return;
     }
-    if (periodo === 'DIARIO' && !modoDemostracion()) {
-      try {
-        const modalidades = modalidad === 'TODAS' ? ['FCL', 'LCL'] as const : [modalidad];
-        const auditorias = await Promise.all(modalidades.map((item) => auditarAnulacionesFalcon(fecha, item)));
-        cierreFalcon = {
-          anuladas: auditorias.reduce((total, item) => total + item.anuladas.length, 0),
-          sinAtencion: auditorias.reduce((total, item) => total + item.pendientes.length, 0)
-        };
-      } catch { /* Si Falcon no responde, el reporte muestra el indicador como no disponible. */ }
+    try {
+      const directo = await consultarReporteDirecto(periodo, fecha, hasta, modalidad);
+      response.json(crearReporteOperativo(directo.operations, periodo, fecha, modalidad, directo.movimientos, directo.cierre, hasta));
+    } catch {
+      // Si una fuente corporativa está temporalmente caída, el historial propio
+      // sigue disponible para no interrumpir al usuario.
+      const operations = await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
+      response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, null, null, hasta));
     }
-    response.json(crearReporteOperativo(operations, periodo, fecha, modalidad, movimientos, cierreFalcon, hasta));
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo generar el reporte.' });
   }
@@ -896,8 +947,18 @@ app.get('/api/reports/operations.csv', async (request, response) => {
     return;
   }
   try {
-    const operations = modoDemostracion() ? operacionesDemo : await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
-    const report = crearReporteOperativo(operations, periodo, fecha, modalidad, null, null, hasta);
+    let report;
+    if (modoDemostracion()) {
+      report = crearReporteOperativo(operacionesDemo, periodo, fecha, modalidad, movimientosDemo, null, hasta);
+    } else {
+      try {
+        const directo = await consultarReporteDirecto(periodo, fecha, hasta, modalidad);
+        report = crearReporteOperativo(directo.operations, periodo, fecha, modalidad, directo.movimientos, directo.cierre, hasta);
+      } catch {
+        const operations = await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
+        report = crearReporteOperativo(operations, periodo, fecha, modalidad, null, null, hasta);
+      }
+    }
     response.setHeader('Content-Type', 'text/csv; charset=utf-8');
     response.setHeader('Content-Disposition', `attachment; filename="reporte-${periodo.toLowerCase()}-${fecha}-${modalidad.toLowerCase()}.csv"`);
     response.send(`\uFEFF${reporteACsv(report)}`);

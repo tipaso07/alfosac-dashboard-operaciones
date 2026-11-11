@@ -1073,10 +1073,10 @@ export async function catalogoEnlacesGits(): Promise<GitsTechnicalCatalog> {
 }
 
 /**
- * Consulta diaria y acotada del flujo marítimo desde las tablas base indexadas.
+ * Consulta acotada del flujo marítimo desde las tablas base indexadas.
  * No sincroniza ni escribe datos; se usa únicamente para validar la semántica de eventos.
  */
-export async function consultarFlujoDiarioGits(date: string, limit = 50): Promise<GitsDailyFlowItem[]> {
+export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta = date): Promise<GitsDailyFlowItem[]> {
   if (!enabled()) throw new Error('GITS está desactivado.');
   if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
 
@@ -1084,6 +1084,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
   try {
     const result = await pool.request()
       .input('fromDate', sql.Date, date)
+      .input('untilDate', sql.Date, hasta)
       .input('limit', sql.Int, limit)
       .query<{
         empresa: string;
@@ -1159,7 +1160,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50): Promis
           ORDER BY registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN ASC
         ) salida
         WHERE balanza.MOVBAL_D_FECHA_INGRESO >= @fromDate
-          AND balanza.MOVBAL_D_FECHA_INGRESO < DATEADD(day, 1, @fromDate)
+          AND balanza.MOVBAL_D_FECHA_INGRESO < DATEADD(day, 1, @untilDate)
         ORDER BY balanza.MOVBAL_D_FECHA_INGRESO ASC;
       `);
 

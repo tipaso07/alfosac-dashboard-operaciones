@@ -388,6 +388,41 @@ export async function auditarAnulacionesFalcon(date: string, modalidad: Modalida
   } finally { await pool.close(); }
 }
 
+/** Totales de cierre para un período. Solo consulta Falcon y no altera citas. */
+export async function auditarCierreFalconRango(desde: string, hasta: string, modalidades: ReadonlyArray<'FCL' | 'LCL'>) {
+  const negocios = modalidades.map((modalidad) => maritimeBusiness[modalidad]).filter((value): value is number => value !== null);
+  if (!negocios.length) return { anuladas: 0, sinAtencion: 0 };
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    // Los códigos son internos y fijos (FCL/LCL), nunca provienen del navegador.
+    const businesses = negocios.join(', ');
+    const base = (request: sql.Request) => request.input('desde', sql.Date, desde).input('hasta', sql.Date, hasta);
+    const [anuladas, sinAtencion] = await Promise.all([
+      base(pool.request()).query<{ total: number }>(`
+        SELECT COUNT(*) AS total
+        FROM dbo.citas_programadas_anuladas
+        WHERE cod_negocio IN (${businesses})
+          AND fecha >= CONVERT(date, @desde)
+          AND fecha < DATEADD(day, 1, CONVERT(date, @hasta));
+      `),
+      base(pool.request()).query<{ total: number }>(`
+        SELECT COUNT(*) AS total
+        FROM dbo.citas_programadas c
+        WHERE c.cod_negocio IN (${businesses})
+          AND c.fecha >= CONVERT(date, @desde)
+          AND c.fecha < DATEADD(day, 1, CONVERT(date, @hasta))
+          AND c.fecha_atencion IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM dbo.citas_programadas_anuladas a
+            WHERE a.id_cita = c.id OR a.id = c.id
+          );
+      `)
+    ]);
+    return { anuladas: Number(anuladas.recordset[0]?.total ?? 0), sinAtencion: Number(sinAtencion.recordset[0]?.total ?? 0) };
+  } finally { await pool.close(); }
+}
+
 /** Historial por volante para distinguir una anulación de una reprogramación posterior. */
 export async function historialCitasPorVolanteFalcon(volante: string): Promise<FalconAppointmentHistoryItem[]> {
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para consultar.');
@@ -1023,21 +1058,24 @@ export async function detalleCitaFalcon(citaId: string): Promise<FalconCitaDetai
   }
 }
 
-export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMaritimeOperation[]> {
+export async function leerOperacionesMaritimas(limit = 250, desde?: string, hasta?: string): Promise<FalconMaritimeOperation[]> {
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   try {
-    const date = fechaReporte();
+    const date = desde ?? fechaReporte();
+    const until = hasta ?? date;
     const dayStart = date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())';
+    const dayEnd = until ? 'DATEADD(day, 1, CONVERT(date, @untilDate))' : 'DATEADD(day, 1, CONVERT(date, GETDATE()))';
     const citasRequest = pool.request().input('limit', sql.Int, limit);
     if (date) citasRequest.input('reportDate', sql.Date, date);
+    if (until) citasRequest.input('untilDate', sql.Date, until);
     const citasResult = await citasRequest.query<SourceRow>(`
       SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa, des_contenedor,
         fecha_atencion
       FROM dbo.citas_programadas
       WHERE cod_negocio IN (3, 4, 5)
         AND fecha >= ${dayStart}
-        AND fecha < DATEADD(day, 1, ${dayStart})
+        AND fecha < ${dayEnd}
       ORDER BY fecha DESC, hora DESC;
     `);
 
@@ -1065,15 +1103,18 @@ export async function leerOperacionesMaritimas(limit = 250): Promise<FalconMarit
   } finally { await pool.close(); }
 }
 
-export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritimeOperation[]> {
+export async function leerOperacionesAereas(limit = 250, desde?: string, hasta?: string): Promise<FalconMaritimeOperation[]> {
   if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   const dta = quoteIdentifier(process.env.FALCON_DTA_DB?.trim() || 'FALCON_DTA_ALFOSAC');
   try {
-    const date = fechaReporte();
+    const date = desde ?? fechaReporte();
+    const until = hasta ?? date;
     const dayStart = date ? 'CONVERT(datetime, @reportDate)' : 'CONVERT(datetime, CONVERT(date, GETDATE()))';
+    const dayEnd = until ? 'DATEADD(day, 1, CONVERT(datetime, @untilDate))' : 'DATEADD(day, 1, CONVERT(datetime, CONVERT(date, GETDATE())))';
     const request = pool.request().input('limit', sql.Int, limit);
     if (date) request.input('reportDate', sql.Date, date);
+    if (until) request.input('untilDate', sql.Date, until);
     const result = await request.query<SourceRow>(`
       SELECT TOP (@limit)
         cpa.cpa_id, cpa.cpa_volante, cpa.cpa_lista_retiro, cpa.cpa_flag_cita, cpa.cpa_fecha_atencion,
@@ -1093,7 +1134,7 @@ export async function leerOperacionesAereas(limit = 250): Promise<FalconMaritime
         WHERE h.lista_retiros_eer = lr.id_lista
       ) carga
       WHERE cpa.cpa_fecha_atencion >= ${dayStart}
-        AND cpa.cpa_fecha_atencion < DATEADD(day, 1, ${dayStart})
+        AND cpa.cpa_fecha_atencion < ${dayEnd}
       ORDER BY cpa.cpa_fecha_atencion DESC, cpa.cpa_id DESC;
     `);
     return result.recordset.flatMap((row) => {
