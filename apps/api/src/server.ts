@@ -841,7 +841,8 @@ app.get('/api/dashboard/operations', (_request, response) => {
 
 app.get('/api/reports/operations', async (request, response) => {
   const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
-  const fecha = String(request.query.fecha ?? fechaReporteActual());
+  const fechaRecibida = String(request.query.fecha ?? fechaReporteActual());
+  const fecha = periodo === 'MENSUAL' && /^\d{4}-\d{2}$/.test(fechaRecibida) ? `${fechaRecibida}-01` : fechaRecibida;
   const hasta = typeof request.query.hasta === 'string' ? request.query.hasta : null;
   const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
   if (!['DIARIO', 'MENSUAL', 'RANGO'].includes(periodo)) {
@@ -885,7 +886,8 @@ app.get('/api/reports/operations', async (request, response) => {
 
 app.get('/api/reports/operations.csv', async (request, response) => {
   const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
-  const fecha = String(request.query.fecha ?? fechaReporteActual());
+  const fechaRecibida = String(request.query.fecha ?? fechaReporteActual());
+  const fecha = periodo === 'MENSUAL' && /^\d{4}-\d{2}$/.test(fechaRecibida) ? `${fechaRecibida}-01` : fechaRecibida;
   const hasta = typeof request.query.hasta === 'string' ? request.query.hasta : null;
   const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
   if (!['DIARIO', 'MENSUAL', 'RANGO'].includes(periodo) || !['TODAS', 'FCL', 'LCL'].includes(modalidad)
