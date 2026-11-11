@@ -33,7 +33,7 @@ type AereoAsociado = { volante: string; placa: string; fechaGarita: string; prim
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO'; aereosAsociados?: AereoAsociado[] };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
-type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
+type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_ATENCION' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
 type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null };
 type DiagnosticoAlerta = { key: string; tone: 'warning' | 'alert'; level: string; title: string; cita: Operacion; fechaReferencia: string; duracion?: string; porcentajePeso?: number | null; contact?: boolean };
 type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
@@ -456,7 +456,14 @@ type VisualState = 'ok' | 'warning' | 'alert' | 'unknown';
 
 function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, SeguimientoLlegada>): VisualState {
   const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
-  if (estados.some((item) => esCritico(item.estado))) return 'alert';
+  // En vivo, la carita debe expresar la etapa actual. La demora ya terminada
+  // de garita a primer pesaje se conserva como hito, no como alerta vigente.
+  if (estados.length) {
+    if (estados.some((item) => esCritico(item.estado))) return 'alert';
+    const amarillosActivos = estados.filter((item) => esProximo(item.estado)).length;
+    if (amarillosActivos >= 2) return 'warning';
+    return estados.some((item) => item.estado !== 'PROGRAMADA') || amarillosActivos > 0 ? 'ok' : 'unknown';
+  }
   const movimientos = movimientosConfirmados(group);
   const tonosEspera = group.citas.flatMap((cita) => movimientos.map((movimiento) => durationTone(durationSeconds(cita.fechaGarita, movimiento.fechaGarita), 'ESPERA', cita)));
   const tonosAtencion = movimientos.map((movimiento) => durationTone(durationSeconds(movimiento.fechaGarita, tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null), 'ATENCION'));
@@ -479,16 +486,18 @@ function movimientosConfirmados(group: GrupoFlujo) {
 }
 
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
-  if (seguimiento && esCritico(seguimiento.estado)) return 'alert';
+  if (seguimiento) {
+    if (esCritico(seguimiento.estado)) return 'alert';
+    return seguimiento.estado === 'PROGRAMADA' ? 'unknown' : 'ok';
+  }
   const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
   const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
   const tonoEspera = durationTone(espera, 'ESPERA', cita);
   const tonoAtencion = durationTone(atencion, 'ATENCION');
   if (tonoEspera === 'alert' || tonoAtencion === 'alert') return 'alert';
   const amarillosPorTiempo = Number(tonoEspera === 'warning') + Number(tonoAtencion === 'warning');
-  const amarillaActiva = Boolean(seguimiento && esProximo(seguimiento.estado));
-  if (amarillosPorTiempo + Number(amarillaActiva) >= 2) return 'warning';
-  if (espera !== null || atencion !== null || amarillaActiva) return 'ok';
+  if (amarillosPorTiempo >= 2) return 'warning';
+  if (espera !== null || atencion !== null) return 'ok';
   return 'unknown';
 }
 
@@ -864,7 +873,12 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
       {esAtencionMultiple(group) && <p className="multiple-attention-note"><strong>Atención múltiple confirmada</strong> · {group.movimientos.length} unidades retiraron el mismo volante. Los tiempos se evalúan por placa y los pesos se consolidan.</p>}
       {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso sin dato' : `${formatWeight(aereo.pesoDeclarado)} declarado`}</strong><small>Primer pesaje: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
       <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
-      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight(pesoNumerico(movement.pesoMercaderiaDeclarado) + pesoAereo)}</>}</small></li>)}</ol> : <p>Aún no hay registro físico en GITS.</p>}
+      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => {
+        const citaRelacionada = group.citas[0];
+        const espera = durationSeconds(citaRelacionada?.fechaGarita ?? null, movement.fechaGarita);
+        const tonoEspera = durationTone(espera, 'ESPERA', citaRelacionada);
+        return <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>{espera !== null && <>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b> · </>}Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight(pesoNumerico(movement.pesoMercaderiaDeclarado) + pesoAereo)}</>}</small></li>;
+      })}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
 }
@@ -916,11 +930,12 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
   const movimientos = movimientosConfirmados(group);
   const cita = group.citas[0];
   if (!movimientos.length || !cita) return alertas;
+  const tieneSeguimientoEnVivo = group.citas.some((citaGrupo) => seguimiento.has(citaGrupo.id));
 
   movimientos.forEach((movimiento) => {
     const espera = durationSeconds(cita.fechaGarita, movimiento.fechaGarita);
     const tonoEspera = durationTone(espera, 'ESPERA', cita);
-    if (espera !== null && (tonoEspera === 'warning' || tonoEspera === 'alert')) {
+    if (!tieneSeguimientoEnVivo && espera !== null && (tonoEspera === 'warning' || tonoEspera === 'alert')) {
       agregar({ key: `espera-${cita.id}-${movimiento.movimiento}`, tone: tonoEspera, level: tonoEspera === 'alert' ? 'CRÍTICA' : 'SEGUIMIENTO', title: `Demora de garita a primer pesaje${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: cita.fechaGarita!, duracion: formatDuration(espera) });
     }
 
@@ -971,13 +986,14 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const esRojo = Boolean(estado && esCritico(estado.estado));
         const esAmarillo = Boolean(estado && esProximo(estado.estado));
         const etiqueta = esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
+          : estado?.estado === 'EN_ATENCION' ? 'En almacén / atención en curso'
           : movimiento && tieneSegundoPesajeValido(movimiento) ? 'Completado'
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
         const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
         const tonoTiempo = durationTone(atencion, 'ATENCION');
-        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
       }));
   });
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -1205,7 +1221,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         fechaReferencia = primerPesaje;
         minutosRetraso = minutosEntre(now, primerPesaje);
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
-          : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'PROGRAMADA';
+          : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
       /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
       } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso) {
         fechaReferencia = segundoPesaje;
@@ -1239,6 +1255,7 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita Falcon';
   if (item.estado === 'GARITA_SIN_INGRESO') return `Demora para ingreso al DT · ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
+  if (item.estado === 'EN_ATENCION') return 'En almacén / atención en curso';
   if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 5%`;
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
   return 'Sin alerta activa';
