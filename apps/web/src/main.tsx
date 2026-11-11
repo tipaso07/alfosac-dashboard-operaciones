@@ -862,7 +862,11 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
   });
 
   const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
-  if (porcentajePeso != null && porcentajePeso > toleranciaPeso) {
+  // El seguimiento ya genera PESO_OBSERVADO para esta misma cita. La
+  // comprobación local solo es un respaldo para datos históricos sin ese
+  // seguimiento, de modo que no se presenten dos tarjetas iguales.
+  const pesoYaDiagnosticado = group.citas.some((citaGrupo) => seguimiento.get(citaGrupo.id)?.estado === 'PESO_OBSERVADO');
+  if (porcentajePeso != null && porcentajePeso > toleranciaPeso && !pesoYaDiagnosticado) {
     const ultimoMovimiento = movimientos.at(-1)!;
     agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'CRÍTICA', title: 'Diferencia de peso por validar', cita, fechaReferencia: ultimoMovimiento.fechaSalidaBalanza ?? ultimoMovimiento.fechaGarita!, porcentajePeso });
   }
