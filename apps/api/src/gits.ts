@@ -233,7 +233,7 @@ export function correlacionSeguraGits(cita: GitsCorrelationInput, events: GitsDa
   return matches.length === 1 ? { event: matches[0], matchedBy: 'PLACA' } : null;
 }
 
-function connection(): sql.config {
+function connection(requestTimeout = 8_000): sql.config {
   const instance = process.env.GITS_DB_INSTANCE?.trim();
   const port = Number(process.env.GITS_DB_PORT ?? '');
   return {
@@ -249,7 +249,7 @@ function connection(): sql.config {
       appName: 'AlfosacDashboardOperacionesReadOnly'
     },
     connectionTimeout: 5_000,
-    requestTimeout: 8_000
+    requestTimeout
   };
 }
 
@@ -1129,9 +1129,13 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
   if (!enabled()) throw new Error('GITS está desactivado.');
   if (!configured()) throw new Error('Faltan datos de conexión de GITS.');
 
-  const pool = await new sql.ConnectionPool(connection()).connect();
+  // La consulta diaria cruza balanza, documento y almacén. Se permite un
+  // margen mayor que una traza individual para evitar que un timeout oculte
+  // todos los movimientos y genere alertas falsas de garita.
+  const pool = await new sql.ConnectionPool(connection(30_000)).connect();
   try {
     const result = await pool.request()
+      .input('empresa', sql.VarChar(10), empresaGits())
       .input('fromDate', sql.Date, date)
       .input('untilDate', sql.Date, hasta)
       .input('limit', sql.Int, limit)
@@ -1208,7 +1212,8 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
             AND registroSalida.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
           ORDER BY registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN ASC
         ) salida
-        WHERE balanza.MOVBAL_D_FECHA_INGRESO >= @fromDate
+        WHERE balanza.EMPRES_C_CODIGO = @empresa
+          AND balanza.MOVBAL_D_FECHA_INGRESO >= @fromDate
           AND balanza.MOVBAL_D_FECHA_INGRESO < DATEADD(day, 1, @untilDate)
         ORDER BY balanza.MOVBAL_D_FECHA_INGRESO ASC;
       `);
