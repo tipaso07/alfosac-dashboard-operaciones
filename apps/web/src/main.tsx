@@ -516,6 +516,10 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const [error, setError] = useState('');
 
   useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
+  const cambiarPeriodo = (siguiente: 'DIARIO' | 'MENSUAL' | 'RANGO') => {
+    setPeriodo(siguiente);
+    if (siguiente !== 'MENSUAL' && /^\d{4}-\d{2}$/.test(fecha)) setFecha(`${fecha}-01`);
+  };
   useEffect(() => {
     const params = new URLSearchParams({ periodo, fecha, modalidad });
     if (periodo === 'RANGO') params.set('hasta', hasta);
@@ -535,7 +539,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   return <section className="reports-panel">
     <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.csv?${params}`}>Descargar para Excel</a></div>
     <div className="reports-controls">
-      <label>Período<select value={periodo} onChange={(event) => setPeriodo(event.target.value as 'DIARIO' | 'MENSUAL' | 'RANGO')}><option value="DIARIO">Diario</option><option value="RANGO">Rango de fechas</option><option value="MENSUAL">Mensual</option></select></label>
+      <label>Período<select value={periodo} onChange={(event) => cambiarPeriodo(event.target.value as 'DIARIO' | 'MENSUAL' | 'RANGO')}><option value="DIARIO">Diario</option><option value="RANGO">Rango de fechas</option><option value="MENSUAL">Mensual</option></select></label>
       <label>{periodo === 'RANGO' ? 'Desde' : 'Fecha'}<input type={periodo === 'MENSUAL' ? 'month' : 'date'} value={periodo === 'MENSUAL' ? fecha.slice(0, 7) : fecha} onChange={(event) => setFecha(event.target.value)} /></label>
       {periodo === 'RANGO' && <label>Hasta<input type="date" min={fecha} value={hasta} onChange={(event) => setHasta(event.target.value)} /></label>}
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
