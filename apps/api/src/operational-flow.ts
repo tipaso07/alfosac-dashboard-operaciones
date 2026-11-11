@@ -117,12 +117,23 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
 
 export function resumenDeFlujo(citas: Operacion[], groups: GrupoFlujoOperativo[], reportDate: string): ResumenModalidad[] {
   const modalities: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
-  return modalities.map((modalidad) => ({
-    modalidad,
-    agendadas: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate).length,
-    garita: groups.filter((group) => group.modalidad === modalidad).flatMap((group) => group.movimientos).filter((event) => fechaLima(event.fechaGarita) === reportDate).length,
-    despacho: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaIngresoDespacho && fechaLima(cita.fechaIngresoDespacho) === reportDate).length,
-    completadas: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaCompletado && fechaLima(cita.fechaCompletado) === reportDate).length,
-    noCompletadas: citas.filter((cita) => cita.modalidad === modalidad && cita.estado === 'NO_COMPLETADA').length
-  }));
+  return modalities.map((modalidad) => {
+    // Un mismo camión puede atender más de un volante. El movimiento se
+    // muestra en cada volante relacionado, pero se cuenta una sola vez en
+    // los indicadores físicos de balanza.
+    const movimientosUnicos = [...new Map(
+      groups
+        .filter((group) => group.modalidad === modalidad)
+        .flatMap((group) => group.movimientos)
+        .map((movement) => [`${movement.empresa}:${movement.movimiento}`, movement])
+    ).values()];
+    return {
+      modalidad,
+      agendadas: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate).length,
+      garita: movimientosUnicos.filter((event) => fechaLima(event.fechaGarita) === reportDate).length,
+      despacho: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaIngresoDespacho && fechaLima(cita.fechaIngresoDespacho) === reportDate).length,
+      completadas: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaCompletado && fechaLima(cita.fechaCompletado) === reportDate).length,
+      noCompletadas: citas.filter((cita) => cita.modalidad === modalidad && cita.estado === 'NO_COMPLETADA').length
+    };
+  });
 }

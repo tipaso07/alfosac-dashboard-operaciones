@@ -1155,26 +1155,14 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         peso_mercaderia_declarado: number | null;
         cantidad_tarjas: number | null;
       }>(`
-        SELECT TOP (@limit)
-          balanza.EMPRES_C_CODIGO AS empresa,
-          balanza.MOVBAL_C_NUMERO AS movimiento,
-          documento.volante,
-          balanza.CAMION_C_PLACA AS placa,
-          balanza.CONTEN_C_CODIGO AS contenedor,
-          balanza.MOVBAL_D_FECHA_INGRESO AS fecha_garita,
-          balanza.MOVBAL_D_FECHA_SALIDA AS fecha_salida_balanza,
-          balanza.MOVBAL_N_PRIMER_PESO AS peso_inicial,
-          balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
-          balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
-          balanza.MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarjas,
-          documento.peso_mercaderia_declarado,
-          almacen.fecha_ingreso_almacen,
-          salida.fecha_salida_almacen
-        FROM dbo.OPETV_MOVIMIENTO_BALANZA balanza
-        OUTER APPLY (
-          SELECT TOP (1)
+        /* Un movimiento puede retirar más de un volante. Se conserva un
+           registro por volante para que cada cita reciba sus hitos físicos. */
+        WITH documentosMovimiento AS (
+          SELECT
+            enlace.EMPRES_C_CODIGO AS empresa,
+            enlace.MOVBAL_C_NUMERO AS movimiento,
             origen.DOCORI_C_NUMERO_VOLANTE AS volante,
-            detalle.DOORDE_N_PESO_MANIFESTADO AS peso_mercaderia_declarado
+            MAX(detalle.DOORDE_N_PESO_MANIFESTADO) AS peso_mercaderia_declarado
           FROM dbo.OPETV_MOVIMIENTO_BALANZA_DOCUMENTO enlace
           INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN origen
             ON origen.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO
@@ -1195,9 +1183,31 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
             AND detalle.PUERTO_C_CODIGO_EMBARQUE = enlace.PUERTO_C_CODIGO_EMBARQUE
             AND detalle.DOCORI_C_NUMERO = enlace.DOCORI_C_NUMERO
             AND detalle.DOORDE_C_NUMERO_DETALLE = enlace.DOORDE_C_NUMERO_DETALLE
-          WHERE enlace.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
-            AND enlace.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
-        ) documento
+          WHERE enlace.EMPRES_C_CODIGO = @empresa
+          GROUP BY
+            enlace.EMPRES_C_CODIGO,
+            enlace.MOVBAL_C_NUMERO,
+            origen.DOCORI_C_NUMERO_VOLANTE
+        )
+        SELECT TOP (@limit)
+          balanza.EMPRES_C_CODIGO AS empresa,
+          balanza.MOVBAL_C_NUMERO AS movimiento,
+          documento.volante,
+          balanza.CAMION_C_PLACA AS placa,
+          balanza.CONTEN_C_CODIGO AS contenedor,
+          balanza.MOVBAL_D_FECHA_INGRESO AS fecha_garita,
+          balanza.MOVBAL_D_FECHA_SALIDA AS fecha_salida_balanza,
+          balanza.MOVBAL_N_PRIMER_PESO AS peso_inicial,
+          balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
+          balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
+          balanza.MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarjas,
+          documento.peso_mercaderia_declarado,
+          almacen.fecha_ingreso_almacen,
+          salida.fecha_salida_almacen
+        FROM dbo.OPETV_MOVIMIENTO_BALANZA balanza
+        LEFT JOIN documentosMovimiento documento
+          ON documento.empresa = balanza.EMPRES_C_CODIGO
+          AND documento.movimiento = balanza.MOVBAL_C_NUMERO
         OUTER APPLY (
           SELECT TOP (1) movimientoAlmacen.MOBAAL_D_FECHA AS fecha_ingreso_almacen
           FROM dbo.OPETV_MOVIMIENTO_BALANZA_ALMACEN movimientoAlmacen
