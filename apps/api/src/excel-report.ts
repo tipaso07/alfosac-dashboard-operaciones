@@ -78,8 +78,9 @@ export async function reporteAExcel(report: ReporteOperativo) {
   const resumen = [
     ['RESUMEN DEL PERÍODO', ''],
     ['Citas activas', report.estadisticas.citasAgendadas],
-    ['Total de citas', report.estadisticas.citasAgendadas + anuladas],
-    ['Atendidas', atendidas],
+    ['Total de cierre', report.estadisticas.registroGarita + anuladas],
+    ['Atendidas en garita', report.estadisticas.registroGarita],
+    ['Completadas por balanza', atendidas],
     ['Anuladas', anuladas],
     ['Canceladas / no atendidas', noAtendidas],
     ['', ''],

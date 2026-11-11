@@ -539,13 +539,15 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const params = new URLSearchParams({ periodo, fecha, modalidad });
   if (periodo === 'RANGO') params.set('hasta', hasta);
   const estadoCierre = reporte ? [
-    { label: 'Atendidas', value: reporte.cierre.atendidas ?? reporte.resumen.atendidas, tone: 'ok' },
+    { label: 'Atendidas en garita', value: reporte.estadisticas.registroGarita, tone: 'ok' },
     { label: 'Anuladas', value: reporte.cierre.anuladas ?? reporte.resumen.anuladas, tone: 'neutral' },
     { label: 'Canceladas / no atendidas', value: reporte.cierre.sinAtencion ?? reporte.resumen.noAtendidas, tone: 'alert' }
   ] : [];
   const anuladasReporte = reporte ? (reporte.cierre.anuladas ?? reporte.resumen.anuladas) : 0;
   const citasActivas = reporte?.estadisticas.citasAgendadas ?? 0;
-  const totalCitasReporte = citasActivas + anuladasReporte;
+  // El cierre entregado por Operaciones considera atenciones en garita y anulaciones.
+  // Las no atendidas y los hitos GITS se muestran como información independiente.
+  const totalCierreReporte = (reporte?.estadisticas.registroGarita ?? 0) + anuladasReporte;
   return <section className="reports-panel">
     <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.xlsx?${params}`}>Descargar para Excel</a></div>
     <div className="reports-controls">
@@ -557,7 +559,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
     {error ? <p className="empty">{error}</p> : reporte ? <>
       <div className="report-summary-grid">
         <section className="report-chart-card">
-          <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3><p className="report-active-caption">Citas activas: <b>{citasActivas}</b></p></div><strong>{totalCitasReporte}<small>total de citas</small></strong></div>
+          <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3><p className="report-active-caption">Citas activas: <b>{citasActivas}</b></p></div><strong>{totalCierreReporte}<small>total de cierre</small></strong></div>
           <ReportBarChart items={estadoCierre} />
         </section>
         <section className="report-performance-card">
