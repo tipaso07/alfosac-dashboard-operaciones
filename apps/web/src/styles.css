@@ -228,6 +228,14 @@ td:first-child { font-weight: 700; }
 .report-card-note { margin: 18px 0 0; color: #60728a; font-size: .82rem; line-height: 1.45; }
 .report-footnotes { display: flex; flex-wrap: wrap; gap: 8px; }
 .report-footnotes span { border: 1px solid #d7e4ee; background: #f7fafc; color: #52627a; padding: 7px 10px; font-size: .78rem; font-weight: 700; }
+.report-skeleton { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(440px, 1.3fr); gap: 18px; margin: 4px 0 16px; }
+.report-skeleton-card { display: grid; gap: 14px; min-height: 240px; padding: 20px; border: 1px solid #d7e4ee; border-top: 5px solid #d7e4ee; background: #fff; }
+.report-skeleton-card i { display: block; height: 18px; border-radius: 4px; background: linear-gradient(90deg, #edf2f7 20%, #f8fbfd 45%, #edf2f7 70%); background-size: 260% 100%; animation: report-skeleton-shimmer 1.25s ease-in-out infinite; }
+.report-skeleton-card i:nth-child(1) { width: 48%; height: 28px; }
+.report-skeleton-card i:nth-child(2) { width: 82%; }
+.report-skeleton-card i:nth-child(3) { width: 64%; }
+.report-skeleton-card i:nth-child(4) { width: 73%; }
+@keyframes report-skeleton-shimmer { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .report-note { margin: 0 0 16px; color: #52627a; font-size: .9rem; }
 .operations-table { min-width: 900px; font-size: .98rem; }
 .operations-table th { font-size: .8rem; }
@@ -358,7 +366,7 @@ td:first-child { font-weight: 700; }
   .alert-contact { grid-template-columns: 1fr; }
   .alert-contact small { grid-column: 1; }
   .report-kpis { grid-template-columns: repeat(2, minmax(130px, 1fr)); }
-  .availability-grids, .report-summary-grid, .settings-grid { grid-template-columns: 1fr; }
+  .availability-grids, .report-summary-grid, .report-skeleton, .settings-grid { grid-template-columns: 1fr; }
   .availability-toolbar { align-items: flex-start; flex-direction: column; }
   .operations-panel, .reports-panel, .appointments-panel, .export-panel, .availability-panel, .settings-panel { padding: 16px; }
   .toolbar-row { align-items: flex-start; flex-direction: column; }

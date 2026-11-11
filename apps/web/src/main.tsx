@@ -514,6 +514,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const [modalidad, setModalidad] = useState<'TODAS' | 'FCL' | 'LCL'>('TODAS');
   const [reporte, setReporte] = useState<ReporteOperativo | null>(null);
   const [error, setError] = useState('');
+  const [cargando, setCargando] = useState(true);
 
   useEffect(() => { if (reportDate) setFecha(reportDate); }, [reportDate]);
   const cambiarPeriodo = (siguiente: 'DIARIO' | 'MENSUAL' | 'RANGO') => {
@@ -521,12 +522,18 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
     if (siguiente !== 'MENSUAL' && /^\d{4}-\d{2}$/.test(fecha)) setFecha(`${fecha}-01`);
   };
   useEffect(() => {
+    let vigente = true;
     const params = new URLSearchParams({ periodo, fecha, modalidad });
     if (periodo === 'RANGO') params.set('hasta', hasta);
+    setCargando(true);
+    setReporte(null);
+    setError('');
     void fetch(`/api/reports/operations?${params}`)
       .then(async (response) => response.ok ? response.json() as Promise<ReporteOperativo> : Promise.reject(await response.json()))
-      .then((value) => { setReporte(value); setError(''); })
-      .catch((reason: { message?: string }) => { setReporte(null); setError(reason.message ?? 'No se pudo generar el reporte.'); });
+      .then((value) => { if (vigente) { setReporte(value); setError(''); } })
+      .catch((reason: { message?: string }) => { if (vigente) { setReporte(null); setError(reason.message ?? 'No se pudo generar el reporte.'); } })
+      .finally(() => { if (vigente) setCargando(false); });
+    return () => { vigente = false; };
   }, [periodo, fecha, hasta, modalidad]);
 
   const params = new URLSearchParams({ periodo, fecha, modalidad });
@@ -549,7 +556,6 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
         <section className="report-chart-card">
           <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3></div><strong>{reporte.estadisticas.citasAgendadas}<small>agendadas</small></strong></div>
           <ReportBarChart items={estadoCierre} />
-          <p className="report-card-note">En la fecha diaria, anuladas y no atendidas se contrastan con Falcon. En rangos se consolidan los registros almacenados por el dashboard.</p>
         </section>
         <section className="report-performance-card">
           <div className="report-card-heading"><div><p className="brand">DESEMPEÑO OPERATIVO</p><h3>Hitos y tiempos</h3></div></div>
@@ -560,12 +566,18 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
             <Kpi label="Espera promedio" value={reporte.estadisticas.esperaPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.esperaPromedioMinutos * 60)} />
             <Kpi label="Atención promedio" value={reporte.estadisticas.atencionPromedioMinutos === null ? '—' : formatDuration(reporte.estadisticas.atencionPromedioMinutos * 60)} />
           </div>
-          <p className="report-card-note">{reporte.estadisticas.gitsDisponible ? 'Los tiempos se calculan desde garita Falcon y los pesajes de GITS.' : 'Los indicadores de pesaje no están disponibles porque GITS no respondió para este período.'}</p>
         </section>
       </div>
       <div className="report-footnotes"><span>Por confirmar: {reporte.resumen.porConfirmar}</span><span>Pesaje libre: {reporte.resumen.pesajesLibres}</span></div>
-    </> : <p className="empty">Cargando reporte…</p>}
+    </> : cargando ? <ReportesSkeleton /> : <p className="empty">No hay información para los filtros seleccionados.</p>}
   </section>;
+}
+
+function ReportesSkeleton() {
+  return <div className="report-skeleton" aria-label="Cargando reporte" role="status">
+    <div className="report-skeleton-card"><i /><i /><i /></div>
+    <div className="report-skeleton-card"><i /><i /><i /><i /></div>
+  </div>;
 }
 
 function ConfiguracionPanel({ user }: { user: UsuarioSesion }) {
