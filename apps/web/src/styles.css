@@ -335,7 +335,8 @@ td:first-child { font-weight: 700; }
 .inspection-status-ok { background: #3e8d59; color: #ffffff; }
 .inspection-status-warning { background: #fff0bf; color: #8a5a00; }
 .inspection-status-alert { background: #c83f4b; color: #ffffff; }
-.inspection-status-unknown { background: #e8eef5; color: #52627a; }
+.inspection-status-unknown { background: #edf0f4; color: #667085; }
+.detail-list tr:has(.health-face-unknown) { background: #f7f8fa; color: #667085; }
 /* Varias citas de una misma placa representan un retiro conjunto. El borde
    continuo las deja visualmente como un solo bloque sin ocultar sus alertas. */
 .hour-inspection-table tr.inspection-associated td { background-clip: padding-box; }

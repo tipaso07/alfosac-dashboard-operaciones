@@ -5,7 +5,7 @@ import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
 import { reporteAExcel } from './excel-report.js';
 import { auditarAnulacionesFalcon, auditarCierreFalcon, auditarCierreFalconRango, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
-import { leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
+import { leerAnulacionesMaritimas, leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoPesajeLibreGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada, retirarMaritimasNoVigentes } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, guardarDisponibilidadHistorica, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
@@ -179,7 +179,9 @@ async function enriquecerMaritimasConGits(maritimas: Awaited<ReturnType<typeof l
 
 async function importarFalcon() {
   // El límite alto evita dejar fuera citas vigentes al reconstruir la foto del día.
-  const [maritimasSource, aereas] = await Promise.all([leerOperacionesMaritimas(10_000), leerOperacionesAereas(10_000)]);
+  const [maritimasSource, aereas, anuladas] = await Promise.all([
+    leerOperacionesMaritimas(10_000), leerOperacionesAereas(10_000), leerAnulacionesMaritimas(10_000)
+  ]);
   const maritimas = await enriquecerMaritimasConGits(maritimasSource);
   const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
     id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
@@ -187,9 +189,15 @@ async function importarFalcon() {
     fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
     pesoDeclarado: item.pesoDeclarado ?? null, fuente: 'FALCON' as const
   });
-  await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation)]);
-  await retirarMaritimasNoVigentes(fechaReporteActual(), maritimas.map((item) => item.id));
-  return { maritime: maritimas.length, aereo: aereas.length, gitsEnrichment: process.env.GITS_ENRICH_FALCON_ENABLED === 'true' };
+  const anuladasOperacion = anuladas.map((item) => ({
+    id: item.id, modalidad: item.modalidad, estado: 'ANULADA' as const,
+    volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita,
+    fechaGarita: null, fechaIngresoDespacho: null, fechaCompletado: null,
+    pesoDeclarado: null, fuente: 'FALCON' as const
+  }));
+  await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation), ...anuladasOperacion]);
+  await retirarMaritimasNoVigentes(fechaReporteActual(), [...maritimas.map((item) => item.id), ...anuladas.map((item) => item.id)]);
+  return { maritime: maritimas.length, anuladas: anuladas.length, aereo: aereas.length, gitsEnrichment: process.env.GITS_ENRICH_FALCON_ENABLED === 'true' };
 }
 
 function volanteNormalizado(value: string | null | undefined) {
@@ -1027,16 +1035,23 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
     return;
   }
   try {
-    const source = await leerOperacionesMaritimas(10_000);
+    const [source, anuladas] = await Promise.all([leerOperacionesMaritimas(10_000), leerAnulacionesMaritimas(10_000)]);
     const operations = source.map((item) => ({
       id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
       fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
       pesoDeclarado: item.pesoDeclarado ?? null, fuente: 'FALCON' as const
     }));
-    await guardarOperaciones(operations);
-    await retirarMaritimasNoVigentes(fechaReporteActual(), source.map((item) => item.id));
-    response.json({ imported: true, count: operations.length, message: 'Importación marítima completada en la base propia del dashboard.' });
+    const anuladasOperacion = anuladas.map((item) => ({
+      id: item.id, modalidad: item.modalidad, estado: 'ANULADA' as const,
+      volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita,
+      fechaGarita: null, fechaIngresoDespacho: null, fechaCompletado: null,
+      pesoDeclarado: null, fuente: 'FALCON' as const
+    }));
+    await guardarOperaciones([...operations, ...anuladasOperacion]);
+    await retirarMaritimasNoVigentes(fechaReporteActual(), [...source.map((item) => item.id), ...anuladas.map((item) => item.id)]);
+    flowCache = null;
+    response.json({ imported: true, count: operations.length, anuladas: anuladasOperacion.length, message: 'Importación marítima completada en la base propia del dashboard.' });
   } catch (error) {
     response.status(503).json({ imported: false, message: error instanceof Error ? error.message : 'No se pudo importar Falcon.' });
   }

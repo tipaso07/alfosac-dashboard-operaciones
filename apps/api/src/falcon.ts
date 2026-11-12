@@ -170,6 +170,15 @@ export interface FalconMaritimeOperation {
   pesoDeclarado?: number | null;
 }
 
+/** Cita anulada en Falcon. Se conserva solo como referencia visual del día. */
+export interface FalconCancelledMaritimeOperation {
+  id: string;
+  modalidad: Exclude<Modalidad, 'AEREO'>;
+  volante: string;
+  unidad: string;
+  fechaCita: string | null;
+}
+
 export interface FalconHourAppointment {
   id: string;
   modalidad: Modalidad;
@@ -1123,6 +1132,46 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
     };
     citasResult.recordset.forEach(save);
     return [...operations.values()];
+  } finally { await pool.close(); }
+}
+
+/**
+ * Lee las anulaciones ya persistidas por Falcon para mostrarlas como contexto.
+ * No se infieren anulaciones ni se modifica Falcon.
+ */
+export async function leerAnulacionesMaritimas(limit = 250, desde?: string, hasta?: string): Promise<FalconCancelledMaritimeOperation[]> {
+  if (!enabled() || !configured()) throw new Error('Falcon no está disponible para importar.');
+  const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
+  try {
+    const date = desde ?? fechaReporte();
+    const until = hasta ?? date;
+    const dayStart = date ? 'CONVERT(date, @reportDate)' : 'CONVERT(date, GETDATE())';
+    const dayEnd = until ? 'DATEADD(day, 1, CONVERT(date, @untilDate))' : 'DATEADD(day, 1, CONVERT(date, GETDATE()))';
+    const request = pool.request().input('limit', sql.Int, limit);
+    if (date) request.input('reportDate', sql.Date, date);
+    if (until) request.input('untilDate', sql.Date, until);
+    const result = await request.query<SourceRow>(`
+      SELECT TOP (@limit) a.id, a.cod_negocio, a.fecha, a.hora, a.cod_volante, a.des_placa
+      FROM dbo.citas_programadas_anuladas a
+      WHERE a.cod_negocio IN (3, 4, 5)
+        AND a.fecha >= ${dayStart}
+        AND a.fecha < ${dayEnd}
+      ORDER BY a.fecha DESC, a.hora DESC, a.id DESC;
+    `);
+    return result.recordset.flatMap((row) => {
+      const id = text(value(row, ['id']));
+      const modalidad = maritimeMode(text(value(row, ['cod_negocio'])));
+      if (!id || modalidad === 'OTRA' || modalidad === 'AEREO') return [];
+      return [{
+        // La llave se diferencia de la cita activa original para no mezclar
+        // el historial de anulación con una eventual reprogramación.
+        id: `ANULADA:${id}`,
+        modalidad,
+        volante: text(value(row, ['cod_volante'])) ?? id,
+        unidad: text(value(row, ['des_placa'])) ?? '-',
+        fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora']))
+      }];
+    });
   } finally { await pool.close(); }
 }
 

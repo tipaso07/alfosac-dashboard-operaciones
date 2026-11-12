@@ -460,6 +460,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 type VisualState = 'ok' | 'warning' | 'alert' | 'unknown';
 
 function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, SeguimientoLlegada>): VisualState {
+  if (group.citas.length > 0 && group.citas.every((cita) => cita.estado === 'ANULADA')) return 'unknown';
   const estados = group.citas.map((cita) => seguimientoPorCita.get(cita.id)).filter((item): item is SeguimientoLlegada => Boolean(item));
   // En vivo, la carita debe expresar la etapa actual. La demora ya terminada
   // de garita a primer pesaje se conserva como hito, no como alerta vigente.
@@ -493,6 +494,7 @@ function movimientosConfirmados(group: GrupoFlujo) {
 }
 
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
+  if (cita.estado === 'ANULADA') return 'unknown';
   if (seguimiento) {
     if (esCritico(seguimiento.estado)) return 'alert';
     // Al finalizar un movimiento el seguimiento vuelve a PROGRAMADA. No se
@@ -1005,12 +1007,14 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
       .flatMap((cita) => (movimientos.length ? movimientos : [undefined]).map((movimiento) => {
         const estado = seguimientoPorCita.get(cita.id);
-        const esRojo = Boolean(estado && esCritico(estado.estado));
+        const anulada = cita.estado === 'ANULADA';
+        const esRojo = Boolean(!anulada && estado && esCritico(estado.estado));
         const esAmarillo = Boolean(estado && esProximo(estado.estado));
         const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
         const tonoTiempo = durationTone(atencion, 'ATENCION');
         const sinSalida = Boolean(movimiento && !tieneSegundoPesajeValido(movimiento));
-        const etiqueta = esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
+        const etiqueta = anulada ? 'Anulada'
+          : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
           : sinSalida && tonoTiempo === 'alert' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : sinSalida && tonoTiempo === 'warning' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : estado?.estado === 'EN_ATENCION' ? 'En almacén / atención en curso'
@@ -1018,7 +1022,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
       }));
   });
   // Mantiene juntas las citas atendidas por la misma unidad. Esto permite
@@ -1249,7 +1253,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
   if (!reportDate || reportDate !== hoy) return [];
 
   return grupos.flatMap((grupo) => grupo.citas
-    .filter((cita) => cita.modalidad !== 'AEREO' && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate)
+    .filter((cita) => cita.estado !== 'ANULADA' && cita.modalidad !== 'AEREO' && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate)
     .map((cita) => {
       const movimientos = movimientosConfirmados(grupo);
       const movimientoPrincipal = movimientos[0];
@@ -1324,7 +1328,7 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'EN_ATENCION') return 'En almacén / atención en curso';
   if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 5%`;
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
-  return 'Sin alerta activa';
+  return 'Programada';
 }
 
 function formatHour(value: string) {
