@@ -141,6 +141,9 @@ td:first-child { font-weight: 700; }
 .clear-filters { min-height: 40px; border: 1px solid #329AD6; background: #fff; color: #000059; padding: 8px 12px; cursor: pointer; font: inherit; font-weight: 700; }
 .clear-filters:hover { background: #edf8ff; }
 .operations-table-wrap, .availability-range-wrap, .hour-inspection-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.operations-table thead th, .tv-panel-table thead th { position: sticky; top: 0; z-index: 3; }
+.appointment-hour-warning { background: #ffed61 !important; color: #7f5b00 !important; font-weight: 800; }
+.appointment-hour-alert { background: #f5c9c9 !important; color: #913334 !important; font-weight: 800; }
 .pending-panel { border: 1px solid #329AD6; margin-top: 24px; padding: 22px; }
 .pending-panel h2 { margin-bottom: 16px; }
 .pending-panel > p { margin-bottom: 0; }

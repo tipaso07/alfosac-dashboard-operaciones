@@ -285,7 +285,7 @@ function TvScreen({ resumen, detalles, grupos, seguimiento, resumenSeguimiento, 
             </div>
             <div className="tv-panel-table"><table><thead><tr><th>Hora</th><th>Citas</th><th>Garita</th><th>Ingreso</th><th>Salida</th><th>Revisar</th><th>Estado</th></tr></thead><tbody>
               {filas.map((item) => <tr key={item.hora} className={`tv-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion({ hora: item.hora, modalidad })}>
-                <td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td>
+                <td className={item.citaCritical ? 'appointment-hour-alert' : item.citaWarning ? 'appointment-hour-warning' : ''}>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td>
                 <td><span className={item.critical ? 'status status-alert' : item.warning ? 'status status-warning' : 'status'}>{item.critical ? `${item.pendientes} ALERTA${item.pendientes === 1 ? '' : 'S'}` : item.warning ? 'PRÓXIMA ALERTA' : item.incidencias ? 'INCIDENCIA GENERAL' : item.revisar ? `${item.revisar} REVISAR` : 'SIN ALERTA'}</span></td>
               </tr>)}
             </tbody></table></div>
@@ -414,7 +414,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           {vista === 'RESUMEN' ? <table className="operations-table">
             <thead><tr><th>Hora de cita</th><th>Citas</th><th>Garita Falcon</th><th>Ingreso a balanza</th><th>Salida por balanza</th><th>Por revisar</th><th>Estado</th></tr></thead>
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
-              <tr key={item.hora} className={`summary-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion(item.hora)}><td>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? `${item.pendientes} alerta(s)` : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
+              <tr key={item.hora} className={`summary-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion(item.hora)}><td className={item.citaCritical ? 'appointment-hour-alert' : item.citaWarning ? 'appointment-hour-warning' : ''}>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? `${item.pendientes} alerta(s)` : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
             )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
           </table> : <table className="operations-table detail-list">
             <thead>
@@ -430,10 +430,11 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                 const esMultiple = esAtencionMultiple(group);
                 const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
                 const placa = esMultiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
-                const visual = esMultiple ? groupVisualState(group, seguimientoPorCita) : citaVisualState(cita, movimiento, seguimientoPorCita.get(cita.id));
+                const seguimientoCita = seguimientoPorCita.get(cita.id);
+                const visual = esMultiple ? groupVisualState(group, seguimientoPorCita) : citaVisualState(cita, movimiento, seguimientoCita);
                 return <tr key={`${group.volante}-${cita.id}`}>
                   <td>{cita.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
-                  <td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
+                  <td className={tonoHoraCita(seguimientoCita) ? `appointment-hour-${tonoHoraCita(seguimientoCita)}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
@@ -777,6 +778,13 @@ function citaVencida(cita: Operacion | undefined) {
   return new Date(cita.fechaGarita).getTime() > new Date(cita.fechaCita).getTime() + minutosToleranciaCita * 60_000;
 }
 
+/** La hora de cita se resalta solo cuando falta el registro de garita. */
+function tonoHoraCita(seguimiento: SeguimientoLlegada | undefined): 'warning' | 'alert' | null {
+  if (seguimiento?.estado === 'CITA_POR_VENCER') return 'warning';
+  if (seguimiento?.estado === 'CITA_VENCIDA') return 'alert';
+  return null;
+}
+
 function durationTone(seconds: number | null, tipo: 'ESPERA' | 'ATENCION', cita?: Operacion): 'ok' | 'warning' | 'alert' | null {
   if (seconds === null) return null;
   const minutes = seconds / 60;
@@ -1038,7 +1046,8 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
           const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
           const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
-          return <tr className={claseGrupo} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+          const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
+          return <tr className={claseGrupo} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
         }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
     </section>
@@ -1064,7 +1073,7 @@ function LogoutIcon() {
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /></svg>;
 }
 
-type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; despachoDemorado: number; incidencias: number; revisar: number; critical: boolean; warning: boolean };
+type DetalleHora = { hora: string; citas: number; garita: number; ingreso: number; despacho: number; proximas: number; pendientes: number; despachoDemorado: number; incidencias: number; revisar: number; critical: boolean; warning: boolean; citaCritical?: boolean; citaWarning?: boolean };
 
 function horaLima(fecha: Date) {
   return Number(new Intl.DateTimeFormat('en-US', { hour: '2-digit', hourCycle: 'h23', timeZone: 'America/Lima' }).format(fecha));
@@ -1127,6 +1136,8 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       const warning = estado ? esProximo(estado) : false;
       const row = add(cita.fechaCita, 'citas', critical, warning);
       if (!row) return;
+      row.citaCritical ||= estado === 'CITA_VENCIDA';
+      row.citaWarning ||= estado === 'CITA_POR_VENCER';
       if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
       movimientos.forEach((movimiento) => {
         if (movimiento.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
