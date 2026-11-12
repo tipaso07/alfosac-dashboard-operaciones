@@ -118,6 +118,7 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
 export function resumenDeFlujo(citas: Operacion[], groups: GrupoFlujoOperativo[], reportDate: string): ResumenModalidad[] {
   const modalities: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
   return modalities.map((modalidad) => {
+    const citasDeModalidad = citas.filter((cita) => cita.modalidad === modalidad);
     // Un mismo camión puede atender más de un volante. El movimiento se
     // muestra en cada volante relacionado, pero se cuenta una sola vez en
     // los indicadores físicos de balanza.
@@ -129,11 +130,13 @@ export function resumenDeFlujo(citas: Operacion[], groups: GrupoFlujoOperativo[]
     ).values()];
     return {
       modalidad,
-      agendadas: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate).length,
-      garita: movimientosUnicos.filter((event) => fechaLima(event.fechaGarita) === reportDate).length,
-      despacho: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaIngresoDespacho && fechaLima(cita.fechaIngresoDespacho) === reportDate).length,
-      completadas: citas.filter((cita) => cita.modalidad === modalidad && cita.fechaCompletado && fechaLima(cita.fechaCompletado) === reportDate).length,
-      noCompletadas: citas.filter((cita) => cita.modalidad === modalidad && cita.estado === 'NO_COMPLETADA').length
+      // Cita y registro se originan en Falcon; los pesajes físicos, en GITS.
+      // Así los indicadores superiores representan los mismos hitos de las filas por horario.
+      agendadas: citasDeModalidad.filter((cita) => cita.fechaCita && fechaLima(cita.fechaCita) === reportDate).length,
+      garita: citasDeModalidad.filter((cita) => cita.fechaGarita && fechaLima(cita.fechaGarita) === reportDate).length,
+      despacho: movimientosUnicos.filter((event) => event.fechaGarita && fechaLima(event.fechaGarita) === reportDate).length,
+      completadas: movimientosUnicos.filter((event) => event.fechaSalidaBalanza && fechaLima(event.fechaSalidaBalanza) === reportDate).length,
+      noCompletadas: citasDeModalidad.filter((cita) => cita.estado === 'NO_COMPLETADA').length
     };
   });
 }
