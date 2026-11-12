@@ -345,8 +345,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
     pesoObservado: total.pesoObservado + resumenSeguimiento[modalidad].pesoObservado
   }), { criticas: 0, proximas: 0, pesoObservado: 0 });
-  const descargarVistaIndividual = () => {
-    const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. atención', 'Estado actual'];
+  const descargarVistaIndividual = async () => {
     const filas = citasOrdenadas.map(({ group, cita }) => {
       const movimientos = movimientosConfirmados(group);
       const multiple = esAtencionMultiple(group);
@@ -357,15 +356,30 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       const segundosAtencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
       const espera = multiple ? 'Ver detalle' : segundosEspera == null ? '—' : formatDuration(segundosEspera);
       const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
-      return [
-        cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', cita.fechaCita ? formatTime(cita.fechaCita) : '—', group.volante, placa,
-        cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera,
-        multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
-        multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
-        atencion, etiquetaFilaIndividual(cita, group, seguimientoCita)
-      ];
+      return {
+        fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
+        volante: group.volante, placa, registro: cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera,
+        ingreso: multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
+        salida: multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
+        atencion, estado: etiquetaFilaIndividual(cita, group, seguimientoCita), anulada: cita.estado === 'ANULADA',
+        tonoEspera: multiple || segundosEspera == null ? 'neutral' : durationTone(segundosEspera, 'ESPERA', cita) ?? 'neutral',
+        tonoAtencion: multiple || segundosAtencion == null ? 'neutral' : durationTone(segundosAtencion, 'ATENCION') ?? 'neutral'
+      };
     });
-    descargarCsv(`seguimiento-${reportDate ?? 'actual'}-${filtro.toLowerCase()}.csv`, headers, filas);
+    try {
+      const response = await fetch('/api/dashboard/flow.xlsx', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo: `Seguimiento ${reportDate ? formatDate(reportDate) : 'actual'} · ${filtro === 'TODAS' ? 'FCL y LCL' : nombres[filtro]}`, filas })
+      });
+      if (!response.ok) throw new Error('No se pudo generar el archivo.');
+      const enlace = document.createElement('a');
+      enlace.href = URL.createObjectURL(await response.blob());
+      enlace.download = `seguimiento-${reportDate ?? 'actual'}-${filtro.toLowerCase()}.xlsx`;
+      document.body.append(enlace); enlace.click(); enlace.remove();
+      window.setTimeout(() => URL.revokeObjectURL(enlace.href), 0);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : 'No se pudo generar el archivo.');
+    }
   };
 
   return (
@@ -430,7 +444,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <option value="CON_SALIDA_BALANZA">Con salida por balanza</option><option value="MULTIPLES">Vínculo múltiple</option>
           </select></label>
           {(busqueda || horaFiltro || situacionFiltro !== 'TODAS') && <button className="clear-filters" onClick={() => { setBusqueda(''); setHoraFiltro(''); setSituacionFiltro('TODAS'); }}>Limpiar filtros</button>}
-          {vista === 'LISTA' && <button className="clear-filters" onClick={descargarVistaIndividual}>Descargar vista actual</button>}
+          {vista === 'LISTA' && <button className="clear-filters" onClick={() => void descargarVistaIndividual()}>Descargar vista actual</button>}
         </div>
 
         <div className="operations-table-wrap">
@@ -464,7 +478,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
                   {esMultiple ? <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></> : <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>}
                   <td>{anulada
-                    ? <span className="state-badge state-cancelled">Anulada</span>
+                    ? <span className="health-face health-face-unknown cancelled-face" title="Cita anulada" aria-label="Cita anulada"><HealthFace state="unknown" /></span>
                     : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
                 </tr>;
@@ -1103,7 +1117,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
           const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
           const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
-          return <tr className={claseGrupo} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+        return <tr className={`${claseGrupo}${cita.estado === 'ANULADA' ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
         }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
     </section>

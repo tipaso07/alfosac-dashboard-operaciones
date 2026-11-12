@@ -3,7 +3,7 @@ import { crearResumen } from './dashboard.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
-import { reporteAExcel } from './excel-report.js';
+import { reporteAExcel, seguimientoAExcel, type FilaSeguimientoExcel } from './excel-report.js';
 import { auditarAnulacionesFalcon, auditarCierreFalcon, auditarCierreFalconRango, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerAnulacionesMaritimas, leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
 import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoPesajeLibreGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
@@ -1001,6 +1001,30 @@ app.get('/api/reports/operations.xlsx', async (request, response) => {
     response.send(excel);
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo descargar el reporte.' });
+  }
+});
+
+app.post('/api/dashboard/flow.xlsx', async (request, response) => {
+  const titulo = typeof request.body?.titulo === 'string' ? request.body.titulo.slice(0, 180) : 'Vista individual';
+  type FilaSeguimientoEntrada = Partial<FilaSeguimientoExcel>;
+  const fuente: FilaSeguimientoEntrada[] = Array.isArray(request.body?.filas) ? request.body.filas.slice(0, 10_000) as FilaSeguimientoEntrada[] : [];
+  const texto = (value: unknown, max = 120) => typeof value === 'string' ? value.slice(0, max) : '—';
+  const tono = (value: unknown): FilaSeguimientoExcel['tonoEspera'] =>
+    value === 'ok' || value === 'warning' || value === 'alert' ? value : 'neutral';
+  const filas: FilaSeguimientoExcel[] = fuente.map((fila: FilaSeguimientoEntrada) => ({
+    fechaCita: texto(fila?.fechaCita, 24), horaCita: texto(fila?.horaCita, 20), volante: texto(fila?.volante, 30),
+    placa: texto(fila?.placa, 40), registro: texto(fila?.registro, 20), espera: texto(fila?.espera, 30),
+    ingreso: texto(fila?.ingreso, 30), salida: texto(fila?.salida, 30), atencion: texto(fila?.atencion, 30),
+    estado: texto(fila?.estado, 180), anulada: fila?.anulada === true,
+    tonoEspera: tono(fila?.tonoEspera), tonoAtencion: tono(fila?.tonoAtencion)
+  }));
+  try {
+    const excel = await seguimientoAExcel(titulo, filas);
+    response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    response.setHeader('Content-Disposition', `attachment; filename="seguimiento-${fechaReporteActual()}.xlsx"`);
+    response.send(excel);
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo descargar el seguimiento.' });
   }
 });
 

@@ -341,6 +341,12 @@ td:first-child { font-weight: 700; }
 .inspection-status-alert { background: #c83f4b; color: #ffffff; }
 .inspection-status-unknown { background: #edf0f4; color: #667085; }
 .detail-list tr:has(.health-face-unknown), .detail-list tr.cancelled-row { background: #f7f8fa; color: #667085; }
+/* Una cita anulada no conserva semáforos de tiempos: toda la fila queda gris
+   y la cara gris mantiene la misma ubicación visual que las demás filas. */
+.detail-list tr.cancelled-row > td { background: #eef2f6 !important; color: #667085 !important; }
+.detail-list tr.cancelled-row strong { color: inherit; }
+.cancelled-face { cursor: default; pointer-events: none; }
+.hour-inspection-table tr.inspection-cancelled-row > td { background: #eef2f6 !important; color: #667085 !important; }
 /* Varias citas de una misma placa representan un retiro conjunto. El borde
    continuo las deja visualmente como un solo bloque sin ocultar sus alertas. */
 .hour-inspection-table tr.inspection-associated td { background-clip: padding-box; }

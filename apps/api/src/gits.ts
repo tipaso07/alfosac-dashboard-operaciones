@@ -1190,6 +1190,29 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
             enlace.EMPRES_C_CODIGO,
             enlace.MOVBAL_C_NUMERO,
             origen.DOCORI_C_NUMERO_VOLANTE
+        ),
+        /* Algunos retiros no conservan el documento origen en la balanza,
+           pero sí el vínculo de autorización/ticket. Se consulta la misma
+           relación que utiliza GITS para no inferir movimientos por placa. */
+        ticketsMovimiento AS (
+          SELECT DISTINCT
+            autorizacion.EMPRES_C_CODIGO AS empresa,
+            autorizacion.MOVBAL_C_NUMERO AS movimiento,
+            ticket.AGMOTI_C_NROVOLANTE AS volante
+          FROM dbo.OPETV_MOVIMIENTO_BALANZA_AUTORIZACION_RETIRO autorizacion
+          INNER JOIN dbo.CCTV_AGENCIA_MOVIMIENTO_TICKET_RETIRO ticketRetiro
+            ON ticketRetiro.EMPRES_C_CODIGO = autorizacion.EMPRES_C_CODIGO
+            AND ticketRetiro.AUTRET_C_NUMERO = autorizacion.AUTRET_C_NUMERO
+          INNER JOIN dbo.AUDTV_AGENCIA_MOVIMIENTO_TICKET ticket
+            ON ticket.EMPRES_C_CODIGO = ticketRetiro.EMPRES_C_CODIGO
+            AND ticket.AGMOTI_C_CORRELATIVO = ticketRetiro.AGMOTI_C_CORRELATIVO
+          WHERE autorizacion.EMPRES_C_CODIGO = @empresa
+            AND ticket.AGMOTI_C_NROVOLANTE IS NOT NULL
+        ),
+        volantesMovimiento AS (
+          SELECT empresa, movimiento, volante FROM documentosMovimiento
+          UNION
+          SELECT empresa, movimiento, volante FROM ticketsMovimiento
         )
         SELECT TOP (@limit)
           balanza.EMPRES_C_CODIGO AS empresa,
@@ -1203,13 +1226,17 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
           balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
           balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
           balanza.MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarjas,
-          documento.peso_mercaderia_declarado,
+          pesoDocumento.peso_mercaderia_declarado,
           almacen.fecha_ingreso_almacen,
           salida.fecha_salida_almacen
         FROM dbo.OPETV_MOVIMIENTO_BALANZA balanza
-        LEFT JOIN documentosMovimiento documento
+        LEFT JOIN volantesMovimiento documento
           ON documento.empresa = balanza.EMPRES_C_CODIGO
           AND documento.movimiento = balanza.MOVBAL_C_NUMERO
+        LEFT JOIN documentosMovimiento pesoDocumento
+          ON pesoDocumento.empresa = balanza.EMPRES_C_CODIGO
+          AND pesoDocumento.movimiento = balanza.MOVBAL_C_NUMERO
+          AND pesoDocumento.volante = documento.volante
         OUTER APPLY (
           SELECT TOP (1) movimientoAlmacen.MOBAAL_D_FECHA AS fecha_ingreso_almacen
           FROM dbo.OPETV_MOVIMIENTO_BALANZA_ALMACEN movimientoAlmacen

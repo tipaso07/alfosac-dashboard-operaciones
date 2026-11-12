@@ -24,6 +24,91 @@ function fillFor(clasificacion: string) {
   return 'FFFFFF';
 }
 
+export type FilaSeguimientoExcel = {
+  fechaCita: string;
+  horaCita: string;
+  volante: string;
+  placa: string;
+  registro: string;
+  espera: string;
+  ingreso: string;
+  salida: string;
+  atencion: string;
+  estado: string;
+  anulada: boolean;
+  tonoEspera: 'ok' | 'warning' | 'alert' | 'neutral';
+  tonoAtencion: 'ok' | 'warning' | 'alert' | 'neutral';
+};
+
+function fillTiempo(tono: FilaSeguimientoExcel['tonoEspera']) {
+  if (tono === 'ok') return 'C9F4D4';
+  if (tono === 'warning') return 'FFF19B';
+  if (tono === 'alert') return 'F5C9C9';
+  return 'FFFFFF';
+}
+
+/** Exporta la misma vista filtrada del seguimiento, con formato legible en Excel. */
+export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoExcel[]) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'ALFOSAC';
+  workbook.created = new Date();
+  const sheet = workbook.addWorksheet('Seguimiento', { views: [{ state: 'frozen', ySplit: 4 }] });
+  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. atención', 'Estado actual'];
+
+  sheet.mergeCells('A1:J1');
+  const title = sheet.getCell('A1');
+  title.value = 'Seguimiento operativo';
+  title.font = { name: 'Poppins', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
+  title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+  title.alignment = { vertical: 'middle' };
+  sheet.getRow(1).height = 28;
+
+  sheet.mergeCells('A2:J2');
+  const subtitle = sheet.getCell('A2');
+  subtitle.value = titulo;
+  subtitle.font = { name: 'Poppins', size: 10, color: { argb: '3C566D' } };
+
+  const header = sheet.getRow(4);
+  header.values = headers;
+  header.height = 24;
+  header.eachCell((cell) => {
+    cell.font = { name: 'Poppins', bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = border;
+  });
+
+  for (const fila of filas) {
+    const row = sheet.addRow([
+      fila.fechaCita, fila.horaCita, fila.volante, fila.placa, fila.registro,
+      fila.espera, fila.ingreso, fila.salida, fila.atencion, fila.estado
+    ]);
+    row.height = 22;
+    row.eachCell((cell) => {
+      cell.font = { name: 'Poppins', size: 10, color: { argb: '17233D' } };
+      cell.border = border;
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    });
+    if (fila.anulada) {
+      row.eachCell((cell) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EEF2F6' } };
+        cell.font = { name: 'Poppins', size: 10, color: { argb: '667085' } };
+      });
+    } else {
+      [6, 9].forEach((column, index) => {
+        const tone = index === 0 ? fila.tonoEspera : fila.tonoAtencion;
+        if (tone !== 'neutral') sheet.getCell(row.number, column).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillTiempo(tone) } };
+      });
+    }
+  }
+
+  const widths = [14, 13, 16, 15, 14, 15, 14, 14, 15, 38];
+  widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  sheet.autoFilter = { from: 'A4', to: `J${Math.max(4, filas.length + 4)}` };
+  sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+}
+
 /** Genera un archivo .xlsx para descarga, sin fórmulas ni ejecución de macros. */
 export async function reporteAExcel(report: ReporteOperativo) {
   const workbook = new ExcelJS.Workbook();
