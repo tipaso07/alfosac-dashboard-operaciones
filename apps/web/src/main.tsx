@@ -464,7 +464,9 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
     if (estados.some((item) => esCritico(item.estado))) return 'alert';
     const amarillosActivos = estados.filter((item) => esProximo(item.estado)).length;
     if (amarillosActivos >= 2) return 'warning';
-    return estados.some((item) => item.estado !== 'PROGRAMADA') || amarillosActivos > 0 ? 'ok' : 'unknown';
+    // Una cita que finalizó vuelve a PROGRAMADA. En ese caso se continúa
+    // abajo con los tiempos históricos para no mostrarla como desconocida.
+    if (estados.some((item) => item.estado !== 'PROGRAMADA') || amarillosActivos > 0) return 'ok';
   }
   const movimientos = movimientosConfirmados(group);
   const tonosEspera = group.citas.flatMap((cita) => movimientos.map((movimiento) => durationTone(durationSeconds(cita.fechaGarita, movimiento.fechaGarita), 'ESPERA', cita)));
@@ -490,7 +492,9 @@ function movimientosConfirmados(group: GrupoFlujo) {
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
   if (seguimiento) {
     if (esCritico(seguimiento.estado)) return 'alert';
-    return seguimiento.estado === 'PROGRAMADA' ? 'unknown' : 'ok';
+    // Al finalizar un movimiento el seguimiento vuelve a PROGRAMADA. No se
+    // debe perder el semáforo histórico: se evalúan abajo sus dos duraciones.
+    if (seguimiento.estado !== 'PROGRAMADA') return 'ok';
   }
   const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
   const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);

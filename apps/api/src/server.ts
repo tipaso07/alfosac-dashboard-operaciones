@@ -560,16 +560,18 @@ app.get('/api/integrations/gits/bridge-catalog', async (_request, response) => {
 
 app.get('/api/integrations/gits/daily-flow', async (request, response) => {
   const date = String(request.query.date ?? '');
+  const requestedLimit = Number(request.query.limit ?? 50);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(1_000, Math.floor(requestedLimit))) : 50;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     response.status(400).json({ message: 'Indica la fecha con ?date=AAAA-MM-DD.' });
     return;
   }
   try {
-    const items = await consultarFlujoDiarioGits(date);
+    const items = await consultarFlujoDiarioGits(date, limit);
     response.json({
       date,
       count: items.length,
-      message: 'Muestra diaria desde balanza y sus enlaces a documento, almacén y salida. Consulta de solo lectura; no sincroniza datos.',
+      message: `Flujo diario de hasta ${limit} movimientos desde balanza y sus enlaces a documento, almacén y salida. Consulta de solo lectura; no sincroniza datos.`,
       items
     });
   } catch (error) {
