@@ -114,6 +114,9 @@ let lastFalconSyncAt: string | null = null;
 let lastFalconSyncError: string | null = null;
 let syncRunning = false;
 let flowCache: { date: string; expiresAt: number; groups: ReturnType<typeof crearFlujoOperativo>; summary: ReturnType<typeof resumenDeFlujo> } | null = null;
+// GITS puede responder con demora puntual. Conservamos la última lectura
+// correcta del mismo día para no reemplazar pesajes reales por ceros en TV.
+let lastGitsFlow: { date: string; movements: Awaited<ReturnType<typeof consultarFlujoDiarioGits>> } | null = null;
 let lastAvailabilityCaptureKey: string | null = null;
 
 function fechaHoraPeru() {
@@ -141,7 +144,14 @@ async function cargarFlujoDashboard() {
   const citas = await listarOperaciones();
   let movements: Awaited<ReturnType<typeof consultarFlujoDiarioGits>> = [];
   if (process.env.GITS_SYNC_ENABLED === 'true') {
-    try { movements = await consultarFlujoDiarioGits(date, 1_000); } catch { /* Conserva Falcon si GITS se encuentra temporalmente no disponible. */ }
+    try {
+      movements = await consultarFlujoDiarioGits(date, 1_000);
+      lastGitsFlow = { date, movements };
+    } catch {
+      // Conserva la última foto válida de GITS del mismo día. Si el servicio
+      // cae momentáneamente, TV sigue mostrando la operación conocida.
+      movements = lastGitsFlow?.date === date ? lastGitsFlow.movements : [];
+    }
   }
   flowCache = { date, expiresAt: Date.now() + 25_000, groups: crearFlujoOperativo(citas, movements), summary: resumenDeFlujo(citas, crearFlujoOperativo(citas, movements), date) };
   return flowCache;
