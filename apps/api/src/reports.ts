@@ -108,12 +108,21 @@ export function crearReporteOperativo(
       && (modalidad === 'TODAS' || item.modalidad === modalidad)
       && (item.modalidad === 'FCL' || item.modalidad === 'LCL');
   });
+  // La placa de GITS corresponde a la unidad que efectivamente pasó por
+  // balanza. Se prioriza frente a Falcon, que puede quedar sin placa aunque
+  // el movimiento físico ya haya sido registrado.
+  const placaPorVolante = new Map<string, string>();
+  for (const movimiento of movimientosGits ?? []) {
+    const volante = volanteNormalizado(movimiento.volante);
+    const placa = movimiento.placa?.trim();
+    if (volante && placa && placa !== '-') placaPorVolante.set(volante, placa);
+  }
   const filas = candidatas.map((item) => ({
     fecha: fechaLima(item.fechaCita ?? item.fechaGarita ?? item.fechaIngresoDespacho ?? item.fechaCompletado),
     horaCita: horaLima(item.fechaCita),
     modalidad: item.modalidad,
     volante: item.volante,
-    placa: item.unidad,
+    placa: placaPorVolante.get(volanteNormalizado(item.volante)) ?? item.unidad ?? '-',
     estado: item.estado,
     // Las cargas históricas previas podían conservar EN_DESPACHO aun con salida registrada.
     // La salida/completado es la evidencia operativa definitiva para el cierre del reporte.

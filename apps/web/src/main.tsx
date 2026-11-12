@@ -345,6 +345,28 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
     pesoObservado: total.pesoObservado + resumenSeguimiento[modalidad].pesoObservado
   }), { criticas: 0, proximas: 0, pesoObservado: 0 });
+  const descargarVistaIndividual = () => {
+    const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. atención', 'Estado actual'];
+    const filas = citasOrdenadas.map(({ group, cita }) => {
+      const movimientos = movimientosConfirmados(group);
+      const multiple = esAtencionMultiple(group);
+      const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
+      const seguimientoCita = seguimientoPorCita.get(cita.id);
+      const placa = multiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
+      const segundosEspera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
+      const segundosAtencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
+      const espera = multiple ? 'Ver detalle' : segundosEspera == null ? '—' : formatDuration(segundosEspera);
+      const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
+      return [
+        cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', cita.fechaCita ? formatTime(cita.fechaCita) : '—', group.volante, placa,
+        cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera,
+        multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
+        multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
+        atencion, etiquetaFilaIndividual(cita, group, seguimientoCita)
+      ];
+    });
+    descargarCsv(`seguimiento-${reportDate ?? 'actual'}-${filtro.toLowerCase()}.csv`, headers, filas);
+  };
 
   return (
     <main className={`internal-screen ${menuContraido ? 'sidebar-collapsed' : ''}`}>
@@ -408,6 +430,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <option value="CON_SALIDA_BALANZA">Con salida por balanza</option><option value="MULTIPLES">Vínculo múltiple</option>
           </select></label>
           {(busqueda || horaFiltro || situacionFiltro !== 'TODAS') && <button className="clear-filters" onClick={() => { setBusqueda(''); setHoraFiltro(''); setSituacionFiltro('TODAS'); }}>Limpiar filtros</button>}
+          {vista === 'LISTA' && <button className="clear-filters" onClick={descargarVistaIndividual}>Descargar vista actual</button>}
         </div>
 
         <div className="operations-table-wrap">
@@ -518,6 +541,31 @@ function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefin
 
 function faceLabel(state: VisualState) {
   return state === 'ok' ? 'operación sin rojos y con máximo una alerta amarilla' : state === 'warning' ? 'operación con dos o más alertas amarillas' : state === 'alert' ? 'operación con una alerta roja' : 'sin tiempos suficientes';
+}
+
+/** Texto exportable de la última columna de la vista individual. */
+function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento: SeguimientoLlegada | undefined) {
+  if (cita.estado === 'ANULADA') return 'Anulada';
+  if (seguimiento && (esCritico(seguimiento.estado) || esProximo(seguimiento.estado))) return etiquetaSeguimiento(seguimiento);
+  const movimientos = movimientosConfirmados(group);
+  if (esAtencionMultiple(group)) return `Atención múltiple · ${movimientos.length} unidades`;
+  const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
+  if (movimiento && tieneSegundoPesajeValido(movimiento)) return 'Completado';
+  if (movimiento?.fechaGarita) return 'En balanza';
+  if (cita.fechaGarita) return 'En garita';
+  return 'Programada';
+}
+
+function descargarCsv(nombre: string, headers: string[], filas: Array<Array<string | number>>) {
+  const escapar = (valor: string | number) => `"${String(valor).replaceAll('"', '""')}"`;
+  const contenido = [headers, ...filas].map((fila) => fila.map(escapar).join(',')).join('\r\n');
+  const enlace = document.createElement('a');
+  enlace.href = URL.createObjectURL(new Blob([`\uFEFF${contenido}`], { type: 'text/csv;charset=utf-8' }));
+  enlace.download = nombre;
+  document.body.append(enlace);
+  enlace.click();
+  enlace.remove();
+  window.setTimeout(() => URL.revokeObjectURL(enlace.href), 0);
 }
 
 function HealthFace({ state }: { state: VisualState }) {
