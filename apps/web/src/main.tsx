@@ -1087,7 +1087,9 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
       .filter((cita) => cita.fechaCita
         && (!reportDate || fechaLima(cita.fechaCita) === reportDate)
         && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
-      .flatMap((cita) => (movimientos.length ? movimientos : [undefined]).map((movimiento) => {
+      // La anulada conserva solo una referencia de placa. No debe repetir los
+      // movimientos ni heredar sus tiempos de atención.
+      .flatMap((cita) => (cita.estado === 'ANULADA' ? [movimientos[0]] : movimientos.length ? movimientos : [undefined]).map((movimiento) => {
         const estado = seguimientoPorCita.get(cita.id);
         const anulada = cita.estado === 'ANULADA';
         const esRojo = Boolean(!anulada && estado && esCritico(estado.estado));
@@ -1133,7 +1135,8 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
           const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
           const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
-        return <tr className={`${claseGrupo}${cita.estado === 'ANULADA' ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+        const anulada = cita.estado === 'ANULADA';
+        return <tr className={`${claseGrupo}${anulada ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={anulada || espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{anulada || espera === null ? '' : formatDuration(espera)}</td><td className={anulada || atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{anulada || atencion === null ? '' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
         }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
     </section>
