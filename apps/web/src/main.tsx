@@ -975,7 +975,7 @@ function alertDetail(item: SeguimientoLlegada) {
 
 function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; reportDate: string | null; onClose: () => void }) {
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
-  const filas = grupos.flatMap((group) => {
+  const filasBase = grupos.flatMap((group) => {
     const movimientos = movimientosConfirmados(group);
     return group.citas
       .filter((cita) => cita.fechaCita
@@ -996,15 +996,32 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
       }));
   });
+  // Mantiene juntas las citas atendidas por la misma unidad. Esto permite
+  // reconocer visualmente un retiro conjunto sin duplicar los movimientos.
+  const vistos = new Set<string>();
+  const filas = filasBase.flatMap((fila) => {
+    const placa = (fila.movimiento?.placa ?? fila.cita.unidad ?? '').trim().toUpperCase();
+    if (!placa || placa === '-' || vistos.has(placa)) return [];
+    vistos.add(placa);
+    const asociadas = filasBase.filter((candidata) => (candidata.movimiento?.placa ?? candidata.cita.unidad ?? '').trim().toUpperCase() === placa);
+    return asociadas.map((asociada, indice) => ({ ...asociada, grupoPlaca: asociadas.length > 1 ? { placa, indice, total: asociadas.length } : null }));
+  });
+  // Las filas sin placa se mantienen en el orden original y no se consideran
+  // asociadas entre sí: Falcon aún no permite afirmar que son la misma UT.
+  filas.push(...filasBase.filter((fila) => {
+    const placa = (fila.movimiento?.placa ?? fila.cita.unidad ?? '').trim().toUpperCase();
+    return !placa || placa === '-';
+  }).map((fila) => ({ ...fila, grupoPlaca: null })));
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="hour-inspection-modal" role="dialog" aria-modal="true" aria-label={`Inspección de ${hora}`} onMouseDown={(event) => event.stopPropagation()}>
       <header className="hour-inspection-header"><div><p>INSPECCIÓN POR HORA</p><h2>{hora} · {modalidad ? nombres[modalidad] : 'FCL y LCL'}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar inspección">×</button></header>
       <div className="hour-inspection-note"><span>Detalle de citas, garita y pesajes asociados a este horario.</span><strong>{filas.length} {filas.length === 1 ? 'cita' : 'citas'}</strong></div>
       <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th><th>Hora cita</th><th>T. espera</th><th>T. atención</th><th>Estado actual</th></tr></thead>
-        <tbody>{filas.length ? filas.map(({ cita, movimiento, etiqueta, tono }) => {
+        <tbody>{filas.length ? filas.map(({ cita, movimiento, etiqueta, tono, grupoPlaca }) => {
           const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
           const atencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
-          return <tr key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+          const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
+          return <tr className={claseGrupo} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{cita.volante}</td><td>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{espera === null ? '—' : formatDuration(espera)}</td><td className={atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{atencion === null ? '—' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
         }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
     </section>

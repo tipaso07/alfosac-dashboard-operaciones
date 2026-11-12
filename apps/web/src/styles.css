@@ -333,6 +333,14 @@ td:first-child { font-weight: 700; }
 .inspection-status-warning { background: #fff0bf; color: #8a5a00; }
 .inspection-status-alert { background: #c83f4b; color: #ffffff; }
 .inspection-status-unknown { background: #e8eef5; color: #52627a; }
+/* Varias citas de una misma placa representan un retiro conjunto. El borde
+   continuo las deja visualmente como un solo bloque sin ocultar sus alertas. */
+.hour-inspection-table tr.inspection-associated td { background-clip: padding-box; }
+.hour-inspection-table tr.inspection-associated td:first-child { border-left: 4px solid #0871b6; }
+.hour-inspection-table tr.inspection-associated td:last-child { border-right: 4px solid #0871b6; }
+.hour-inspection-table tr.inspection-associated-start td { border-top: 4px solid #0871b6; }
+.hour-inspection-table tr.inspection-associated-end td { border-bottom: 4px solid #0871b6; }
+.hour-inspection-table tr.inspection-associated-middle td { border-top-color: #d3eaf7; border-bottom-color: #d3eaf7; }
 
 @media (max-width: 900px) {
   .tv-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }

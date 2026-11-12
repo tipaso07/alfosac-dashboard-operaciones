@@ -56,6 +56,23 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
   }
 }
 
+/**
+ * La sincronización de Falcon reemplaza la foto vigente de FCL/LCL para un
+ * día. Así una cita anulada, que Falcon deja de devolver como activa, no
+ * queda contándose en el seguimiento del dashboard.
+ * Solo modifica la base propia del dashboard.
+ */
+export async function retirarMaritimasNoVigentes(fecha: string, identificadoresVigentes: string[]) {
+  await pool.query(`
+    DELETE FROM operaciones
+    WHERE fuente_origen = 'FALCON'
+      AND modalidad IN ('FCL', 'LCL')
+      AND fecha_cita >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
+      AND fecha_cita < ((($1::date + 1)::timestamp) AT TIME ZONE 'America/Lima')
+      AND NOT (identificador_origen = ANY($2::text[]));
+  `, [fecha, identificadoresVigentes]);
+}
+
 export async function listarOperaciones() {
   const reportDate = fechaReporteActual();
   const result = await pool.query<{

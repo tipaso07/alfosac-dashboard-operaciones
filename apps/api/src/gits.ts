@@ -1162,7 +1162,9 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
             enlace.EMPRES_C_CODIGO AS empresa,
             enlace.MOVBAL_C_NUMERO AS movimiento,
             origen.DOCORI_C_NUMERO_VOLANTE AS volante,
-            MAX(detalle.DOORDE_N_PESO_MANIFESTADO) AS peso_mercaderia_declarado
+            /* Un volante puede tener varios ítems. El peso declarado debe
+               corresponder al total de sus detalles, no al ítem más pesado. */
+            SUM(detalle.DOORDE_N_PESO_MANIFESTADO) AS peso_mercaderia_declarado
           FROM dbo.OPETV_MOVIMIENTO_BALANZA_DOCUMENTO enlace
           INNER JOIN dbo.OPETV_DOCUMENTO_ORIGEN origen
             ON origen.EMPRES_C_CODIGO = enlace.EMPRES_C_CODIGO

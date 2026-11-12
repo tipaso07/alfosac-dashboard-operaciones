@@ -605,13 +605,17 @@ export async function contarCitasPorHora(date: string) {
   const pool = await new sql.ConnectionPool(connection(process.env.FALCON_EXTRANET_DB ?? '')).connect();
   try {
     const result = await pool.request().input('reportDate', sql.Date, date).query<SourceRow>(`
-      SELECT cod_negocio, hora, COUNT(*) AS cantidad
-      FROM dbo.citas_programadas
-      WHERE cod_negocio IN (3,4,5)
-        AND fecha >= CONVERT(date, @reportDate)
-        AND fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
-      GROUP BY cod_negocio, hora
-      ORDER BY cod_negocio, hora;`);
+      SELECT c.cod_negocio, c.hora, COUNT(*) AS cantidad
+      FROM dbo.citas_programadas c
+      WHERE c.cod_negocio IN (3,4,5)
+        AND c.fecha >= CONVERT(date, @reportDate)
+        AND c.fecha < DATEADD(day, 1, CONVERT(date, @reportDate))
+        AND NOT EXISTS (
+          SELECT 1 FROM dbo.citas_programadas_anuladas a
+          WHERE a.id_cita = c.id OR a.id = c.id
+        )
+      GROUP BY c.cod_negocio, c.hora
+      ORDER BY c.cod_negocio, c.hora;`);
     return result.recordset.map((row) => ({
       modalidad: maritimeMode(text(value(row, ['cod_negocio']))),
       hora: text(value(row, ['hora']))?.padStart(2, '0') ?? '—',
@@ -645,15 +649,17 @@ export async function consultarDisponibilidadFalcon(desde: string, dias: number)
         FROM dbo.citas_negocio_bloqueos
         WHERE fecha_bloqueo >= @desde AND fecha_bloqueo <= @hasta;`),
       pool.request().input('desde', sql.Date, desde).input('hasta', sql.Date, hasta).query<SourceRow>(`
-        SELECT CONVERT(char(10), fecha, 23) AS fecha, cod_negocio, CONVERT(int, hora) AS hora, COUNT(*) AS cantidad
-        FROM dbo.citas_programadas
-        WHERE cod_negocio IN (3, 4, 5)
-          AND fecha >= @desde AND fecha <= @hasta
-          -- La tabla contiene las citas vigentes, incluidas las adelantadas.
-          -- Las anuladas se trasladan a citas_programadas_anuladas; no deben
-          -- excluirse por flag_cita porque la web pública también descuenta
-          -- las adelantadas al mostrar los cupos restantes.
-        GROUP BY CONVERT(char(10), fecha, 23), cod_negocio, CONVERT(int, hora);`)
+        SELECT CONVERT(char(10), c.fecha, 23) AS fecha, c.cod_negocio, CONVERT(int, c.hora) AS hora, COUNT(*) AS cantidad
+        FROM dbo.citas_programadas c
+        WHERE c.cod_negocio IN (3, 4, 5)
+          AND c.fecha >= @desde AND c.fecha <= @hasta
+          -- Se preservan las citas adelantadas, pero no una cita cuyo
+          -- identificador ya figure como anulada en Falcon.
+          AND NOT EXISTS (
+            SELECT 1 FROM dbo.citas_programadas_anuladas a
+            WHERE a.id_cita = c.id OR a.id = c.id
+          )
+        GROUP BY CONVERT(char(10), c.fecha, 23), c.cod_negocio, CONVERT(int, c.hora);`)
     ]);
     const business: Record<number, 'FCL' | 'LCL' | 'BB'> = { 3: 'FCL', 4: 'LCL', 5: 'BB' };
     const used = new Map<string, number>();
@@ -1070,13 +1076,17 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
     if (date) citasRequest.input('reportDate', sql.Date, date);
     if (until) citasRequest.input('untilDate', sql.Date, until);
     const citasResult = await citasRequest.query<SourceRow>(`
-      SELECT TOP (@limit) id, cod_negocio, fecha, hora, cod_volante, des_placa, des_contenedor,
-        fecha_atencion
-      FROM dbo.citas_programadas
-      WHERE cod_negocio IN (3, 4, 5)
-        AND fecha >= ${dayStart}
-        AND fecha < ${dayEnd}
-      ORDER BY fecha DESC, hora DESC;
+      SELECT TOP (@limit) c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante, c.des_placa, c.des_contenedor,
+        c.fecha_atencion
+      FROM dbo.citas_programadas c
+      WHERE c.cod_negocio IN (3, 4, 5)
+        AND c.fecha >= ${dayStart}
+        AND c.fecha < ${dayEnd}
+        AND NOT EXISTS (
+          SELECT 1 FROM dbo.citas_programadas_anuladas a
+          WHERE a.id_cita = c.id OR a.id = c.id
+        )
+      ORDER BY c.fecha DESC, c.hora DESC;
     `);
 
     const operations = new Map<string, FalconMaritimeOperation>();
