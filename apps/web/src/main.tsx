@@ -15,6 +15,8 @@ type Operacion = {
   fechaGarita: string | null;
   fechaIngresoDespacho: string | null;
   fechaCompletado: string | null;
+  /** Peso recibido por Falcon cuando está disponible. */
+  pesoDeclarado?: number | null;
   /** Falcon aún no entrega este dato; se reserva para el contacto operativo futuro. */
   telefonoContacto?: string | null;
 };
@@ -860,6 +862,7 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
   const telefono = group.citas.map((cita) => cita.telefonoContacto).find(Boolean) ?? null;
   const aereos = group.aereosAsociados ?? [];
   const pesoAereo = pesoAereoAsociado(group);
+  const pesoRecibido = pesoRecibidoFalcon(group);
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
@@ -877,7 +880,7 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
         const citaRelacionada = group.citas[0];
         const espera = durationSeconds(citaRelacionada?.fechaGarita ?? null, movement.fechaGarita);
         const tonoEspera = durationTone(espera, 'ESPERA', citaRelacionada);
-        return <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>{espera !== null && <>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b> · </>}Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Mercadería marítima: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total declarado: {formatWeight(pesoNumerico(movement.pesoMercaderiaDeclarado) + pesoAereo)}</>}</small></li>;
+        return <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>{espera !== null && <>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b> · </>}Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Peso recibido Falcon: {formatWeight(pesoRecibido)} · Manifestado GITS: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total recibido: {formatWeight(pesoNumerico(pesoRecibido) + pesoAereo)}</>}</small></li>;
       })}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
@@ -1153,6 +1156,13 @@ function pesoAereoAsociado(group: GrupoFlujo) {
   return (group.aereosAsociados ?? []).reduce((total, aereo) => total + pesoNumerico(aereo.pesoDeclarado), 0);
 }
 
+/** El peso recibido en Falcon es la referencia operativa de la carga marítima. */
+function pesoRecibidoFalcon(group: GrupoFlujo) {
+  return group.citas
+    .map((cita) => pesoNumericoOpcional(cita.pesoDeclarado))
+    .find((peso): peso is number => peso != null) ?? null;
+}
+
 function pesoNetoMovimiento(movimiento: MovimientoFisico) {
   const netoDirecto = pesoNumericoOpcional(movimiento.pesoNetoBalanza);
   const inicial = pesoNumericoOpcional(movimiento.pesoInicial);
@@ -1167,8 +1177,8 @@ function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
   const netos = movimientos.map(pesoNetoMovimiento);
   if (netos.some((neto) => neto == null)) return null;
   const neto = netos.reduce<number>((total, item) => total + (item ?? 0), 0);
-  const declaradoMaritimo = movimientos.map((movimiento) => pesoNumericoOpcional(movimiento.pesoMercaderiaDeclarado)).find((peso): peso is number => peso != null) ?? null;
-  const declarado = declaradoMaritimo == null ? null : declaradoMaritimo + pesoAereoAsociado(group);
+  const recibidoMaritimo = pesoRecibidoFalcon(group);
+  const declarado = recibidoMaritimo == null ? null : recibidoMaritimo + pesoAereoAsociado(group);
   if (neto == null || declarado == null || declarado <= 0) return null;
   return Math.abs(neto - declarado) / declarado;
 }

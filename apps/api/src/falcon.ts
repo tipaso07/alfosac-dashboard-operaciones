@@ -801,6 +801,16 @@ function text(valueToFormat: unknown) {
   return String(valueToFormat);
 }
 
+/** Falcon puede exponer pesos como NUMERIC o texto con separador de miles. */
+function peso(valueToFormat: unknown) {
+  if (valueToFormat === null || valueToFormat === undefined || valueToFormat === '') return null;
+  if (typeof valueToFormat === 'number') return Number.isFinite(valueToFormat) ? valueToFormat : null;
+  const raw = String(valueToFormat).trim();
+  const normalized = raw.includes('.') && raw.includes(',') ? raw.replaceAll(',', '') : raw.replace(',', '.');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function dateText(valueToFormat: unknown) {
   if (valueToFormat === null || valueToFormat === undefined) return null;
   if (valueToFormat instanceof Date) return valueToFormat.toISOString();
@@ -1077,7 +1087,7 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
     if (until) citasRequest.input('untilDate', sql.Date, until);
     const citasResult = await citasRequest.query<SourceRow>(`
       SELECT TOP (@limit) c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante, c.des_placa, c.des_contenedor,
-        c.fecha_atencion
+        c.fecha_atencion, c.des_peso_recibido AS peso_recibido
       FROM dbo.citas_programadas c
       WHERE c.cod_negocio IN (3, 4, 5)
         AND c.fecha >= ${dayStart}
@@ -1105,7 +1115,10 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
         // de la unidad en garita. El preregistro del transportista no se usa
         // para este hito.
         fechaGarita: fechaFalconPeru(value(row, ['fecha_atencion'])) ?? previous?.fechaGarita ?? null,
-        fechaIngresoDespacho: null
+        fechaIngresoDespacho: null,
+        // Para contrastar con el neto de balanza se usa el peso recibido por
+        // Falcon. El peso manifestado de GITS queda solo como referencia.
+        pesoDeclarado: peso(value(row, ['peso_recibido'])) ?? previous?.pesoDeclarado ?? null
       });
     };
     citasResult.recordset.forEach(save);
