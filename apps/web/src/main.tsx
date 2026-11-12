@@ -358,16 +358,27 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
       const anulada = cita.estado === 'ANULADA';
       const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
-      const observacion = !anulada && porcentajePeso != null && porcentajePeso > toleranciaPeso
-        ? `Diferencia de peso ${(porcentajePeso * 100).toFixed(1)}% · supera 5%`
-        : '';
       const completado = !multiple && Boolean(movimiento && tieneSegundoPesajeValido(movimiento));
+      const observaciones = !anulada ? [
+        segundosEspera != null && durationTone(segundosEspera, 'ESPERA', cita) === 'alert'
+          ? `Demora en espera: ${formatDuration(segundosEspera)}` : null,
+        segundosAtencion != null && durationTone(segundosAtencion, 'ATENCION') === 'alert'
+          ? `Demora en atención: ${formatDuration(segundosAtencion)}` : null,
+        seguimientoCita && esCritico(seguimientoCita.estado)
+          && seguimientoCita.estado !== 'PESO_OBSERVADO'
+          && !(seguimientoCita.estado === 'GARITA_SIN_INGRESO' && segundosEspera != null)
+          && !(seguimientoCita.estado === 'BALANZA_SIN_SALIDA' && segundosAtencion != null)
+          ? etiquetaSeguimiento(seguimientoCita) : null,
+        porcentajePeso != null && porcentajePeso > toleranciaPeso
+          ? `Diferencia de peso ${(porcentajePeso * 100).toFixed(1)}% · supera 5%` : null
+      ].filter((texto): texto is string => Boolean(texto)) : [];
+      const observacion = observaciones.join(' | ');
       return {
         fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
         volante: group.volante, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera,
         ingreso: anulada ? '' : multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
         salida: anulada ? '' : multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
-        atencion: anulada ? '' : atencion, estado: anulada ? 'Anulada' : completado ? 'Completado' : etiquetaFilaIndividual(cita, group, seguimientoCita), observacion, anulada,
+        atencion: anulada ? '' : atencion, estado: anulada ? 'Anulada' : completado ? 'Completado' : '', observacion, anulada,
         tonoEspera: multiple || segundosEspera == null ? 'neutral' : durationTone(segundosEspera, 'ESPERA', cita) ?? 'neutral',
         tonoAtencion: multiple || segundosAtencion == null ? 'neutral' : durationTone(segundosAtencion, 'ATENCION') ?? 'neutral'
       };
