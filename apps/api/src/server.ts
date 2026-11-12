@@ -280,7 +280,9 @@ app.use((_request, response, next) => {
   response.setHeader('Cache-Control', 'no-store');
   next();
 });
-app.use(express.json({ limit: '20kb' }));
+// La exportación individual envía las filas ya filtradas para reproducir la
+// vista del usuario en Excel. Un turno completo puede superar 20 KB.
+app.use(express.json({ limit: '2mb' }));
 
 app.get('/api/auth/me', async (request, response) => {
   if (!autenticacionHabilitada()) {
