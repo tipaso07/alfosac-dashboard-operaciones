@@ -260,6 +260,7 @@ td:first-child { font-weight: 700; }
 .state-badge { display: inline-block; border: 1px solid #329AD6; color: #000059; padding: 6px 10px; border-radius: 999px; font-size: .8rem; font-weight: 700; }
 .state-badge.state-alert { background: #000059; color: #ffffff; border-color: #000059; }
 .state-badge.state-warning { background: #fff8e7; color: #8a5a00; border-color: #e5ad28; }
+.state-badge.state-cancelled { background: #edf0f4; color: #667085; border-color: #cfd7e3; }
 .detail-button { white-space: nowrap; }
 .health-face { width: 38px; height: 38px; border: 0; border-radius: 50%; padding: 0; cursor: pointer; display: inline-grid; place-items: center; background: transparent; color: #708095; }
 .health-face svg { width: 32px; height: 32px; overflow: visible; }
@@ -336,7 +337,7 @@ td:first-child { font-weight: 700; }
 .inspection-status-warning { background: #fff0bf; color: #8a5a00; }
 .inspection-status-alert { background: #c83f4b; color: #ffffff; }
 .inspection-status-unknown { background: #edf0f4; color: #667085; }
-.detail-list tr:has(.health-face-unknown) { background: #f7f8fa; color: #667085; }
+.detail-list tr:has(.health-face-unknown), .detail-list tr.cancelled-row { background: #f7f8fa; color: #667085; }
 /* Varias citas de una misma placa representan un retiro conjunto. El borde
    continuo las deja visualmente como un solo bloque sin ocultar sus alertas. */
 .hour-inspection-table tr.inspection-associated td { background-clip: padding-box; }

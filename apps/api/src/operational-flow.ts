@@ -118,7 +118,9 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
 export function resumenDeFlujo(citas: Operacion[], groups: GrupoFlujoOperativo[], reportDate: string): ResumenModalidad[] {
   const modalities: Modalidad[] = ['FCL', 'LCL', 'BB', 'AEREO'];
   return modalities.map((modalidad) => {
-    const citasDeModalidad = citas.filter((cita) => cita.modalidad === modalidad);
+    // Las anuladas se conservan para trazabilidad visual, pero no son citas
+    // agendadas ni deben alimentar los indicadores operativos.
+    const citasDeModalidad = citas.filter((cita) => cita.modalidad === modalidad && cita.estado !== 'ANULADA');
     // Un mismo camión puede atender más de un volante. El movimiento se
     // muestra en cada volante relacionado, pero se cuenta una sola vez en
     // los indicadores físicos de balanza.

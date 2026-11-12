@@ -432,14 +432,18 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                 const placa = esMultiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
                 const seguimientoCita = seguimientoPorCita.get(cita.id);
                 const visual = esMultiple ? groupVisualState(group, seguimientoPorCita) : citaVisualState(cita, movimiento, seguimientoCita);
-                return <tr key={`${group.volante}-${cita.id}`}>
+                const anulada = cita.estado === 'ANULADA';
+                return <tr className={anulada ? 'cancelled-row' : ''} key={`${group.volante}-${cita.id}`}>
                   <td>{cita.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
                   <td className={tonoHoraCita(seguimientoCita) ? `appointment-hour-${tonoHoraCita(seguimientoCita)}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
                   {esMultiple ? <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></> : <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>}
-                  <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
+                  <td>{anulada
+                    ? <span className="state-badge state-cancelled">Anulada</span>
+                    : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
+                  }</td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
             </tbody>
@@ -1134,6 +1138,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
     grupos.forEach((group) => {
       const movimientos = movimientosConfirmados(group);
       group.citas.forEach((cita) => {
+      if (cita.estado === 'ANULADA') return;
       const seguimientoCita = seguimientoPorCita.get(cita.id);
       const estado = seguimientoCita?.estado;
       const critical = estado ? esCritico(estado) : false;
@@ -1154,6 +1159,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
     });
   } else {
     grupos.forEach((group) => group.citas.forEach((cita) => {
+      if (cita.estado === 'ANULADA') return;
       const critical = cita.estado === 'NO_COMPLETADA';
       const row = add(cita.fechaCita, 'citas', critical);
       if (!row) return;

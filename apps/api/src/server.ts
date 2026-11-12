@@ -197,6 +197,8 @@ async function importarFalcon() {
   }));
   await guardarOperaciones([...maritimas.map(toOperation), ...aereas.map(toOperation), ...anuladasOperacion]);
   await retirarMaritimasNoVigentes(fechaReporteActual(), [...maritimas.map((item) => item.id), ...anuladas.map((item) => item.id)]);
+  // La próxima consulta debe reflejar de inmediato la foto recién importada.
+  flowCache = null;
   return { maritime: maritimas.length, anuladas: anuladas.length, aereo: aereas.length, gitsEnrichment: process.env.GITS_ENRICH_FALCON_ENABLED === 'true' };
 }
 
