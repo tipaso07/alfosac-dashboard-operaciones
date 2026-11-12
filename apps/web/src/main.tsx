@@ -356,12 +356,13 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       const segundosAtencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
       const espera = multiple ? 'Ver detalle' : segundosEspera == null ? '—' : formatDuration(segundosEspera);
       const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
+      const anulada = cita.estado === 'ANULADA';
       return {
         fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
-        volante: group.volante, placa, registro: cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera,
-        ingreso: multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
-        salida: multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
-        atencion, estado: etiquetaFilaIndividual(cita, group, seguimientoCita), anulada: cita.estado === 'ANULADA',
+        volante: group.volante, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera,
+        ingreso: anulada ? '' : multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
+        salida: anulada ? '' : multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
+        atencion: anulada ? '' : atencion, estado: etiquetaFilaIndividual(cita, group, seguimientoCita), anulada,
         tonoEspera: multiple || segundosEspera == null ? 'neutral' : durationTone(segundosEspera, 'ESPERA', cita) ?? 'neutral',
         tonoAtencion: multiple || segundosAtencion == null ? 'neutral' : durationTone(segundosAtencion, 'ATENCION') ?? 'neutral'
       };
@@ -475,10 +476,20 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td className={tonoHoraCita(seguimientoCita) ? `appointment-hour-${tonoHoraCita(seguimientoCita)}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
-                  <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
-                  {esMultiple ? <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></> : <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>}
+                  {anulada ? (
+                    <><td></td><td></td><td></td><td></td><td></td></>
+                  ) : (
+                    <>
+                      <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
+                      {esMultiple ? (
+                        <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></>
+                      ) : (
+                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
+                      )}
+                    </>
+                  )}
                   <td>{anulada
-                    ? <span className="health-face health-face-unknown cancelled-face" title="Cita anulada" aria-label="Cita anulada"><HealthFace state="unknown" /></span>
+                    ? <span className="health-face cancelled-face" title="Cita anulada" aria-label="Cita anulada"><CancelledFace /></span>
                     : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
                 </tr>;
@@ -586,6 +597,10 @@ function descargarCsv(nombre: string, headers: string[], filas: Array<Array<stri
 function HealthFace({ state }: { state: VisualState }) {
   const mouth = state === 'ok' ? 'M6 11.5c1 2.4 6 2.4 7 0' : state === 'warning' || state === 'unknown' ? 'M6.5 13h6' : 'M6 14c1-2.2 6-2.2 7 0';
   return <svg viewBox="0 0 19 19" aria-hidden="true"><circle className="face-base" cx="9.5" cy="9.5" r="8"/><circle className="face-eye" cx="6.9" cy="7.7" r=".95"/><circle className="face-eye" cx="12.1" cy="7.7" r=".95"/><path className="face-mouth" d={mouth}/></svg>;
+}
+
+function CancelledFace() {
+  return <svg viewBox="0 0 19 19" aria-hidden="true"><circle className="cancelled-base" cx="9.5" cy="9.5" r="8"/><path className="cancelled-line" d="M5.7 9.5h7.6"/></svg>;
 }
 
 function DurationTableCell({ start, end, tipo, cita }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION'; cita?: Operacion }) {
