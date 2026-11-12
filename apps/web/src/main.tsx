@@ -60,7 +60,9 @@ type EstadoAutenticacion = { enabled: boolean; user: UsuarioSesion | null };
 
 /** Reglas operativas confirmadas por ATC para FCL y LCL. */
 const minutosCitaPorVencer = 30;
-const minutosToleranciaCita = 60;
+// Si no hay registro de garita, ATC empieza a gestionar a los 30 minutos
+// y la cita pasa a vencida a los 45 minutos desde la hora programada.
+const minutosToleranciaCita = 45;
 const minutosRojoEsperaVigente = 30;
 const minutosNaranjaEsperaVigente = 15;
 const minutosRojoEsperaVencida = 60;
