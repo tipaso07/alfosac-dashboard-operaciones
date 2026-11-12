@@ -437,7 +437,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
                   <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
-                  {esMultiple ? <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></> : <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" movimiento={movimiento} /></>}
+                  {esMultiple ? <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></> : <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>}
                   <td><button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button></td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
@@ -518,11 +518,8 @@ function HealthFace({ state }: { state: VisualState }) {
   return <svg viewBox="0 0 19 19" aria-hidden="true"><circle className="face-base" cx="9.5" cy="9.5" r="8"/><circle className="face-eye" cx="6.9" cy="7.7" r=".95"/><circle className="face-eye" cx="12.1" cy="7.7" r=".95"/><path className="face-mouth" d={mouth}/></svg>;
 }
 
-function DurationTableCell({ start, end, tipo, cita, movimiento }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION'; cita?: Operacion; movimiento?: MovimientoFisico }) {
-  // Cuando la unidad ya tiene primer pesaje pero aún no registra salida, se
-  // conserva el contador en vivo en vez de dejar la celda vacía. Así la vista
-  // separada coincide con la inspección por hora y el modo TV.
-  const seconds = tipo === 'ATENCION' && movimiento ? duracionAtencionVisible(movimiento) : durationSeconds(start, end);
+function DurationTableCell({ start, end, tipo, cita }: { start: string | null; end: string | null; tipo: 'ESPERA' | 'ATENCION'; cita?: Operacion }) {
+  const seconds = durationSeconds(start, end);
   if (seconds === null) return <td className="duration-cell">—</td>;
   return <td className={`duration-cell duration-${durationTone(seconds, tipo, cita)}`}>{formatDuration(seconds)}</td>;
 }
