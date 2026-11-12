@@ -32,7 +32,7 @@ type Resumen = {
 
 type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null };
 type AereoAsociado = { volante: string; placa: string; fechaGarita: string; primerPesaje: string | null; segundoPesaje: string | null; pesoDeclarado: number | null; diferenciaMinutos: number };
-type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO'; aereosAsociados?: AereoAsociado[] };
+type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO'; aereosAsociados?: AereoAsociado[]; retiroConjunto?: { placa: string; volantes: string[]; pesoDeclarado: number | null; pesoNetoBalanza: number | null; porcentajePeso: number | null } | null };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
 type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_ATENCION' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
@@ -1207,6 +1207,10 @@ function pesoNetoMovimiento(movimiento: MovimientoFisico) {
 
 /** En retiro múltiple se suman los netos de todas las unidades, pero el peso declarado del volante se toma una sola vez. */
 function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
+  // En un retiro conjunto la API ya suma todos los volantes y todos los
+  // movimientos de la misma UT. Nunca se compara un viaje completo contra
+  // el peso de un solo volante.
+  if (group.retiroConjunto) return group.retiroConjunto.porcentajePeso;
   const movimientos = movimientosConfirmados(group);
   if (!movimientos.length || movimientos.some((movimiento) => !tieneSegundoPesajeValido(movimiento))) return null;
   const netos = movimientos.map(pesoNetoMovimiento);
@@ -1299,7 +1303,11 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
       /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
-      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso) {
+      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso
+        // Si un retiro conjunto realmente supera la tolerancia, la alerta se
+        // publica una sola vez en el primer volante; los demás quedan como
+        // completados para no duplicar ni confundir a ATC.
+        && (!grupo.retiroConjunto || grupo.retiroConjunto.volantes[0] === grupo.volante)) {
         fechaReferencia = segundoPesaje;
         minutosRetraso = minutosEntre(now, segundoPesaje);
         estado = 'PESO_OBSERVADO';

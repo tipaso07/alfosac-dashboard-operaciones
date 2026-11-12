@@ -18,6 +18,13 @@ export interface GrupoFlujoOperativo {
     pesoDeclarado: number | null;
     diferenciaMinutos: number;
   }>;
+  retiroConjunto?: {
+    placa: string;
+    volantes: string[];
+    pesoDeclarado: number | null;
+    pesoNetoBalanza: number | null;
+    porcentajePeso: number | null;
+  } | null;
 }
 
 function volanteNormalizado(value: string | null | undefined) {
@@ -44,6 +51,60 @@ function placaNormalizada(value: string | null | undefined) {
 
 function diferenciaMinutos(a: string, b: string) {
   return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 60_000;
+}
+
+function pesoNeto(movimiento: GitsDailyFlowItem) {
+  if (movimiento.pesoNetoBalanza != null) return movimiento.pesoNetoBalanza;
+  if (movimiento.pesoInicial != null && movimiento.pesoFinal != null) return Math.abs(movimiento.pesoFinal - movimiento.pesoInicial);
+  return null;
+}
+
+function movimientosConfirmados(group: GrupoFlujoOperativo) {
+  return group.tipo === 'UNICO' || (group.citas.length === 1 && group.movimientos.length > 1)
+    ? group.movimientos
+    : [];
+}
+
+/**
+ * Una misma UT puede retirar varios volantes LCL. Si comparten placa y su
+ * primer pesaje ocurre en la ventana validada por ATC (10 minutos), el peso
+ * debe compararse como viaje conjunto, nunca contra cada volante aislado.
+ */
+function marcarRetirosConjuntos(groups: GrupoFlujoOperativo[]) {
+  const lcl = groups.filter((group) => group.modalidad === 'LCL');
+  for (const group of lcl) {
+    const movimientoReferencia = movimientosConfirmados(group).find((movimiento) => movimiento.placa && movimiento.fechaGarita);
+    if (!movimientoReferencia?.placa || !movimientoReferencia.fechaGarita) continue;
+    const placa = placaNormalizada(movimientoReferencia.placa);
+    if (!placa) continue;
+    const asociados = lcl.filter((candidate) => movimientosConfirmados(candidate).some((movimiento) =>
+      placaNormalizada(movimiento.placa) === placa
+      && Boolean(movimiento.fechaGarita)
+      && diferenciaMinutos(movimiento.fechaGarita!, movimientoReferencia.fechaGarita!) <= 10
+    ));
+    if (asociados.length < 2) continue;
+
+    const movimientos = [...new Map(asociados
+      .flatMap((candidate) => movimientosConfirmados(candidate))
+      .filter((movimiento) => placaNormalizada(movimiento.placa) === placa)
+      .map((movimiento) => [`${movimiento.empresa}:${movimiento.movimiento}`, movimiento])
+    ).values()];
+    const netos = movimientos.map(pesoNeto);
+    const declarados = asociados.map((candidate) => candidate.citas
+      .map((cita) => cita.pesoDeclarado)
+      .find((peso): peso is number => peso != null));
+    const pesoNetoBalanza = netos.every((peso): peso is number => peso != null)
+      ? netos.reduce((total, peso) => total + peso, 0)
+      : null;
+    const pesoDeclarado = declarados.every((peso): peso is number => peso != null)
+      ? declarados.reduce((total, peso) => total + peso, 0)
+      : null;
+    const porcentajePeso = pesoNetoBalanza != null && pesoDeclarado != null && pesoDeclarado > 0
+      ? Math.abs(pesoNetoBalanza - pesoDeclarado) / pesoDeclarado
+      : null;
+    const resumen = { placa, volantes: asociados.map((candidate) => candidate.volante).sort(), pesoDeclarado, pesoNetoBalanza, porcentajePeso };
+    asociados.forEach((candidate) => { candidate.retiroConjunto = resumen; });
+  }
 }
 
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
@@ -109,6 +170,7 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
       diferenciaMinutos: diferenciaMinutos(registrosGarita[0] ?? aereo.fechaGarita, aereo.fechaGarita)
     });
   }
+  marcarRetirosConjuntos(groups);
   return groups.sort((a, b) =>
     keyFecha(b.movimientos.at(-1)?.fechaGarita ?? b.citas.at(-1)?.fechaCita)
       .localeCompare(keyFecha(a.movimientos.at(-1)?.fechaGarita ?? a.citas.at(-1)?.fechaCita))
