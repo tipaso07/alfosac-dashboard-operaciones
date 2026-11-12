@@ -35,6 +35,7 @@ export type FilaSeguimientoExcel = {
   salida: string;
   atencion: string;
   estado: string;
+  observacion: string;
   anulada: boolean;
   tonoEspera: 'ok' | 'warning' | 'alert' | 'neutral';
   tonoAtencion: 'ok' | 'warning' | 'alert' | 'neutral';
@@ -53,9 +54,9 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   workbook.creator = 'ALFOSAC';
   workbook.created = new Date();
   const sheet = workbook.addWorksheet('Seguimiento', { views: [{ state: 'frozen', ySplit: 4 }] });
-  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. atención', 'Estado actual'];
+  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. atención', 'Estado actual', 'Observación'];
 
-  sheet.mergeCells('A1:J1');
+  sheet.mergeCells('A1:K1');
   const title = sheet.getCell('A1');
   title.value = 'Seguimiento operativo';
   title.font = { name: 'Poppins', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -63,7 +64,7 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   title.alignment = { vertical: 'middle' };
   sheet.getRow(1).height = 28;
 
-  sheet.mergeCells('A2:J2');
+  sheet.mergeCells('A2:K2');
   const subtitle = sheet.getCell('A2');
   subtitle.value = titulo;
   subtitle.font = { name: 'Poppins', size: 10, color: { argb: '3C566D' } };
@@ -81,7 +82,7 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   for (const fila of filas) {
     const row = sheet.addRow([
       fila.fechaCita, fila.horaCita, fila.volante, fila.placa, fila.registro,
-      fila.espera, fila.ingreso, fila.salida, fila.atencion, fila.estado
+      fila.espera, fila.ingreso, fila.salida, fila.atencion, fila.estado, fila.observacion
     ]);
     row.height = 22;
     row.eachCell((cell) => {
@@ -102,9 +103,9 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
     }
   }
 
-  const widths = [14, 13, 16, 15, 14, 15, 14, 14, 15, 38];
+  const widths = [14, 13, 16, 15, 14, 15, 14, 14, 15, 28, 42];
   widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
-  sheet.autoFilter = { from: 'A4', to: `J${Math.max(4, filas.length + 4)}` };
+  sheet.autoFilter = { from: 'A4', to: `K${Math.max(4, filas.length + 4)}` };
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

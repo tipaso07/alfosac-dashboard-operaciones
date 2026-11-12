@@ -1017,7 +1017,7 @@ app.post('/api/dashboard/flow.xlsx', async (request, response) => {
     fechaCita: texto(fila?.fechaCita, 24), horaCita: texto(fila?.horaCita, 20), volante: texto(fila?.volante, 30),
     placa: texto(fila?.placa, 40), registro: texto(fila?.registro, 20), espera: texto(fila?.espera, 30),
     ingreso: texto(fila?.ingreso, 30), salida: texto(fila?.salida, 30), atencion: texto(fila?.atencion, 30),
-    estado: texto(fila?.estado, 180), anulada: fila?.anulada === true,
+    estado: texto(fila?.estado, 180), observacion: texto(fila?.observacion, 220), anulada: fila?.anulada === true,
     tonoEspera: tono(fila?.tonoEspera), tonoAtencion: tono(fila?.tonoAtencion)
   }));
   try {

@@ -357,12 +357,17 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       const espera = multiple ? 'Ver detalle' : segundosEspera == null ? '—' : formatDuration(segundosEspera);
       const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
       const anulada = cita.estado === 'ANULADA';
+      const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
+      const observacion = !anulada && porcentajePeso != null && porcentajePeso > toleranciaPeso
+        ? `Diferencia de peso ${(porcentajePeso * 100).toFixed(1)}% · supera 5%`
+        : '';
+      const completado = !multiple && Boolean(movimiento && tieneSegundoPesajeValido(movimiento));
       return {
         fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
         volante: group.volante, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera,
         ingreso: anulada ? '' : multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
         salida: anulada ? '' : multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
-        atencion: anulada ? '' : atencion, estado: etiquetaFilaIndividual(cita, group, seguimientoCita), anulada,
+        atencion: anulada ? '' : atencion, estado: anulada ? 'Anulada' : completado ? 'Completado' : etiquetaFilaIndividual(cita, group, seguimientoCita), observacion, anulada,
         tonoEspera: multiple || segundosEspera == null ? 'neutral' : durationTone(segundosEspera, 'ESPERA', cita) ?? 'neutral',
         tonoAtencion: multiple || segundosAtencion == null ? 'neutral' : durationTone(segundosAtencion, 'ATENCION') ?? 'neutral'
       };
