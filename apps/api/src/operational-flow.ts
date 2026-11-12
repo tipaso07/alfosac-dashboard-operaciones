@@ -60,7 +60,10 @@ function pesoNeto(movimiento: GitsDailyFlowItem) {
 }
 
 function movimientosConfirmados(group: GrupoFlujoOperativo) {
-  return group.tipo === 'UNICO' || (group.citas.length === 1 && group.movimientos.length > 1)
+  // Las anulaciones quedan como historial visual, pero no vuelven ambiguo el
+  // vínculo de la única cita activa con su movimiento físico.
+  const citasActivas = group.citas.filter((cita) => cita.estado !== 'ANULADA');
+  return citasActivas.length === 1
     ? group.movimientos
     : [];
 }

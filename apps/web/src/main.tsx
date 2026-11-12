@@ -526,12 +526,13 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
 
 /** Una cita con varios movimientos del mismo volante representa un retiro fraccionado confirmado por ATC. */
 function esAtencionMultiple(group: GrupoFlujo) {
-  return group.citas.length === 1 && group.movimientos.length > 1;
+  return group.citas.filter((cita) => cita.estado !== 'ANULADA').length === 1 && group.movimientos.length > 1;
 }
 
 /** Solo se atribuyen pesajes cuando el vínculo es único o es un retiro fraccionado válido. */
 function movimientosConfirmados(group: GrupoFlujo) {
-  return group.tipo === 'UNICO' || esAtencionMultiple(group) ? group.movimientos : [];
+  const citasActivas = group.citas.filter((cita) => cita.estado !== 'ANULADA');
+  return citasActivas.length === 1 || esAtencionMultiple(group) ? group.movimientos : [];
 }
 
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
