@@ -372,7 +372,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         porcentajePeso != null && porcentajePeso > toleranciaPeso
           ? `Diferencia de peso ${(porcentajePeso * 100).toFixed(1)}% · supera 5%` : null
       ].filter((texto): texto is string => Boolean(texto)) : [];
-      const observacion = observaciones.join(' | ');
+      // Falcon conserva ambas casuísticas dentro de la misma tabla de
+      // anulaciones y no entrega un indicador fiable para separarlas.
+      const observacion = anulada ? 'No atendida / no se presentó a su cita' : observaciones.join(' | ');
       return {
         fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
         volante: group.volante, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera,
