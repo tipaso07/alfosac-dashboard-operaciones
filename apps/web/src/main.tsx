@@ -1143,24 +1143,29 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
     const placa = (fila.movimiento?.placa ?? fila.cita.unidad ?? '').trim().toUpperCase();
     return !placa || placa === '-';
   }).map((fila) => ({ ...fila, grupoPlaca: null })));
+  // Cuando el mismo volante genera varias filas consecutivas, se representa
+  // como una sola celda vertical, sin perder el detalle por unidad/pesaje.
+  const filasConVolanteCombinado = filas.map((fila, indice) => {
+    if (indice > 0 && filas[indice - 1].cita.volante === fila.cita.volante) {
+      return { ...fila, volanteRowSpan: 0 };
+    }
+    let total = 1;
+    while (filas[indice + total]?.cita.volante === fila.cita.volante) total += 1;
+    return { ...fila, volanteRowSpan: total };
+  });
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="hour-inspection-modal" role="dialog" aria-modal="true" aria-label={`Inspección de ${hora}`} onMouseDown={(event) => event.stopPropagation()}>
       <header className="hour-inspection-header"><div><p>INSPECCIÓN POR HORA</p><h2>{hora} · {modalidad ? nombres[modalidad] : 'FCL y LCL'}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar inspección">×</button></header>
       <div className="hour-inspection-note"><span>Detalle de citas, garita y pesajes asociados a este horario.</span><strong>{filas.length} {filas.length === 1 ? 'cita' : 'citas'}</strong></div>
       <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th><th>Hora cita</th><th>T. espera</th><th>T. atención</th><th>Estado actual</th></tr></thead>
-        <tbody>{filas.length ? (() => {
-          const volantesMostrados = new Set<string>();
-          return filas.map(({ cita, movimiento, etiqueta, tono, grupoPlaca }) => {
+        <tbody>{filasConVolanteCombinado.length ? filasConVolanteCombinado.map(({ cita, movimiento, etiqueta, tono, grupoPlaca, volanteRowSpan }) => {
           const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
           const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
           const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
           const anulada = cita.estado === 'ANULADA';
-          const volanteYaMostrado = volantesMostrados.has(cita.volante);
-          volantesMostrados.add(cita.volante);
-          return <tr className={`${claseGrupo}${anulada ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td><td>{volanteYaMostrado ? '' : cita.volante}</td><td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={anulada || espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{anulada || espera === null ? '' : formatDuration(espera)}</td><td className={anulada || atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{anulada || atencion === null ? '' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
-          });
-        })() : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
+          return <tr className={`${claseGrupo}${anulada ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td>{volanteRowSpan > 0 && <td rowSpan={volanteRowSpan}>{cita.volante}</td>}<td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={anulada || espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{anulada || espera === null ? '' : formatDuration(espera)}</td><td className={anulada || atencion === null ? '' : `inspection-time duration-${durationTone(atencion, 'ATENCION')}`}>{anulada || atencion === null ? '' : formatDuration(atencion)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+        }) : <tr><td colSpan={6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
     </section>
   </div>;
