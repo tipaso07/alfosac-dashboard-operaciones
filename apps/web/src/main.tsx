@@ -505,7 +505,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                       {esMultiple ? (
                         <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></>
                       ) : (
-                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
+                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? (cita.fechaGarita ? new Date().toISOString() : null)} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
                       )}
                     </>
                   )}
@@ -621,7 +621,7 @@ function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento:
   const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
   if (movimiento && tieneSegundoPesajeValido(movimiento)) return 'Completado';
   if (movimiento?.fechaGarita) return 'En balanza';
-  if (cita.fechaGarita) return 'En garita';
+  if (cita.fechaGarita) return `En garita, espera de ${formatDuration(durationSeconds(cita.fechaGarita, new Date().toISOString()) ?? 0)}`;
   return 'Programada';
 }
 
@@ -1144,9 +1144,12 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const retiroVacio = estado?.estado === 'RETIRO_VACIO';
         const alertaBalanza = alertaPrimerPesajePendiente(movimiento);
         const sinSalida = alertaBalanza !== null;
+        const esperaEnGarita = !movimiento?.fechaGarita && cita.fechaGarita
+          ? durationSeconds(cita.fechaGarita, new Date().toISOString()) : null;
         const etiqueta = anulada ? 'Anulada'
           : retiroVacio ? 'Retiro vacío / no atendida'
           : sinSalida && (alertaBalanza === 'alert' || alertaBalanza === 'warning') ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
+          : esperaEnGarita !== null ? `En garita, espera de ${formatDuration(esperaEnGarita)}`
           : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
           : estado?.estado === 'EN_ATENCION' ? 'En almacén / atención en curso'
           : movimiento && tieneSegundoPesajeValido(movimiento) ? 'Completado'
@@ -1189,7 +1192,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
       <div className="hour-inspection-note"><span>Detalle de citas, garita y pesajes asociados a este horario.</span><strong>{filas.length} {filas.length === 1 ? 'cita' : 'citas'}</strong></div>
       <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th><th>Hora cita</th><th>T. espera</th><th>T. operativo</th><th>Estado actual</th></tr></thead>
         <tbody>{filasConVolanteCombinado.length ? filasConVolanteCombinado.map(({ cita, movimiento, etiqueta, tono, grupoPlaca, volanteRowSpan }) => {
-          const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
+          const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? (cita.fechaGarita ? new Date().toISOString() : null));
           const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
           const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
@@ -1493,6 +1496,7 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'CITA_VENCIDA') return `Cita vencida: sin registro en garita Falcon · ${item.minutosRetraso} min`;
   if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita Falcon';
   if (item.estado === 'GARITA_SIN_INGRESO') return `Demora para ingreso al DT · ${item.minutosRetraso} min`;
+  if (item.estado === 'EN_GARITA') return `En garita, espera de ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
   if (item.estado === 'EN_ATENCION') return 'En almacén / atención en curso';
   if (item.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
