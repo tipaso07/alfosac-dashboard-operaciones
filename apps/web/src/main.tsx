@@ -505,7 +505,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                       {esMultiple ? (
                         <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></>
                       ) : (
-                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? (cita.fechaGarita ? new Date().toISOString() : null)} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
+                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
                       )}
                     </>
                   )}
@@ -1192,7 +1192,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
       <div className="hour-inspection-note"><span>Detalle de citas, garita y pesajes asociados a este horario.</span><strong>{filas.length} {filas.length === 1 ? 'cita' : 'citas'}</strong></div>
       <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th><th>Hora cita</th><th>T. espera</th><th>T. operativo</th><th>Estado actual</th></tr></thead>
         <tbody>{filasConVolanteCombinado.length ? filasConVolanteCombinado.map(({ cita, movimiento, etiqueta, tono, grupoPlaca, volanteRowSpan }) => {
-          const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? (cita.fechaGarita ? new Date().toISOString() : null));
+          const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
           const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
           const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
