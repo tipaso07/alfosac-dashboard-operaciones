@@ -303,7 +303,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   const [menuContraido, setMenuContraido] = useState(false);
   const [filtro, setFiltro] = useState<Modalidad | 'TODAS'>('TODAS');
   const [vista, setVista] = useState<'RESUMEN' | 'LISTA'>('RESUMEN');
-  const [seleccionado, setSeleccionado] = useState<GrupoFlujo | null>(null);
+  const [seleccionado, setSeleccionado] = useState<{ group: GrupoFlujo; citaId: string } | null>(null);
   const [horaInspeccion, setHoraInspeccion] = useState<string | null>(null);
   const [busqueda, setBusqueda] = useState('');
   const [horaFiltro, setHoraFiltro] = useState('');
@@ -511,7 +511,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   )}
                   <td>{anulada
                     ? <span className="health-face cancelled-face" title="Cita anulada" aria-label="Cita anulada"><CancelledFace /></span>
-                    : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado(group)} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
+                    : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
@@ -524,7 +524,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       {seccion === 'REPORTES' && <ReportesPanel reportDate={reportDate} />}
       {seccion === 'CONFIGURACION' && user && <ConfiguracionPanel user={user} />}
 
-      {seleccionado && <FlowModal group={seleccionado} seguimiento={seguimientoPorCita} onClose={() => setSeleccionado(null)} />}
+      {seleccionado && <FlowModal group={seleccionado.group} citaId={seleccionado.citaId} seguimiento={seguimientoPorCita} onClose={() => setSeleccionado(null)} />}
       {horaInspeccion && <HourInspectionModal hora={horaInspeccion} modalidad={filtro === 'TODAS' ? null : filtro} grupos={gruposFiltrados} seguimiento={seguimientoFiltrado} reportDate={reportDate} onClose={() => setHoraInspeccion(null)} />}
     </main>
   );
@@ -1013,9 +1013,12 @@ function OperationModal({ operacion, onClose }: { operacion: Operacion; onClose:
   );
 }
 
-function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimiento: Map<string, SeguimientoLlegada>; onClose: () => void }) {
-  const alertas = alertasDiagnosticoGrupo(group, seguimiento);
-  const visual = groupVisualState(group, seguimiento);
+function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo; citaId: string; seguimiento: Map<string, SeguimientoLlegada>; onClose: () => void }) {
+  const citaSeleccionada = group.citas.find((cita) => cita.id === citaId);
+  const movimientosSeleccionados = citaSeleccionada ? movimientosDeCita(group, citaSeleccionada) : group.movimientos;
+  const detalle = { ...group, movimientos: movimientosSeleccionados };
+  const alertas = alertasDiagnosticoGrupo(detalle, seguimiento);
+  const visual = groupVisualState(detalle, seguimiento);
   const telefono = group.citas.map((cita) => cita.telefonoContacto).find(Boolean) ?? null;
   const aereos = group.aereosAsociados ?? [];
   const pesoAereo = pesoAereoAsociado(group);
@@ -1030,11 +1033,11 @@ function FlowModal({ group, seguimiento, onClose }: { group: GrupoFlujo; seguimi
       </section>
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
-      {esAtencionMultiple(group) && <p className="multiple-attention-note"><strong>Atención múltiple confirmada</strong> · {group.movimientos.length} unidades retiraron el mismo volante. Los tiempos se evalúan por placa y los pesos se consolidan.</p>}
+      {esAtencionMultiple(detalle) && <p className="multiple-attention-note"><strong>Atención múltiple confirmada</strong> · {detalle.movimientos.length} unidades retiraron el mismo volante. Los tiempos se evalúan por placa y los pesos se consolidan.</p>}
       {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso sin dato' : `${formatWeight(aereo.pesoDeclarado)} declarado`}</strong><small>Primer pesaje: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
-      <h3 className="flow-heading">Movimientos físicos GITS ({group.movimientos.length})</h3>
-      {group.movimientos.length ? <ol className="timeline">{group.movimientos.map((movement) => {
-        const citaRelacionada = group.citas[0];
+      <h3 className="flow-heading">Movimientos físicos GITS ({detalle.movimientos.length})</h3>
+      {detalle.movimientos.length ? <ol className="timeline">{detalle.movimientos.map((movement) => {
+        const citaRelacionada = citaSeleccionada ?? group.citas[0];
         const espera = durationSeconds(citaRelacionada?.fechaGarita ?? null, movement.fechaGarita);
         const tonoEspera = durationTone(espera, 'ESPERA', citaRelacionada);
         return <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>{espera !== null && <>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b> · </>}Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Peso recibido Falcon: {formatWeight(pesoRecibido)} · Manifestado GITS: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total recibido: {formatWeight(pesoNumerico(pesoRecibido) + pesoAereo)}</>}</small></li>;
