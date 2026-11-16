@@ -540,7 +540,7 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
     if (amarillosActivos >= 2) return 'warning';
     // Una cita que finalizó vuelve a PROGRAMADA. En ese caso se continúa
     // abajo con los tiempos históricos para no mostrarla como desconocida.
-    if (estados.some((item) => item.estado !== 'PROGRAMADA') || amarillosActivos > 0) return 'ok';
+    if (estados.some((item) => item.estado !== 'PROGRAMADA' && item.estado !== 'RETIRO_VACIO') || amarillosActivos > 0) return 'ok';
   }
   const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
   const tonosEspera = group.citas.flatMap((cita) => movimientos.map((movimiento) => durationTone(durationSeconds(cita.fechaGarita, movimiento.fechaGarita), 'ESPERA', cita)));
@@ -593,7 +593,7 @@ function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento:
   if (cita.estado === 'ANULADA') return 'Anulada';
   if (seguimiento?.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
   if (seguimiento && (esCritico(seguimiento.estado) || esProximo(seguimiento.estado))) return etiquetaSeguimiento(seguimiento);
-  const movimientos = movimientosConfirmados(group);
+  const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
   if (esAtencionMultiple(group)) return `Atención múltiple · ${movimientos.length} unidades`;
   const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
   if (movimiento && tieneSegundoPesajeValido(movimiento)) return 'Completado';
@@ -1048,7 +1048,7 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
     });
   });
 
-  const movimientos = movimientosConfirmados(group);
+  const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
   const cita = group.citas[0];
   if (!movimientos.length || !cita) return alertas;
   const tieneSeguimientoEnVivo = group.citas.some((citaGrupo) => seguimiento.has(citaGrupo.id));
@@ -1117,9 +1117,10 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const esAmarillo = Boolean(estado && esProximo(estado.estado));
         const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
         const tonoTiempo = durationTone(atencion, 'ATENCION');
-        const sinSalida = Boolean(movimiento && !tieneSegundoPesajeValido(movimiento));
+        const retiroVacio = estado?.estado === 'RETIRO_VACIO';
+        const sinSalida = Boolean(movimiento && !movimiento.retiroVacio && !tieneSegundoPesajeValido(movimiento));
         const etiqueta = anulada ? 'Anulada'
-          : estado?.estado === 'RETIRO_VACIO' ? 'Retiro vacío / no atendida'
+          : retiroVacio ? 'Retiro vacío / no atendida'
           : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
           : sinSalida && tonoTiempo === 'alert' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : sinSalida && tonoTiempo === 'warning' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
@@ -1128,7 +1129,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || estado?.estado === 'RETIRO_VACIO' ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
       }));
   });
   // Mantiene juntas las citas atendidas por la misma unidad. Esto permite
@@ -1263,7 +1264,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
       movimientos.forEach((movimiento) => {
         if (movimiento.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
-        if (tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
+        if (!movimiento.retiroVacio && tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
       });
       if (estado === 'VINCULO_PENDIENTE') row.revisar += 1;
       if (estado === 'PESO_OBSERVADO') row.revisar += 1;
@@ -1279,7 +1280,7 @@ function crearDetalleFlujo(grupos: GrupoFlujo[], reportDate: string | null, segu
       if (cita.fechaGarita && (!reportDate || fechaLima(cita.fechaGarita) === reportDate)) row.garita += 1;
       movimientosConfirmados(group).forEach((movimiento) => {
         if (movimiento.fechaGarita && (!reportDate || fechaLima(movimiento.fechaGarita) === reportDate)) row.ingreso += 1;
-        if (tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
+        if (!movimiento.retiroVacio && tieneSegundoPesajeValido(movimiento) && (!reportDate || fechaLima(movimiento.fechaSalidaBalanza!) === reportDate)) row.despacho += 1;
       });
     }));
   }
@@ -1324,7 +1325,7 @@ function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
   // movimientos de la misma UT. Nunca se compara un viaje completo contra
   // el peso de un solo volante.
   if (group.retiroConjunto) return group.retiroConjunto.porcentajePeso;
-  const movimientos = movimientosConfirmados(group);
+  const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
   if (!movimientos.length || movimientos.some((movimiento) => !tieneSegundoPesajeValido(movimiento))) return null;
   const netos = movimientos.map(pesoNetoMovimiento);
   if (netos.some((neto) => neto == null)) return null;
@@ -1384,19 +1385,17 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       const primerPesaje = movimientoPrincipal?.fechaGarita && fechaLima(movimientoPrincipal.fechaGarita) === reportDate ? movimientoPrincipal.fechaGarita : null;
       const todosConSalida = movimientos.length > 0 && movimientos.every((movimiento) => tieneSegundoPesajeValido(movimiento) && fechaLima(movimiento.fechaSalidaBalanza!) === reportDate);
       const segundoPesaje = todosConSalida ? movimientos.at(-1)?.fechaSalidaBalanza ?? null : null;
-      const retiroVacio = movimientos.some((movimiento) => movimiento.retiroVacio);
+      const retiroVacio = grupo.movimientos.find((movimiento) => movimiento.retiroVacio);
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
       let minutosRetraso = 0;
       let porcentajePeso: number | null | undefined;
 
-      if (!movimientos.length && hayMovimientoHoy) {
-        estado = 'VINCULO_PENDIENTE';
-      } else if (retiroVacio) {
-        // Balanza Libre deja evidencia explícita de que la unidad salió sin
-        // carga. No es una demora de garita ni un despacho completado.
+      if (retiroVacio) {
         estado = 'RETIRO_VACIO';
-        fechaReferencia = movimientos.find((movimiento) => movimiento.retiroVacio)?.fechaSalidaBalanza ?? cita.fechaCita!;
+        fechaReferencia = retiroVacio.fechaSalidaBalanza ?? retiroVacio.fechaGarita ?? cita.fechaCita!;
+      } else if (!movimientos.length && hayMovimientoHoy) {
+        estado = 'VINCULO_PENDIENTE';
       // Un pesaje físico es evidencia operativa posterior a garita. Aunque Falcon
       // no haya guardado el registro, no se debe clasificar la cita como vencida.
       // Con solo primer pesaje queda en seguimiento de atención; con ambos
