@@ -567,7 +567,12 @@ function movimientosConfirmados(group: GrupoFlujo) {
   return citasActivas.length === 1 || esAtencionMultiple(group) ? group.movimientos : [];
 }
 
-/** Asigna cada pesaje a la cita vigente al ocurrir el movimiento, no a una reprogramación posterior. */
+/**
+ * Asigna el pesaje a su cita real. Si Falcon registró garita para más de una
+ * cita del mismo volante, la coincidencia temporal de garita tiene prioridad
+ * sobre la hora programada: una unidad puede presentarse antes de su cita
+ * reprogramada.
+ */
 function movimientosDeCita(group: GrupoFlujo, cita: Operacion) {
   const citas = group.citas
     .filter((item) => Boolean(item.fechaCita))
@@ -581,6 +586,15 @@ function movimientosDeCita(group: GrupoFlujo, cita: Operacion) {
     const fecha = movimiento.fechaGarita ?? movimiento.fechaSalidaBalanza;
     if (!fecha) return false;
     const instante = new Date(fecha).getTime();
+    const citasConGarita = citas.filter((item) => item.fechaGarita);
+    const coincidenciaGarita = citasConGarita
+      .map((item) => ({ item, diferencia: Math.abs(instante - new Date(item.fechaGarita!).getTime()) }))
+      .sort((a, b) => a.diferencia - b.diferencia)[0];
+    // El registro Falcon y el primer pesaje pertenecen a la misma visita.
+    // Se permite hasta seis horas para cubrir una espera operativa extensa.
+    if (coincidenciaGarita && coincidenciaGarita.diferencia <= 6 * 60 * 60_000) {
+      return coincidenciaGarita.item.id === cita.id;
+    }
     return (indice === 0 && instante < inicio) || (instante >= inicio && (siguiente === null || instante < siguiente));
   });
 }
