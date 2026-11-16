@@ -54,7 +54,7 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   workbook.creator = 'ALFOSAC';
   workbook.created = new Date();
   const sheet = workbook.addWorksheet('Seguimiento', { views: [{ state: 'frozen', ySplit: 4 }] });
-  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. atención', 'Estado actual', 'Observación'];
+  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. operativo', 'Estado actual', 'Observación'];
 
   sheet.mergeCells('A1:K1');
   const title = sheet.getCell('A1');
