@@ -1387,6 +1387,26 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
 
       if (!movimientos.length && hayMovimientoHoy) {
         estado = 'VINCULO_PENDIENTE';
+      // Un pesaje físico es evidencia operativa posterior a garita. Aunque Falcon
+      // no haya guardado el registro, no se debe clasificar la cita como vencida.
+      // Con solo primer pesaje queda en seguimiento de atención; con ambos
+      // pesajes se muestra como completada (salvo una observación de peso real).
+      } else if (primerPesaje && !segundoPesaje) {
+        fechaReferencia = primerPesaje;
+        minutosRetraso = minutosEntre(now, primerPesaje);
+        estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
+          : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
+      /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
+      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso
+        // Si un retiro conjunto realmente supera la tolerancia, la alerta se
+        // publica una sola vez en el primer volante; los demás quedan como
+        // completados para no duplicar ni confundir a ATC.
+        && (!grupo.retiroConjunto || grupo.retiroConjunto.volantes[0] === grupo.volante)) {
+        fechaReferencia = segundoPesaje;
+        minutosRetraso = minutosEntre(now, segundoPesaje);
+        estado = 'PESO_OBSERVADO';
+      } else if (primerPesaje && segundoPesaje) {
+        estado = 'PROGRAMADA';
       } else if (!cita.fechaGarita) {
         const inicioPorVencer = new Date(new Date(cita.fechaCita!).getTime() + minutosCitaPorVencer * 60_000).toISOString();
         const vencimiento = new Date(new Date(cita.fechaCita!).getTime() + minutosToleranciaCita * 60_000).toISOString();
@@ -1406,20 +1426,6 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         const limiteRojo = citaVencida(cita) ? minutosRojoEsperaVencida : minutosRojoEsperaVigente;
         estado = minutosRetraso > limiteRojo ? 'GARITA_SIN_INGRESO'
           : minutosRetraso > limiteNaranja ? 'EN_GARITA' : 'PROGRAMADA';
-      } else if (primerPesaje && !segundoPesaje) {
-        fechaReferencia = primerPesaje;
-        minutosRetraso = minutosEntre(now, primerPesaje);
-        estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
-          : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
-      /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
-      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso
-        // Si un retiro conjunto realmente supera la tolerancia, la alerta se
-        // publica una sola vez en el primer volante; los demás quedan como
-        // completados para no duplicar ni confundir a ATC.
-        && (!grupo.retiroConjunto || grupo.retiroConjunto.volantes[0] === grupo.volante)) {
-        fechaReferencia = segundoPesaje;
-        minutosRetraso = minutosEntre(now, segundoPesaje);
-        estado = 'PESO_OBSERVADO';
       } else estado = 'PROGRAMADA';
 
       if (modalidadesEnIncidencia.has(cita.modalidad) && esProximo(estado)) estado = 'INCIDENCIA_OPERATIVA';
