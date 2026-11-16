@@ -613,9 +613,11 @@ function faceLabel(state: VisualState) {
 function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento: SeguimientoLlegada | undefined) {
   if (cita.estado === 'ANULADA') return 'Anulada';
   if (seguimiento?.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
+  const movimientos = movimientosDeCita(group, cita).filter((movimiento) => !movimiento.retiroVacio);
+  const pendienteBalanza = movimientos.find((movimiento) => alertaPrimerPesajePendiente(movimiento) !== null);
+  if (pendienteBalanza) return `Primer pesaje GITS sin salida por balanza · ${formatDuration(duracionAtencionVisible(pendienteBalanza)!)}`;
   if (seguimiento && (esCritico(seguimiento.estado) || esProximo(seguimiento.estado))) return etiquetaSeguimiento(seguimiento);
-  const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
-  if (esAtencionMultiple(group)) return `Atención múltiple · ${movimientos.length} unidades`;
+  if (movimientos.length > 1) return `Atención múltiple · ${movimientos.length} unidades`;
   const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
   if (movimiento && tieneSegundoPesajeValido(movimiento)) return 'Completado';
   if (movimiento?.fechaGarita) return 'En balanza';
@@ -1140,18 +1142,18 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
         const tonoTiempo = durationTone(atencion, 'ATENCION');
         const retiroVacio = estado?.estado === 'RETIRO_VACIO';
-        const sinSalida = Boolean(movimiento && !movimiento.retiroVacio && !tieneSegundoPesajeValido(movimiento));
+        const alertaBalanza = alertaPrimerPesajePendiente(movimiento);
+        const sinSalida = alertaBalanza !== null;
         const etiqueta = anulada ? 'Anulada'
           : retiroVacio ? 'Retiro vacío / no atendida'
+          : sinSalida && (alertaBalanza === 'alert' || alertaBalanza === 'warning') ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
-          : sinSalida && tonoTiempo === 'alert' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
-          : sinSalida && tonoTiempo === 'warning' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : estado?.estado === 'EN_ATENCION' ? 'En almacén / atención en curso'
           : movimiento && tieneSegundoPesajeValido(movimiento) ? 'Completado'
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: movimientos.length > 1 ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: movimientos.length > 1 ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : alertaBalanza === 'alert' ? 'alert' : alertaBalanza === 'warning' ? 'warning' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
         });
       });
   });
@@ -1388,6 +1390,12 @@ function duracionAtencionVisible(movimiento: MovimientoFisico) {
   const hoy = fechaLima(new Date().toISOString());
   if (fechaLima(movimiento.fechaGarita) !== hoy) return null;
   return durationSeconds(movimiento.fechaGarita, new Date().toISOString());
+}
+
+/** Una salida con peso final cero o a la misma hora del ingreso no cierra el pesaje. */
+function alertaPrimerPesajePendiente(movimiento: MovimientoFisico | undefined) {
+  if (!movimiento || movimiento.retiroVacio || tieneSegundoPesajeValido(movimiento)) return null;
+  return durationTone(duracionAtencionVisible(movimiento), 'ATENCION');
 }
 
 /**
