@@ -12,6 +12,7 @@ export interface FilaReporteOperativo {
   placa: string;
   estado: Operacion['estado'];
   clasificacion: 'ATENDIDA' | 'NO_ATENDIDA' | 'PENDIENTE_ANULACION' | 'ANULADA' | 'PESAJE_LIBRE' | 'POR_CONFIRMAR';
+  observacion: string;
 }
 
 export interface ReporteOperativo {
@@ -92,6 +93,19 @@ function promedio(values: number[]) {
   return values.length ? Math.round(values.reduce((total, value) => total + value, 0) / values.length) : null;
 }
 
+/** No transfiere un pesaje libre a una cita posterior reprogramada del mismo volante. */
+function movimientoPerteneceACita(movimiento: GitsDailyFlowItem, cita: Operacion, citasVolante: Operacion[]) {
+  const fechaMovimiento = movimiento.fechaGarita ?? movimiento.fechaSalidaBalanza;
+  if (!fechaMovimiento || !cita.fechaCita) return false;
+  const citas = citasVolante.filter((item) => Boolean(item.fechaCita)).sort((a, b) => (a.fechaCita ?? '').localeCompare(b.fechaCita ?? ''));
+  const indice = citas.findIndex((item) => item.id === cita.id);
+  if (indice < 0) return false;
+  const instante = new Date(fechaMovimiento).getTime();
+  const inicio = new Date(cita.fechaCita).getTime();
+  const siguiente = citas[indice + 1]?.fechaCita ? new Date(citas[indice + 1].fechaCita!).getTime() : null;
+  return (indice === 0 && instante < inicio) || (instante >= inicio && (siguiente === null || instante < siguiente));
+}
+
 /** Reporte de negocio: no interpreta un pesaje como atención de una cita. */
 export function crearReporteOperativo(
   operaciones: Operacion[],
@@ -117,17 +131,29 @@ export function crearReporteOperativo(
     const placa = movimiento.placa?.trim();
     if (volante && placa && placa !== '-') placaPorVolante.set(volante, placa);
   }
-  const filas = candidatas.map((item) => ({
+  const citasPorVolante = new Map<string, Operacion[]>();
+  for (const cita of operaciones) {
+    const volante = volanteNormalizado(cita.volante);
+    if (volante) citasPorVolante.set(volante, [...(citasPorVolante.get(volante) ?? []), cita]);
+  }
+  const filas = candidatas.map((item) => {
+    const volante = volanteNormalizado(item.volante);
+    const pesajeLibre = (movimientosGits ?? []).some((movimiento) => movimiento.retiroVacio
+      && volanteNormalizado(movimiento.volante) === volante
+      && movimientoPerteneceACita(movimiento, item, citasPorVolante.get(volante) ?? []));
+    return {
     fecha: fechaLima(item.fechaCita ?? item.fechaGarita ?? item.fechaIngresoDespacho ?? item.fechaCompletado),
     horaCita: horaLima(item.fechaCita),
     modalidad: item.modalidad,
     volante: item.volante,
-    placa: placaPorVolante.get(volanteNormalizado(item.volante)) ?? item.unidad ?? '-',
+    placa: placaPorVolante.get(volante) ?? item.unidad ?? '-',
     estado: item.estado,
     // Las cargas históricas previas podían conservar EN_DESPACHO aun con salida registrada.
     // La salida/completado es la evidencia operativa definitiva para el cierre del reporte.
-    clasificacion: item.fechaCompletado ? 'ATENDIDA' : clasificar(item.estado)
-  })).sort((a, b) => `${a.fecha ?? ''}${a.horaCita ?? ''}${a.volante}`.localeCompare(`${b.fecha ?? ''}${b.horaCita ?? ''}${b.volante}`));
+    clasificacion: item.fechaCompletado ? 'ATENDIDA' : clasificar(item.estado),
+    observacion: pesajeLibre ? 'Pesaje libre: retiro vacío' : ''
+  };
+  }).sort((a, b) => `${a.fecha ?? ''}${a.horaCita ?? ''}${a.volante}`.localeCompare(`${b.fecha ?? ''}${b.horaCita ?? ''}${b.volante}`));
 
   const contar = (clasificacion: FilaReporteOperativo['clasificacion']) => filas.filter((item) => item.clasificacion === clasificacion).length;
   const porVolante = new Map<string, Operacion[]>();
@@ -190,8 +216,8 @@ export function crearReporteOperativo(
 
 export function reporteACsv(report: ReporteOperativo) {
   const escape = (value: string | number | null) => `"${String(value ?? '').replaceAll('"', '""')}"`;
-  const headers = ['Fecha', 'Hora de cita', 'Modalidad', 'Volante', 'Placa', 'Estado origen', 'Clasificación'];
-  return [headers, ...report.filas.map((item) => [item.fecha, item.horaCita, item.modalidad, item.volante, item.placa, item.estado, item.clasificacion])]
+  const headers = ['Fecha', 'Hora de cita', 'Modalidad', 'Volante', 'Placa', 'Estado origen', 'Clasificación', 'Observación'];
+  return [headers, ...report.filas.map((item) => [item.fecha, item.horaCita, item.modalidad, item.volante, item.placa, item.estado, item.clasificacion, item.observacion])]
     .map((row) => row.map(escape).join(','))
     .join('\r\n');
 }

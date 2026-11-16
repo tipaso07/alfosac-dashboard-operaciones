@@ -44,7 +44,7 @@ type ReporteOperativo = {
   resumen: { programadas: number; atendidas: number; noAtendidas: number; pendientesAnulacion: number; anuladas: number; pesajesLibres: number; porConfirmar: number };
   estadisticas: { citasAgendadas: number; registroGarita: number; primerPesaje: number | null; salidaBalanza: number | null; esperaPromedioMinutos: number | null; atencionPromedioMinutos: number | null; gitsDisponible: boolean };
   cierre: { atendidas: number | null; anuladas: number | null; sinAtencion: number | null; pendienteAnulacion: number | null; disponible: boolean };
-  filas: Array<{ fecha: string | null; horaCita: string | null; modalidad: Modalidad; volante: string; placa: string; estado: Estado; clasificacion: string }>;
+  filas: Array<{ fecha: string | null; horaCita: string | null; modalidad: Modalidad; volante: string; placa: string; estado: Estado; clasificacion: string; observacion: string }>;
   nota: string;
 };
 type DisponibilidadHistorica = {
@@ -347,8 +347,8 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   }), { criticas: 0, proximas: 0, pesoObservado: 0 });
   const descargarVistaIndividual = async () => {
     const filas = citasOrdenadas.map(({ group, cita }) => {
-      const movimientos = movimientosConfirmados(group);
-      const multiple = esAtencionMultiple(group);
+      const movimientos = movimientosDeCita(group, cita);
+      const multiple = movimientos.length > 1;
       const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
       const seguimientoCita = seguimientoPorCita.get(cita.id);
       const placa = multiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
@@ -374,7 +374,10 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       ].filter((texto): texto is string => Boolean(texto)) : [];
       // Falcon conserva ambas casuísticas dentro de la misma tabla de
       // anulaciones y no entrega un indicador fiable para separarlas.
-      const observacion = anulada ? 'No atendida / no se presentó a su cita' : observaciones.join(' | ');
+      const marcaPesajeLibre = movimientos.some((item) => item.retiroVacio) ? 'Pesaje libre: retiro vacío' : null;
+      const observacion = anulada
+        ? [marcaPesajeLibre, 'No atendida / no se presentó a su cita'].filter((texto): texto is string => Boolean(texto)).join(' | ')
+        : [marcaPesajeLibre, ...observaciones].filter((texto): texto is string => Boolean(texto)).join(' | ');
       return {
         fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
         volante: group.volante, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera,
@@ -482,8 +485,8 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             </thead>
             <tbody>
               {citasOrdenadas.length ? citasOrdenadas.map(({ group, cita }) => {
-                const movimientos = movimientosConfirmados(group);
-                const esMultiple = esAtencionMultiple(group);
+                const movimientos = movimientosDeCita(group, cita);
+                const esMultiple = movimientos.length > 1;
                 const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
                 const placa = esMultiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
                 const seguimientoCita = seguimientoPorCita.get(cita.id);
@@ -562,6 +565,24 @@ function esAtencionMultiple(group: GrupoFlujo) {
 function movimientosConfirmados(group: GrupoFlujo) {
   const citasActivas = group.citas.filter((cita) => cita.estado !== 'ANULADA');
   return citasActivas.length === 1 || esAtencionMultiple(group) ? group.movimientos : [];
+}
+
+/** Asigna cada pesaje a la cita vigente al ocurrir el movimiento, no a una reprogramación posterior. */
+function movimientosDeCita(group: GrupoFlujo, cita: Operacion) {
+  const citas = group.citas
+    .filter((item) => Boolean(item.fechaCita))
+    .sort((a, b) => (a.fechaCita ?? '').localeCompare(b.fechaCita ?? ''));
+  if (citas.length <= 1) return movimientosConfirmados(group);
+  const indice = citas.findIndex((item) => item.id === cita.id);
+  if (indice < 0 || !cita.fechaCita) return [];
+  const inicio = new Date(cita.fechaCita).getTime();
+  const siguiente = citas[indice + 1]?.fechaCita ? new Date(citas[indice + 1].fechaCita!).getTime() : null;
+  return group.movimientos.filter((movimiento) => {
+    const fecha = movimiento.fechaGarita ?? movimiento.fechaSalidaBalanza;
+    if (!fecha) return false;
+    const instante = new Date(fecha).getTime();
+    return (indice === 0 && instante < inicio) || (instante >= inicio && (siguiente === null || instante < siguiente));
+  });
 }
 
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
@@ -1103,14 +1124,15 @@ function alertDetail(item: SeguimientoLlegada) {
 function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate, onClose }: { hora: string; modalidad: Modalidad | null; grupos: GrupoFlujo[]; seguimiento: SeguimientoLlegada[]; reportDate: string | null; onClose: () => void }) {
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
   const filasBase = grupos.flatMap((group) => {
-    const movimientos = movimientosConfirmados(group);
     return group.citas
       .filter((cita) => cita.fechaCita
         && (!reportDate || fechaLima(cita.fechaCita) === reportDate)
         && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
       // La anulada conserva solo una referencia de placa. No debe repetir los
       // movimientos ni heredar sus tiempos de atención.
-      .flatMap((cita) => (cita.estado === 'ANULADA' ? [movimientos[0]] : movimientos.length ? movimientos : [undefined]).map((movimiento) => {
+      .flatMap((cita) => {
+        const movimientos = movimientosDeCita(group, cita);
+        return (cita.estado === 'ANULADA' ? [movimientos[0]] : movimientos.length ? movimientos : [undefined]).map((movimiento) => {
         const estado = seguimientoPorCita.get(cita.id);
         const anulada = cita.estado === 'ANULADA';
         const esRojo = Boolean(!anulada && estado && esCritico(estado.estado));
@@ -1129,8 +1151,9 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
-      }));
+        return { cita, movimiento, etiqueta: movimientos.length > 1 ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        });
+      });
   });
   // Mantiene juntas las citas atendidas por la misma unidad. Esto permite
   // reconocer visualmente un retiro conjunto sin duplicar los movimientos.
@@ -1379,13 +1402,13 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
   return grupos.flatMap((grupo) => grupo.citas
     .filter((cita) => cita.estado !== 'ANULADA' && cita.modalidad !== 'AEREO' && cita.fechaCita && fechaLima(cita.fechaCita) === reportDate)
     .map((cita) => {
-      const movimientos = movimientosConfirmados(grupo);
+      const movimientos = movimientosDeCita(grupo, cita);
       const movimientoPrincipal = movimientos[0];
-      const hayMovimientoHoy = grupo.movimientos.some((movimiento) => movimiento.fechaGarita && fechaLima(movimiento.fechaGarita) === reportDate);
+      const hayMovimientoHoy = movimientos.some((movimiento) => movimiento.fechaGarita && fechaLima(movimiento.fechaGarita) === reportDate);
       const primerPesaje = movimientoPrincipal?.fechaGarita && fechaLima(movimientoPrincipal.fechaGarita) === reportDate ? movimientoPrincipal.fechaGarita : null;
       const todosConSalida = movimientos.length > 0 && movimientos.every((movimiento) => tieneSegundoPesajeValido(movimiento) && fechaLima(movimiento.fechaSalidaBalanza!) === reportDate);
       const segundoPesaje = todosConSalida ? movimientos.at(-1)?.fechaSalidaBalanza ?? null : null;
-      const retiroVacio = grupo.movimientos.find((movimiento) => movimiento.retiroVacio);
+      const retiroVacio = movimientos.find((movimiento) => movimiento.retiroVacio);
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
       let minutosRetraso = 0;

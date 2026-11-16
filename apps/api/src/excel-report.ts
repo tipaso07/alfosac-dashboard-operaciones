@@ -117,7 +117,7 @@ export async function reporteAExcel(report: ReporteOperativo) {
   workbook.created = new Date();
   const sheet = workbook.addWorksheet('Reporte operativo', { views: [{ state: 'frozen', ySplit: 4 }] });
 
-  sheet.mergeCells('A1:G1');
+  sheet.mergeCells('A1:H1');
   const title = sheet.getCell('A1');
   title.value = 'Cierre operativo FCL y LCL';
   title.font = { name: 'Poppins', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -125,14 +125,14 @@ export async function reporteAExcel(report: ReporteOperativo) {
   title.alignment = { vertical: 'middle' };
   sheet.getRow(1).height = 28;
 
-  sheet.mergeCells('A2:G2');
+  sheet.mergeCells('A2:H2');
   const period = sheet.getCell('A2');
   const labelFecha = report.hasta ? `${report.fecha} al ${report.hasta}` : report.fecha;
   period.value = `Período: ${report.periodo.toLowerCase()} · ${labelFecha} · Modalidad: ${report.modalidad}`;
   period.font = { name: 'Poppins', size: 10, color: { argb: '3C566D' } };
   period.alignment = { vertical: 'middle' };
 
-  const headers = ['Fecha', 'Hora de cita', 'Modalidad', 'Volante', 'Placa', 'Estado origen', 'Clasificación'];
+  const headers = ['Fecha', 'Hora de cita', 'Modalidad', 'Volante', 'Placa', 'Estado origen', 'Clasificación', 'Observación'];
   const header = sheet.getRow(4);
   header.values = headers;
   header.height = 23;
@@ -146,7 +146,7 @@ export async function reporteAExcel(report: ReporteOperativo) {
   for (const fila of report.filas) {
     const row = sheet.addRow([
       fila.fecha ?? '—', fila.horaCita ?? '—', fila.modalidad, fila.volante,
-      fila.placa === '-' ? '—' : fila.placa, fila.estado.replaceAll('_', ' '), fila.clasificacion.replaceAll('_', ' ')
+      fila.placa === '-' ? '—' : fila.placa, fila.estado.replaceAll('_', ' '), fila.clasificacion.replaceAll('_', ' '), fila.observacion
     ]);
     row.eachCell((cell) => {
       cell.font = { name: 'Poppins', size: 10, color: { argb: '17233D' } };
@@ -205,7 +205,7 @@ export async function reporteAExcel(report: ReporteOperativo) {
   sheet.getColumn(8).width = 3;
   sheet.getColumn(9).width = 29;
   sheet.getColumn(10).width = 18;
-  sheet.autoFilter = { from: 'A4', to: `G${Math.max(4, report.filas.length + 4)}` };
+  sheet.autoFilter = { from: 'A4', to: `H${Math.max(4, report.filas.length + 4)}` };
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 
   return Buffer.from(await workbook.xlsx.writeBuffer());
