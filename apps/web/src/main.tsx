@@ -586,11 +586,13 @@ function movimientosDeCita(group: GrupoFlujo, cita: Operacion) {
     const fecha = movimiento.fechaGarita ?? movimiento.fechaSalidaBalanza;
     if (!fecha) return false;
     const instante = new Date(fecha).getTime();
-    const citasConGarita = citas.filter((item) => item.fechaGarita);
+    const citasConGarita = citas.filter((item) => item.fechaGarita && new Date(item.fechaGarita).getTime() <= instante);
     const coincidenciaGarita = citasConGarita
       .map((item) => ({ item, diferencia: Math.abs(instante - new Date(item.fechaGarita!).getTime()) }))
       .sort((a, b) => a.diferencia - b.diferencia)[0];
     // El registro Falcon y el primer pesaje pertenecen a la misma visita.
+    // La garita siempre debe ser anterior al pesaje: así un retiro vacío de
+    // una cita anulada no se transfiere a una reprogramación posterior.
     // Se permite hasta seis horas para cubrir una espera operativa extensa.
     if (coincidenciaGarita && coincidenciaGarita.diferencia <= 6 * 60 * 60_000) {
       return coincidenciaGarita.item.id === cita.id;
