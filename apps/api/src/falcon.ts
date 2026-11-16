@@ -168,6 +168,7 @@ export interface FalconMaritimeOperation {
   fechaIngresoDespacho: string | null;
   fechaCompletado?: string | null;
   pesoDeclarado?: number | null;
+  telefonoContacto?: string | null;
 }
 
 /** Cita anulada en Falcon. Se conserva solo como referencia visual del día. */
@@ -1095,9 +1096,17 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
     if (date) citasRequest.input('reportDate', sql.Date, date);
     if (until) citasRequest.input('untilDate', sql.Date, until);
     const citasResult = await citasRequest.query<SourceRow>(`
-      SELECT TOP (@limit) c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante, c.des_placa, c.des_contenedor,
+      SELECT TOP (@limit) c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante,
+        COALESCE(NULLIF(LTRIM(RTRIM(garita.des_placa)), ''), NULLIF(LTRIM(RTRIM(c.des_placa)), '')) AS placa,
+        c.des_contenedor, c.celular_transportista AS telefono_contacto,
         c.fecha_atencion, c.des_peso_recibido AS peso_recibido
       FROM dbo.citas_programadas c
+      OUTER APPLY (
+        SELECT TOP (1) g.des_placa
+        FROM dbo.transportistas_citas g
+        WHERE g.id_cita = c.id
+        ORDER BY g.fecha_registro DESC, g.id DESC
+      ) garita
       WHERE c.cod_negocio IN (3, 4, 5)
         AND c.fecha >= ${dayStart}
         AND c.fecha < ${dayEnd}
@@ -1117,7 +1126,7 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
       operations.set(id, {
         id, modalidad,
         volante: text(value(row, ['cod_volante'])) ?? previous?.volante ?? id,
-        unidad: text(value(row, ['des_placa'])) ?? previous?.unidad ?? '-',
+        unidad: text(value(row, ['placa'])) ?? previous?.unidad ?? '-',
         contenedor: text(value(row, ['des_contenedor'])) ?? previous?.contenedor ?? null,
         fechaCita: fechaConHora(value(row, ['fecha']), value(row, ['hora'])) ?? previous?.fechaCita ?? null,
         // Confirmado por Operaciones: fecha_atencion es el registro/atención
@@ -1127,7 +1136,8 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
         fechaIngresoDespacho: null,
         // Para contrastar con el neto de balanza se usa el peso recibido por
         // Falcon. El peso manifestado de GITS queda solo como referencia.
-        pesoDeclarado: peso(value(row, ['peso_recibido'])) ?? previous?.pesoDeclarado ?? null
+        pesoDeclarado: peso(value(row, ['peso_recibido'])) ?? previous?.pesoDeclarado ?? null,
+        telefonoContacto: text(value(row, ['telefono_contacto'])) ?? previous?.telefonoContacto ?? null
       });
     };
     citasResult.recordset.forEach(save);

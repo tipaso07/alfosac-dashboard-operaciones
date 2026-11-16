@@ -25,6 +25,8 @@ export interface Operacion {
   fechaCompletado: string | null;
   /** Peso declarado de un retiro aéreo; se conserva para validar viajes mixtos. */
   pesoDeclarado?: number | null;
+  /** Teléfono del transportista registrado por Falcon para contacto operativo. */
+  telefonoContacto?: string | null;
   fuente: 'DEMO' | 'FALCON' | 'GITS';
 }
 
