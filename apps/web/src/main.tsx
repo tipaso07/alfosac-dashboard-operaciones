@@ -30,12 +30,12 @@ type Resumen = {
   noCompletadas: number;
 };
 
-type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null };
+type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null; observacion?: string | null; retiroVacio?: boolean };
 type AereoAsociado = { volante: string; placa: string; fechaGarita: string; primerPesaje: string | null; segundoPesaje: string | null; pesoDeclarado: number | null; diferenciaMinutos: number };
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO'; aereosAsociados?: AereoAsociado[]; retiroConjunto?: { placa: string; volantes: string[]; pesoDeclarado: number | null; pesoNetoBalanza: number | null; porcentajePeso: number | null } | null };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
-type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_ATENCION' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'INCIDENCIA_OPERATIVA';
+type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_ATENCION' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'RETIRO_VACIO' | 'INCIDENCIA_OPERATIVA';
 type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null };
 type DiagnosticoAlerta = { key: string; tone: 'warning' | 'alert'; level: string; title: string; cita: Operacion; fechaReferencia: string; duracion?: string; porcentajePeso?: number | null; contact?: boolean };
 type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
@@ -542,7 +542,7 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
     // abajo con los tiempos históricos para no mostrarla como desconocida.
     if (estados.some((item) => item.estado !== 'PROGRAMADA') || amarillosActivos > 0) return 'ok';
   }
-  const movimientos = movimientosConfirmados(group);
+  const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
   const tonosEspera = group.citas.flatMap((cita) => movimientos.map((movimiento) => durationTone(durationSeconds(cita.fechaGarita, movimiento.fechaGarita), 'ESPERA', cita)));
   const tonosAtencion = movimientos.map((movimiento) => durationTone(duracionAtencionVisible(movimiento), 'ATENCION'));
   if (tonosEspera.includes('alert') || tonosAtencion.includes('alert')) return 'alert';
@@ -567,6 +567,7 @@ function movimientosConfirmados(group: GrupoFlujo) {
 function citaVisualState(cita: Operacion, movimiento: MovimientoFisico | undefined, seguimiento: SeguimientoLlegada | undefined): VisualState {
   if (cita.estado === 'ANULADA') return 'unknown';
   if (seguimiento) {
+    if (seguimiento.estado === 'RETIRO_VACIO') return 'unknown';
     if (esCritico(seguimiento.estado)) return 'alert';
     // Al finalizar un movimiento el seguimiento vuelve a PROGRAMADA. No se
     // debe perder el semáforo histórico: se evalúan abajo sus dos duraciones.
@@ -590,6 +591,7 @@ function faceLabel(state: VisualState) {
 /** Texto exportable de la última columna de la vista individual. */
 function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento: SeguimientoLlegada | undefined) {
   if (cita.estado === 'ANULADA') return 'Anulada';
+  if (seguimiento?.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
   if (seguimiento && (esCritico(seguimiento.estado) || esProximo(seguimiento.estado))) return etiquetaSeguimiento(seguimiento);
   const movimientos = movimientosConfirmados(group);
   if (esAtencionMultiple(group)) return `Atención múltiple · ${movimientos.length} unidades`;
@@ -1091,6 +1093,7 @@ function alertDetail(item: SeguimientoLlegada) {
     case 'BALANZA_SIN_SALIDA': return { tone: 'alert', level: 'CRÍTICA', title: 'Primer pesaje sin salida', contact: false, showElapsed: true };
     case 'EN_BALANZA': return { tone: 'warning', level: 'SEGUIMIENTO', title: 'Demora en balanza / despacho', contact: false, showElapsed: true };
     case 'PESO_OBSERVADO': return { tone: 'alert', level: 'CRÍTICA', title: 'Diferencia de peso por validar', contact: false, showElapsed: false };
+    case 'RETIRO_VACIO': return { tone: 'ok', level: 'SIN ALERTA', title: 'Retiro vacío / no atendida', contact: false, showElapsed: false };
     case 'VINCULO_PENDIENTE': return { tone: 'warning', level: 'REVISAR', title: 'Vínculo de datos pendiente', contact: false, showElapsed: false };
     case 'INCIDENCIA_OPERATIVA': return { tone: 'warning', level: 'REVISAR', title: 'Incidencia operativa activa', contact: false, showElapsed: false };
     default: return { tone: 'ok', level: 'OK', title: 'Operación controlada', contact: false, showElapsed: false };
@@ -1116,6 +1119,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const tonoTiempo = durationTone(atencion, 'ATENCION');
         const sinSalida = Boolean(movimiento && !tieneSegundoPesajeValido(movimiento));
         const etiqueta = anulada ? 'Anulada'
+          : estado?.estado === 'RETIRO_VACIO' ? 'Retiro vacío / no atendida'
           : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
           : sinSalida && tonoTiempo === 'alert' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : sinSalida && tonoTiempo === 'warning' ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
@@ -1124,7 +1128,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: esAtencionMultiple(group) ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || estado?.estado === 'RETIRO_VACIO' ? 'unknown' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
       }));
   });
   // Mantiene juntas las citas atendidas por la misma unidad. Esto permite
@@ -1380,6 +1384,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       const primerPesaje = movimientoPrincipal?.fechaGarita && fechaLima(movimientoPrincipal.fechaGarita) === reportDate ? movimientoPrincipal.fechaGarita : null;
       const todosConSalida = movimientos.length > 0 && movimientos.every((movimiento) => tieneSegundoPesajeValido(movimiento) && fechaLima(movimiento.fechaSalidaBalanza!) === reportDate);
       const segundoPesaje = todosConSalida ? movimientos.at(-1)?.fechaSalidaBalanza ?? null : null;
+      const retiroVacio = movimientos.some((movimiento) => movimiento.retiroVacio);
       let estado: EstadoSeguimiento;
       let fechaReferencia = cita.fechaCita!;
       let minutosRetraso = 0;
@@ -1387,6 +1392,11 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
 
       if (!movimientos.length && hayMovimientoHoy) {
         estado = 'VINCULO_PENDIENTE';
+      } else if (retiroVacio) {
+        // Balanza Libre deja evidencia explícita de que la unidad salió sin
+        // carga. No es una demora de garita ni un despacho completado.
+        estado = 'RETIRO_VACIO';
+        fechaReferencia = movimientos.find((movimiento) => movimiento.retiroVacio)?.fechaSalidaBalanza ?? cita.fechaCita!;
       // Un pesaje físico es evidencia operativa posterior a garita. Aunque Falcon
       // no haya guardado el registro, no se debe clasificar la cita como vencida.
       // Con solo primer pesaje queda en seguimiento de atención; con ambos
@@ -1455,6 +1465,7 @@ function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'GARITA_SIN_INGRESO') return `Demora para ingreso al DT · ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
   if (item.estado === 'EN_ATENCION') return 'En almacén / atención en curso';
+  if (item.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
   if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 5%`;
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
   return 'Programada';

@@ -141,6 +141,10 @@ export interface GitsDailyFlowItem {
   cantidadTarjas: number | null;
   /** Peso manifestado de la mercadería vinculada; se muestra solo como referencia. */
   pesoMercaderiaDeclarado: number | null;
+  /** Texto operativo registrado por balanza, usado solo para identificar retiros vacíos. */
+  observacion: string | null;
+  /** La salida se registró por Balanza Libre como "SALE VACÍO". */
+  retiroVacio: boolean;
 }
 
 export interface GitsCorrelationInput {
@@ -196,6 +200,16 @@ function numero(value: unknown) {
     return Number.isFinite(parsed) ? parsed : null;
   }
   return null;
+}
+
+/** Balanza Libre conserva el volante dentro de su observación, sin el puente documental habitual. */
+function volanteEnObservacion(observacion: string | null | undefined) {
+  const match = observacion?.match(/\bVOLANTE\s*:\s*0*(\d{1,15})\b/i);
+  return match?.[1] ?? null;
+}
+
+function esRetiroVacio(observacion: string | null | undefined) {
+  return /\bSALE\s+VAC[ÍI]O\b/i.test(observacion ?? '');
 }
 
 /**
@@ -1154,6 +1168,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         peso_neto_balanza: number | null;
         peso_mercaderia_declarado: number | null;
         cantidad_tarjas: number | null;
+        observacion: string | null;
       }>(`
         /* Un movimiento puede retirar más de un volante. Se conserva un
            registro por volante para que cada cita reciba sus hitos físicos. */
@@ -1226,6 +1241,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
           balanza.MOVBAL_N_SEGUNDO_PESO AS peso_final,
           balanza.MOVBAL_N_DIFERENCIA AS peso_neto_balanza,
           balanza.MOVBAL_N_CANTIDAD_TARJA AS cantidad_tarjas,
+          balanza.MOVBAL_C_OBSERVACION AS observacion,
           pesoDocumento.peso_mercaderia_declarado,
           almacen.fecha_ingreso_almacen,
           salida.fecha_salida_almacen
@@ -1257,22 +1273,29 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         ORDER BY balanza.MOVBAL_D_FECHA_INGRESO ASC;
       `);
 
-    return result.recordset.map((row) => ({
-      empresa: row.empresa,
-      movimiento: row.movimiento,
-      volante: row.volante,
-      placa: row.placa?.trim() || null,
-      contenedor: row.contenedor?.trim() || null,
-      fechaGarita: fechaGitsPeru(row.fecha_garita),
-      fechaSalidaBalanza: fechaGitsPeru(row.fecha_salida_balanza),
-      fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
-      fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
-      pesoInicial: numero(row.peso_inicial),
-      pesoFinal: numero(row.peso_final),
-      pesoNetoBalanza: numero(row.peso_neto_balanza),
-      cantidadTarjas: numero(row.cantidad_tarjas),
-      pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado)
-    }));
+    return result.recordset.map((row) => {
+      const observacion = row.observacion?.trim() || null;
+      return {
+        empresa: row.empresa,
+        movimiento: row.movimiento,
+        // Balanza Libre no enlaza documento, pero su observación sí identifica
+        // explícitamente el volante. No se infiere por placa.
+        volante: row.volante?.trim() || volanteEnObservacion(observacion),
+        placa: row.placa?.trim() || null,
+        contenedor: row.contenedor?.trim() || null,
+        fechaGarita: fechaGitsPeru(row.fecha_garita),
+        fechaSalidaBalanza: fechaGitsPeru(row.fecha_salida_balanza),
+        fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
+        fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
+        pesoInicial: numero(row.peso_inicial),
+        pesoFinal: numero(row.peso_final),
+        pesoNetoBalanza: numero(row.peso_neto_balanza),
+        cantidadTarjas: numero(row.cantidad_tarjas),
+        pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado),
+        observacion,
+        retiroVacio: esRetiroVacio(observacion)
+      };
+    });
   } finally {
     await pool.close();
   }
