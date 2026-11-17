@@ -1048,7 +1048,7 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
             <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} · Neto: {formatWeight(movement.pesoNetoBalanza)}</p>
             <p>Peso marítimo recibido (Falcon): {formatWeight(pesoRecibido)}</p>
             <p>Peso manifestado (GITS): {formatWeight(movement.pesoMercaderiaDeclarado)}</p>
-            {aereos.length > 0 && <p>Aéreo asociado: {formatWeight(pesoAereo)} · Total de ambas operaciones: {formatWeight(pesoNumerico(pesoRecibido) + pesoAereo)}</p>}
+            {aereos.length > 0 && <p>Aéreo asociado (operación independiente): {formatWeight(pesoAereo)}</p>}
           </div>
         </li>;
       })}</ol> : <p>Aún no hay registro físico en GITS.</p>}
@@ -1379,7 +1379,7 @@ function pesoNetoMovimiento(movimiento: MovimientoFisico) {
   return netoDirecto ?? (inicial != null && final != null ? Math.abs(final - inicial) : null);
 }
 
-/** En retiro múltiple se suman los netos de todas las unidades, pero el peso declarado del volante se toma una sola vez. */
+/** En retiro múltiple se suman los netos de todas las unidades, pero el peso marítimo recibido del volante se toma una sola vez. */
 function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
   // En un retiro conjunto la API ya suma todos los volantes y todos los
   // movimientos de la misma UT. Nunca se compara un viaje completo contra
@@ -1390,10 +1390,12 @@ function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
   const netos = movimientos.map(pesoNetoMovimiento);
   if (netos.some((neto) => neto == null)) return null;
   const neto = netos.reduce<number>((total, item) => total + (item ?? 0), 0);
+  // La alerta marítima solo contrasta su propio neto de balanza contra el
+  // peso marítimo recibido en Falcon. Los retiros aéreos son otra operación:
+  // no tienen movimiento GITS asociado y nunca deben alterar esta diferencia.
   const recibidoMaritimo = pesoRecibidoFalcon(group);
-  const declarado = recibidoMaritimo == null ? null : recibidoMaritimo + pesoAereoAsociado(group);
-  if (neto == null || declarado == null || declarado <= 0) return null;
-  return Math.abs(neto - declarado) / declarado;
+  if (neto == null || recibidoMaritimo == null || recibidoMaritimo <= 0) return null;
+  return Math.abs(neto - recibidoMaritimo) / recibidoMaritimo;
 }
 
 function pesoNumericoOpcional(value: unknown): number | null {
