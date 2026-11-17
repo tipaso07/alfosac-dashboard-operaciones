@@ -1040,7 +1040,17 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
         const citaRelacionada = citaSeleccionada ?? group.citas[0];
         const espera = durationSeconds(citaRelacionada?.fechaGarita ?? null, movement.fechaGarita);
         const tonoEspera = durationTone(espera, 'ESPERA', citaRelacionada);
-        return <li key={movement.movimiento} className="done"><span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span><strong>{movement.contenedor ?? movement.movimiento}</strong><small>{espera !== null && <>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b> · </>}Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} / neto {formatWeight(movement.pesoNetoBalanza)} · Peso recibido Falcon: {formatWeight(pesoRecibido)} · Manifestado GITS: {formatWeight(movement.pesoMercaderiaDeclarado)}{aereos.length > 0 && <> · Aéreo asociado: {formatWeight(pesoAereo)} · Total recibido: {formatWeight(pesoNumerico(pesoRecibido) + pesoAereo)}</>}</small></li>;
+        return <li key={movement.movimiento} className="done movement-timeline-item">
+          <span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span>
+          <strong>{movement.contenedor ?? movement.movimiento}</strong>
+          <div className="movement-metrics">
+            {espera !== null && <p>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b></p>}
+            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} · Neto: {formatWeight(movement.pesoNetoBalanza)}</p>
+            <p>Peso marítimo recibido (Falcon): {formatWeight(pesoRecibido)}</p>
+            <p>Peso manifestado (GITS): {formatWeight(movement.pesoMercaderiaDeclarado)}</p>
+            {aereos.length > 0 && <p>Aéreo asociado: {formatWeight(pesoAereo)} · Total de ambas operaciones: {formatWeight(pesoNumerico(pesoRecibido) + pesoAereo)}</p>}
+          </div>
+        </li>;
       })}</ol> : <p>Aún no hay registro físico en GITS.</p>}
     </section>
   </div>;
