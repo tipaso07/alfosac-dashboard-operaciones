@@ -1019,6 +1019,13 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
   const detalle = { ...group, movimientos: movimientosSeleccionados };
   const alertas = alertasDiagnosticoGrupo(detalle, seguimiento);
   const visual = groupVisualState(detalle, seguimiento);
+  const seguimientoCita = citaSeleccionada ? seguimiento.get(citaSeleccionada.id) : undefined;
+  const diagnosticoEspecial = citaSeleccionada?.estado === 'ANULADA'
+    ? { titulo: 'Cita anulada', etiqueta: 'ANULADA', texto: 'Esta cita fue anulada; no se evalúan alertas operativas.' }
+    : citaSeleccionada?.estado === 'NO_COMPLETADA' || seguimientoCita?.estado === 'RETIRO_VACIO'
+      ? { titulo: 'Cita no atendida', etiqueta: 'NO ATENDIDA', texto: 'La unidad no completó el retiro de carga.' }
+      : null;
+  const alertasVisibles = diagnosticoEspecial ? [] : alertas;
   const telefono = group.citas.map((cita) => cita.telefonoContacto).find(Boolean) ?? null;
   const aereos = group.aereosAsociados ?? [];
   const pesoAereo = pesoAereoAsociado(group);
@@ -1027,9 +1034,9 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
     <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
       <header className="modal-header"><div><p className="brand">VOLANTE</p><h2>{group.volante}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar detalle">×</button></header>
       <section className="alerts-section">
-        <div className="alerts-heading"><div><p className="brand">DIAGNÓSTICO</p><h3>{alertas.length ? 'Alertas detectadas' : 'Operación sin alertas activas'}</h3></div><span className={`alert-count alert-count-${visual}`}>{alertas.length || 'OK'}</span></div>
-        {alertas.length ? <div className="alert-cards">{alertas.map((alerta) => <DiagnosticAlertCard key={alerta.key} alerta={alerta} telefono={telefono} />)}</div>
-          : <p className="no-alerts">Los hitos disponibles se encuentran dentro de los tiempos de referencia.</p>}
+        <div className="alerts-heading"><div><p className="brand">DIAGNÓSTICO</p><h3>{diagnosticoEspecial?.titulo ?? (alertasVisibles.length ? 'Alertas detectadas' : 'Operación sin alertas activas')}</h3></div><span className={`alert-count alert-count-${diagnosticoEspecial ? 'unknown' : visual}`}>{diagnosticoEspecial?.etiqueta ?? (alertasVisibles.length || 'OK')}</span></div>
+        {alertasVisibles.length ? <div className="alert-cards">{alertasVisibles.map((alerta) => <DiagnosticAlertCard key={alerta.key} alerta={alerta} telefono={telefono} />)}</div>
+          : <p className="no-alerts">{diagnosticoEspecial?.texto ?? 'Los hitos disponibles se encuentran dentro de los tiempos de referencia.'}</p>}
       </section>
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
