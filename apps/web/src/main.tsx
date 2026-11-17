@@ -1028,7 +1028,6 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
   const alertasVisibles = diagnosticoEspecial ? [] : alertas;
   const telefono = group.citas.map((cita) => cita.telefonoContacto).find(Boolean) ?? null;
   const aereos = group.aereosAsociados ?? [];
-  const pesoAereo = pesoAereoAsociado(group);
   const pesoRecibido = pesoRecibidoFalcon(group);
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
     <section className="operation-modal" role="dialog" aria-modal="true" onMouseDown={(event) => event.stopPropagation()}>
@@ -1041,7 +1040,7 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
       <h3>Citas Falcon ({group.citas.length})</h3>
       {group.citas.length ? <ol className="timeline">{group.citas.map((cita) => <li key={cita.id} className="done"><span>{cita.modalidad} · cita {cita.fechaCita ? formatDateTime(cita.fechaCita) : 'sin fecha'}</span><strong>{cita.id}</strong></li>)}</ol> : <p>GITS registró este movimiento sin una cita Falcon vinculable.</p>}
       {esAtencionMultiple(detalle) && <p className="multiple-attention-note"><strong>Atención múltiple confirmada</strong> · {detalle.movimientos.length} unidades retiraron el mismo volante. Los tiempos se evalúan por placa y los pesos se consolidan.</p>}
-      {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso sin dato' : `${formatWeight(aereo.pesoDeclarado)} declarado`}</strong><small>Ingreso: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
+      {aereos.length > 0 && <><h3 className="flow-heading">Retiros aéreos asociados ({aereos.length})</h3><ol className="timeline">{aereos.map((aereo) => <li key={`${aereo.volante}-${aereo.fechaGarita}`} className="done"><span>Volante {aereo.volante} · placa {aereo.placa} · garita {formatDateTime(aereo.fechaGarita)} · diferencia {aereo.diferenciaMinutos.toFixed(1)} min</span><strong>{aereo.pesoDeclarado == null ? 'Peso aéreo sin dato' : `Peso aéreo recibido: ${formatWeight(aereo.pesoDeclarado)}`}</strong><small>Ingreso: {aereo.primerPesaje ? formatDateTime(aereo.primerPesaje) : 'Pendiente'} · Salida: {aereo.segundoPesaje ? formatDateTime(aereo.segundoPesaje) : 'Pendiente'}</small></li>)}</ol></>}
       <h3 className="flow-heading">Movimientos físicos GITS ({detalle.movimientos.length})</h3>
       {detalle.movimientos.length ? <ol className="timeline">{detalle.movimientos.map((movement) => {
         const citaRelacionada = citaSeleccionada ?? group.citas[0];
@@ -1052,9 +1051,9 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
           {movement.contenedor && <strong>{movement.contenedor}</strong>}
           <div className="movement-metrics">
             {espera !== null && <p>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b></p>}
-            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} · Neto: {formatWeight(movement.pesoNetoBalanza)}</p>
+            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)}</p>
+            <p>Peso neto: {formatWeight(movement.pesoNetoBalanza)}</p>
             <p>Peso marítimo recibido: {formatWeight(pesoRecibido)}</p>
-            {aereos.length > 0 && <p>Aéreo recibido: {formatWeight(pesoAereo)}</p>}
           </div>
         </li>;
       })}</ol> : <p>Aún no hay registro físico en GITS.</p>}
@@ -1363,12 +1362,6 @@ function esCritico(estado: EstadoSeguimiento) {
 
 function esProximo(estado: EstadoSeguimiento) {
   return ['CITA_POR_VENCER', 'EN_GARITA', 'EN_BALANZA'].includes(estado);
-}
-
-function pesoAereoAsociado(group: GrupoFlujo) {
-  // PostgreSQL entrega NUMERIC como texto en algunas respuestas JSON. Se
-  // normaliza aquí para que una suma de pesos nunca termine como "NaN".
-  return (group.aereosAsociados ?? []).reduce((total, aereo) => total + pesoNumerico(aereo.pesoDeclarado), 0);
 }
 
 /** El peso recibido en Falcon es la referencia operativa de la carga marítima. */
