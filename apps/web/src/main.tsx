@@ -17,7 +17,7 @@ type Operacion = {
   fechaCompletado: string | null;
   /** Peso recibido por Falcon cuando está disponible. */
   pesoDeclarado?: number | null;
-  /** Falcon aún no entrega este dato; se reserva para el contacto operativo futuro. */
+  /** Teléfono del transportista registrado en Falcon para contacto operativo. */
   telefonoContacto?: string | null;
 };
 
@@ -1054,7 +1054,7 @@ function DiagnosticAlertCard({ alerta, telefono }: { alerta: DiagnosticoAlerta; 
       {alerta.duracion && <div><dt>Tiempo</dt><dd>{alerta.duracion}</dd></div>}
       {alerta.porcentajePeso != null && <div><dt>Diferencia</dt><dd>{(alerta.porcentajePeso * 100).toFixed(1)}%</dd></div>}
     </dl>
-    {alerta.contact && <div className="alert-contact"><strong>Contacto</strong><span>{telefono ? telefono : 'Pendiente de registro en Falcon'}</span>{!telefono && <small>Cuando Falcon incorpore el teléfono, se mostrará aquí para que ATC contacte al responsable.</small>}</div>}
+    {alerta.contact && <div className="alert-contact"><strong>Contacto</strong><span>{telefono ? telefono : 'Sin teléfono registrado en Falcon'}</span></div>}
     <small className="alert-citation">Cita {alerta.cita.fechaCita ? formatDateTime(alerta.cita.fechaCita) : 'sin fecha'} · {alerta.cita.modalidad}</small>
   </article>;
 }
