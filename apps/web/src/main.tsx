@@ -492,12 +492,14 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                 const seguimientoCita = seguimientoPorCita.get(cita.id);
                 const visual = esMultiple ? groupVisualState(group, seguimientoPorCita) : citaVisualState(cita, movimiento, seguimientoCita);
                 const anulada = cita.estado === 'ANULADA';
+                const retiroVacio = movimientos.some((item) => item.retiroVacio) || seguimientoCita?.estado === 'RETIRO_VACIO';
+                const ocultarHitos = anulada || retiroVacio;
                 return <tr className={anulada ? 'cancelled-row' : ''} key={`${group.volante}-${cita.id}`}>
                   <td>{cita.fechaCita ? formatDateShort(cita.fechaCita) : '—'}</td>
                   <td className={tonoHoraCita(seguimientoCita) ? `appointment-hour-${tonoHoraCita(seguimientoCita)}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td>
                   <td><strong>{group.volante}</strong></td>
                   <td>{placa}</td>
-                  {anulada ? (
+                  {ocultarHitos ? (
                     <><td></td><td></td><td></td><td></td><td></td></>
                   ) : (
                     <>
@@ -511,7 +513,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                   )}
                   <td>{anulada
                     ? <span className="health-face cancelled-face" title="Cita anulada" aria-label="Cita anulada"><CancelledFace /></span>
-                    : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver detalle de la operación" aria-label={`Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
+                    : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver detalle de la operación" aria-label={retiroVacio ? 'Ver detalle: retiro vacío / no atendida' : `Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
                 </tr>;
               }) : <tr><td colSpan={10} className="empty">No hay operaciones para estos filtros.</td></tr>}
