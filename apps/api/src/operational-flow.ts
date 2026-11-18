@@ -59,6 +59,30 @@ function pesoNeto(movimiento: GitsDailyFlowItem) {
   return null;
 }
 
+/**
+ * Pesaje Libre puede cerrar un retiro vacío sin conservar el volante en su
+ * documento. Solo en ese caso se permite recuperar el vínculo por placa,
+ * siempre que Falcon tenga una única cita marítima con garita previa el mismo
+ * día. Un despacho normal nunca se infiere por placa.
+ */
+function asociarRetirosVaciosPorPlaca(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
+  return movimientos.map((movimiento) => {
+    if (movimiento.volante || !movimiento.retiroVacio || !movimiento.placa || !movimiento.fechaGarita) return movimiento;
+    const placa = placaNormalizada(movimiento.placa);
+    if (!placa) return movimiento;
+    const instante = new Date(movimiento.fechaGarita).getTime();
+    const candidatas = citas.filter((cita) => {
+      if (cita.estado === 'ANULADA' || (cita.modalidad !== 'LCL' && cita.modalidad !== 'FCL') || !cita.volante || !cita.fechaGarita) return false;
+      const registro = new Date(cita.fechaGarita).getTime();
+      return placaNormalizada(cita.unidad) === placa
+        && fechaLima(cita.fechaGarita) === fechaLima(movimiento.fechaGarita)
+        && registro <= instante
+        && instante - registro <= 6 * 60 * 60_000;
+    });
+    return candidatas.length === 1 ? { ...movimiento, volante: candidatas[0].volante } : movimiento;
+  });
+}
+
 function movimientosConfirmados(group: GrupoFlujoOperativo) {
   // Las anulaciones quedan como historial visual, pero no vuelven ambiguo el
   // vínculo de la única cita activa con su movimiento físico.
@@ -112,6 +136,7 @@ function marcarRetirosConjuntos(groups: GrupoFlujoOperativo[]) {
 
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
 export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
+  const movimientosEnlazados = asociarRetirosVaciosPorPlaca(citas, movimientos);
   const citasPorVolante = new Map<string, Operacion[]>();
   for (const cita of citas) {
     const volante = volanteNormalizado(cita.volante);
@@ -119,7 +144,7 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
     citasPorVolante.set(volante, [...(citasPorVolante.get(volante) ?? []), cita]);
   }
   const movimientosPorVolante = new Map<string, GitsDailyFlowItem[]>();
-  for (const movimiento of movimientos) {
+  for (const movimiento of movimientosEnlazados) {
     const volante = volanteNormalizado(movimiento.volante);
     if (!volante) continue;
     movimientosPorVolante.set(volante, [...(movimientosPorVolante.get(volante) ?? []), movimiento]);
