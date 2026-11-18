@@ -72,14 +72,18 @@ function asociarRetirosVaciosPorPlaca(citas: Operacion[], movimientos: GitsDaily
     if (!placa) return movimiento;
     const instante = new Date(movimiento.fechaGarita).getTime();
     const candidatas = citas.filter((cita) => {
-      if (cita.estado === 'ANULADA' || (cita.modalidad !== 'LCL' && cita.modalidad !== 'FCL') || !cita.volante || !cita.fechaGarita) return false;
+      if ((cita.modalidad !== 'LCL' && cita.modalidad !== 'FCL') || !cita.volante || !cita.fechaGarita) return false;
       const registro = new Date(cita.fechaGarita).getTime();
       return placaNormalizada(cita.unidad) === placa
         && fechaLima(cita.fechaGarita) === fechaLima(movimiento.fechaGarita)
         && registro <= instante
         && instante - registro <= 6 * 60 * 60_000;
     });
-    return candidatas.length === 1 ? { ...movimiento, volante: candidatas[0].volante } : movimiento;
+    const activas = candidatas.filter((cita) => cita.estado !== 'ANULADA');
+    // Una cita anulada conserva el historial solo si no hay otra cita activa
+    // compatible. Esto evita transferir un retiro antiguo a una reprogramación.
+    const candidata = activas.length === 1 ? activas[0] : activas.length === 0 && candidatas.length === 1 ? candidatas[0] : null;
+    return candidata ? { ...movimiento, volante: candidata.volante } : movimiento;
   });
 }
 

@@ -356,6 +356,7 @@ td:first-child { font-weight: 700; }
 .detail-list tr.cancelled-row > td { background: #eef2f6 !important; color: #667085 !important; }
 .detail-list tr.cancelled-row strong { color: inherit; }
 .cancelled-face { cursor: default; pointer-events: none; }
+.cancelled-face.cancelled-detail-button { cursor: pointer; pointer-events: auto; }
 .hour-inspection-table tr.inspection-cancelled-row > td { background: #eef2f6 !important; color: #667085 !important; }
 /* Varias citas de una misma placa representan un retiro conjunto. El borde
    continuo las deja visualmente como un solo bloque sin ocultar sus alertas. */

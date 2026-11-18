@@ -34,6 +34,17 @@ test('asocia un retiro vacío sin volante solo con la única cita de misma placa
   assert.equal(group?.movimientos[0]?.retiroVacio, true);
 });
 
+test('conserva el retiro vacío en una cita anulada si no existe otra cita activa compatible', () => {
+  const anulada: Operacion = { ...cita('anulada'), estado: 'ANULADA', volante: '167732', unidad: 'BXR741', fechaGarita: '2026-11-18T12:57:00-05:00' };
+  const retiroVacio = {
+    ...movimiento('libre'), volante: null, placa: 'BXR741', fechaGarita: '2026-11-18T13:13:21-05:00',
+    fechaSalidaBalanza: '2026-11-18T14:09:32-05:00', retiroVacio: true, observacion: 'SALE VACIO // CARGA ANCHA'
+  };
+  const group = crearFlujoOperativo([anulada], [retiroVacio])[0];
+  assert.equal(group?.volante, '167732');
+  assert.equal(group?.movimientos[0]?.movimiento, 'libre');
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');

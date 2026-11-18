@@ -512,7 +512,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                     </>
                   )}
                   <td>{anulada
-                    ? <span className="health-face cancelled-face" title="Cita anulada" aria-label="Cita anulada"><CancelledFace /></span>
+                    ? <button className="health-face cancelled-face cancelled-detail-button" onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver historial de cita anulada" aria-label="Ver historial de cita anulada"><CancelledFace /></button>
                     : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver detalle de la operación" aria-label={retiroVacio ? 'Ver detalle: retiro vacío / no atendida' : `Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
                 </tr>;
@@ -579,7 +579,7 @@ function movimientosDeCita(group: GrupoFlujo, cita: Operacion) {
   const citas = group.citas
     .filter((item) => Boolean(item.fechaCita))
     .sort((a, b) => (a.fechaCita ?? '').localeCompare(b.fechaCita ?? ''));
-  if (citas.length <= 1) return movimientosConfirmados(group);
+  if (citas.length <= 1) return cita.estado === 'ANULADA' ? group.movimientos : movimientosConfirmados(group);
   const indice = citas.findIndex((item) => item.id === cita.id);
   if (indice < 0 || !cita.fechaCita) return [];
   const inicio = new Date(cita.fechaCita).getTime();
@@ -1022,9 +1022,12 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
   const alertas = alertasDiagnosticoGrupo(detalle, seguimiento);
   const visual = groupVisualState(detalle, seguimiento);
   const seguimientoCita = citaSeleccionada ? seguimiento.get(citaSeleccionada.id) : undefined;
+  const retiroVacio = detalle.movimientos.some((movimiento) => movimiento.retiroVacio) || seguimientoCita?.estado === 'RETIRO_VACIO';
   const diagnosticoEspecial = citaSeleccionada?.estado === 'ANULADA'
-    ? { titulo: 'Cita anulada', etiqueta: 'ANULADA', texto: 'Esta cita fue anulada; no se evalúan alertas operativas.' }
-    : citaSeleccionada?.estado === 'NO_COMPLETADA' || seguimientoCita?.estado === 'RETIRO_VACIO'
+    ? retiroVacio
+      ? { titulo: 'Cita anulada / no atendida', etiqueta: 'ANULADA', texto: 'La cita fue anulada después de un retiro vacío. Se conserva el historial físico.' }
+      : { titulo: 'Cita anulada', etiqueta: 'ANULADA', texto: 'Esta cita fue anulada; no se evalúan alertas operativas.' }
+    : citaSeleccionada?.estado === 'NO_COMPLETADA' || retiroVacio
       ? { titulo: 'Cita no atendida', etiqueta: 'NO ATENDIDA', texto: 'La unidad no completó el retiro de carga.' }
       : null;
   const alertasVisibles = diagnosticoEspecial ? [] : alertas;
