@@ -187,7 +187,7 @@ async function importarFalcon() {
     id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
     volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
     fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
-    pesoDeclarado: item.pesoDeclarado ?? null, telefonoContacto: item.telefonoContacto ?? null, fuente: 'FALCON' as const
+    pesoDeclarado: item.pesoDeclarado ?? null, telefonoContacto: item.telefonoContacto ?? null, autorizacionRetiro: item.autorizacionRetiro ?? null, fuente: 'FALCON' as const
   });
   const anuladasOperacion = anuladas.map((item) => ({
     id: item.id, modalidad: item.modalidad, estado: 'ANULADA' as const,
@@ -248,6 +248,7 @@ async function consultarReporteDirecto(periodo: PeriodoReporte, fecha: string, h
       fechaCompletado,
       pesoDeclarado: item.pesoDeclarado ?? null,
       telefonoContacto: item.telefonoContacto ?? null,
+      autorizacionRetiro: item.autorizacionRetiro ?? null,
       fuente: 'FALCON' as const
     };
   });
@@ -1069,7 +1070,7 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
       id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
       fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
-      pesoDeclarado: item.pesoDeclarado ?? null, telefonoContacto: item.telefonoContacto ?? null, fuente: 'FALCON' as const
+      pesoDeclarado: item.pesoDeclarado ?? null, telefonoContacto: item.telefonoContacto ?? null, autorizacionRetiro: item.autorizacionRetiro ?? null, fuente: 'FALCON' as const
     }));
     const anuladasOperacion = anuladas.map((item) => ({
       id: item.id, modalidad: item.modalidad, estado: 'ANULADA' as const,

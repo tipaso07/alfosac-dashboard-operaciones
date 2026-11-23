@@ -169,6 +169,7 @@ export interface FalconMaritimeOperation {
   fechaCompletado?: string | null;
   pesoDeclarado?: number | null;
   telefonoContacto?: string | null;
+  autorizacionRetiro?: string | null;
 }
 
 /** Cita anulada en Falcon. Se conserva solo como referencia visual del día. */
@@ -1098,7 +1099,7 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
     const citasResult = await citasRequest.query<SourceRow>(`
       SELECT TOP (@limit) c.id, c.cod_negocio, c.fecha, c.hora, c.cod_volante,
         COALESCE(NULLIF(LTRIM(RTRIM(garita.des_placa)), ''), NULLIF(LTRIM(RTRIM(c.des_placa)), '')) AS placa,
-        c.des_contenedor, c.celular_transportista AS telefono_contacto,
+        c.des_contenedor, c.celular_transportista AS telefono_contacto, c.id_lista_retiro,
         c.fecha_atencion, c.des_peso_recibido AS peso_recibido
       FROM dbo.citas_programadas c
       OUTER APPLY (
@@ -1137,7 +1138,8 @@ export async function leerOperacionesMaritimas(limit = 250, desde?: string, hast
         // Para contrastar con el neto de balanza se usa el peso recibido por
         // Falcon. El peso manifestado de GITS queda solo como referencia.
         pesoDeclarado: peso(value(row, ['peso_recibido'])) ?? previous?.pesoDeclarado ?? null,
-        telefonoContacto: text(value(row, ['telefono_contacto'])) ?? previous?.telefonoContacto ?? null
+        telefonoContacto: text(value(row, ['telefono_contacto'])) ?? previous?.telefonoContacto ?? null,
+        autorizacionRetiro: text(value(row, ['id_lista_retiro'])) ?? previous?.autorizacionRetiro ?? null
       });
     };
     citasResult.recordset.forEach(save);

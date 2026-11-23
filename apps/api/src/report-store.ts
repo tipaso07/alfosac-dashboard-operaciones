@@ -8,6 +8,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export async function asegurarEsquemaOperaciones() {
   await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS peso_declarado NUMERIC(18,3);');
   await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS telefono_contacto VARCHAR(40);');
+  await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS autorizacion_retiro VARCHAR(40);');
 }
 
 export function fechaActualLima() {
@@ -34,8 +35,8 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
       INSERT INTO operaciones (
         id, fuente_origen, identificador_origen, llave_operacion, modalidad, estado,
         volante, unidad, fecha_cita, fecha_garita, fecha_ingreso_despacho,
-        fecha_completado, peso_declarado, telefono_contacto, actualizado_origen_en
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+        fecha_completado, peso_declarado, telefono_contacto, autorizacion_retiro, actualizado_origen_en
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
       ON CONFLICT (fuente_origen, identificador_origen) DO UPDATE SET
         llave_operacion = EXCLUDED.llave_operacion,
         modalidad = EXCLUDED.modalidad,
@@ -48,12 +49,13 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
         fecha_completado = EXCLUDED.fecha_completado,
         peso_declarado = EXCLUDED.peso_declarado,
         telefono_contacto = EXCLUDED.telefono_contacto,
+        autorizacion_retiro = EXCLUDED.autorizacion_retiro,
         actualizado_origen_en = NOW(),
         recibido_en = NOW();
     `, [
       stableUuid(`FALCON:${item.id}`), 'FALCON', item.id, item.id, item.modalidad, item.estado,
       item.volante, item.unidad, item.fechaCita, item.fechaGarita,
-      item.fechaIngresoDespacho, item.fechaCompletado, item.pesoDeclarado ?? null, item.telefonoContacto ?? null
+      item.fechaIngresoDespacho, item.fechaCompletado, item.pesoDeclarado ?? null, item.telefonoContacto ?? null, item.autorizacionRetiro ?? null
     ]);
   }
 }
@@ -80,9 +82,9 @@ export async function listarOperaciones() {
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
     volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
-    fecha_ingreso_despacho: string | null; fecha_completado: string | null; peso_declarado: number | null; telefono_contacto: string | null; fuente_origen: Operacion['fuente'];
+    fecha_ingreso_despacho: string | null; fecha_completado: string | null; peso_declarado: number | null; telefono_contacto: string | null; autorizacion_retiro: string | null; fuente_origen: Operacion['fuente'];
   }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
-      fecha_ingreso_despacho, fecha_completado, peso_declarado, telefono_contacto, fuente_origen
+      fecha_ingreso_despacho, fecha_completado, peso_declarado, telefono_contacto, autorizacion_retiro, fuente_origen
      FROM operaciones
      WHERE (
        fecha_cita >= (($1::date)::timestamp AT TIME ZONE 'America/Lima')
@@ -103,7 +105,7 @@ export async function listarOperaciones() {
     volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
     fechaCita: row.fecha_cita, fechaGarita: row.fecha_garita,
     fechaIngresoDespacho: row.fecha_ingreso_despacho, fechaCompletado: row.fecha_completado,
-    pesoDeclarado: row.peso_declarado, telefonoContacto: row.telefono_contacto, fuente: row.fuente_origen
+    pesoDeclarado: row.peso_declarado, telefonoContacto: row.telefono_contacto, autorizacionRetiro: row.autorizacion_retiro, fuente: row.fuente_origen
   }));
 }
 
@@ -121,9 +123,9 @@ export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL'
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
     volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
-    fecha_ingreso_despacho: string | null; fecha_completado: string | null; peso_declarado: number | null; telefono_contacto: string | null; fuente_origen: Operacion['fuente'];
+    fecha_ingreso_despacho: string | null; fecha_completado: string | null; peso_declarado: number | null; telefono_contacto: string | null; autorizacion_retiro: string | null; fuente_origen: Operacion['fuente'];
   }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
-    fecha_ingreso_despacho, fecha_completado, peso_declarado, telefono_contacto, fuente_origen
+    fecha_ingreso_despacho, fecha_completado, peso_declarado, telefono_contacto, autorizacion_retiro, fuente_origen
       FROM operaciones WHERE ${condition}
       ORDER BY fecha_cita ASC LIMIT 5000`, periodo === 'RANGO' ? [fecha, hasta] : [fecha]);
   return result.rows.map((row) => ({
@@ -131,7 +133,7 @@ export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL'
     volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
     fechaCita: row.fecha_cita, fechaGarita: row.fecha_garita,
     fechaIngresoDespacho: row.fecha_ingreso_despacho, fechaCompletado: row.fecha_completado,
-    pesoDeclarado: row.peso_declarado, telefonoContacto: row.telefono_contacto, fuente: row.fuente_origen
+    pesoDeclarado: row.peso_declarado, telefonoContacto: row.telefono_contacto, autorizacionRetiro: row.autorizacion_retiro, fuente: row.fuente_origen
   }));
 }
 

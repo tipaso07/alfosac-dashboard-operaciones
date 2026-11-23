@@ -60,6 +60,30 @@ function pesoNeto(movimiento: GitsDailyFlowItem) {
 }
 
 /**
+ * En retiros reestibados GITS puede dejar el volante vacío, pero conserva el
+ * A.R. en la observación (AUT//...). Falcon expone ese mismo identificador
+ * como id_lista_retiro. Es un enlace explícito, no una inferencia por placa.
+ */
+function asociarRetirosReestibadosPorAutorizacion(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
+  const citasPorAutorizacion = new Map<string, Operacion[]>();
+  for (const cita of citas) {
+    const autorizacion = volanteNormalizado(cita.autorizacionRetiro);
+    if (!autorizacion || cita.estado === 'ANULADA') continue;
+    citasPorAutorizacion.set(autorizacion, [...(citasPorAutorizacion.get(autorizacion) ?? []), cita]);
+  }
+  return movimientos.map((movimiento) => {
+    if (movimiento.volante || !movimiento.autorizacionRetiro) return movimiento;
+    const candidatas = citasPorAutorizacion.get(volanteNormalizado(movimiento.autorizacionRetiro) ?? '') ?? [];
+    return candidatas.length === 1 ? { ...movimiento, volante: candidatas[0].volante } : movimiento;
+  });
+}
+
+/** Un movimiento totalizado de reestiba no debe duplicar las porciones AUT. */
+function esConsolidadoReestibado(movimiento: GitsDailyFlowItem) {
+  return !movimiento.autorizacionRetiro && /\bREESTIBADO\b/i.test(movimiento.observacion ?? '');
+}
+
+/**
  * Pesaje Libre puede cerrar un retiro vacío sin conservar el volante en su
  * documento. Solo en ese caso se permite recuperar el vínculo por placa,
  * siempre que Falcon tenga una única cita marítima con garita previa el mismo
@@ -140,7 +164,7 @@ function marcarRetirosConjuntos(groups: GrupoFlujoOperativo[]) {
 
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
 export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
-  const movimientosEnlazados = asociarRetirosVaciosPorPlaca(citas, movimientos);
+  const movimientosEnlazados = asociarRetirosVaciosPorPlaca(citas, asociarRetirosReestibadosPorAutorizacion(citas, movimientos));
   const citasPorVolante = new Map<string, Operacion[]>();
   for (const cita of citas) {
     const volante = volanteNormalizado(cita.volante);
@@ -157,7 +181,13 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
   const volantes = new Set([...citasPorVolante.keys(), ...movimientosPorVolante.keys()]);
   const groups: GrupoFlujoOperativo[] = [...volantes].map((volante) => {
     const citasDelVolante = citasPorVolante.get(volante) ?? [];
-    const movimientosDelVolante = (movimientosPorVolante.get(volante) ?? []).sort((a, b) => (a.fechaGarita ?? '').localeCompare(b.fechaGarita ?? ''));
+    const movimientosCandidatos = movimientosPorVolante.get(volante) ?? [];
+    // Cuando existen porciones identificadas por AUT, el movimiento sin AUT es
+    // el consolidado del viaje y no representa un volante adicional.
+    const movimientosDelVolante = (movimientosCandidatos.some((movimiento) => movimiento.autorizacionRetiro)
+      ? movimientosCandidatos.filter((movimiento) => !esConsolidadoReestibado(movimiento))
+      : movimientosCandidatos
+    ).sort((a, b) => (a.fechaGarita ?? '').localeCompare(b.fechaGarita ?? ''));
     const modalidades = [...new Set(citasDelVolante.map((cita) => cita.modalidad))];
     return {
       volante,

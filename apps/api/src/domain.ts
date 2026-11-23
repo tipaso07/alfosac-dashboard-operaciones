@@ -27,6 +27,8 @@ export interface Operacion {
   pesoDeclarado?: number | null;
   /** Teléfono del transportista registrado por Falcon para contacto operativo. */
   telefonoContacto?: string | null;
+  /** A.R./lista de retiro de Falcon; enlaza retiros reestibados de GITS. */
+  autorizacionRetiro?: string | null;
   fuente: 'DEMO' | 'FALCON' | 'GITS';
 }
 

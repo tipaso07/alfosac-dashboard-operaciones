@@ -143,6 +143,8 @@ export interface GitsDailyFlowItem {
   pesoMercaderiaDeclarado: number | null;
   /** Texto operativo registrado por balanza, usado solo para identificar retiros vacíos. */
   observacion: string | null;
+  /** A.R. consignado por GITS en retiros reestibados, cuando está disponible. */
+  autorizacionRetiro?: string | null;
   /** La salida se registró por Balanza Libre como "SALE VACÍO". */
   retiroVacio: boolean;
 }
@@ -208,8 +210,15 @@ function volanteEnObservacion(observacion: string | null | undefined) {
   return match?.[1] ?? null;
 }
 
-function esRetiroVacio(observacion: string | null | undefined) {
-  return /\bSALE\s+VAC[ÍI]O\b/i.test(observacion ?? '');
+function autorizacionEnObservacion(observacion: string | null | undefined) {
+  const match = observacion?.match(/\bAUT\s*(?::|\/\/)?\s*(\d+)/i);
+  return match?.[1] ?? null;
+}
+
+export function esRetiroVacio(observacion: string | null | undefined) {
+  // Balanza Libre no siempre escribe literalmente "SALE VACÍO". En los
+  // retiros que no se concretaron también registra CANCELADO junto al A.R.
+  return /\bSALE\s+VAC[ÍI]O\b|\bCANCELADO\b/i.test(observacion ?? '');
 }
 
 /**
@@ -1293,6 +1302,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         cantidadTarjas: numero(row.cantidad_tarjas),
         pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado),
         observacion,
+        autorizacionRetiro: autorizacionEnObservacion(observacion),
         retiroVacio: esRetiroVacio(observacion)
       };
     });

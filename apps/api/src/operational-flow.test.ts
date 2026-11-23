@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { crearFlujoOperativo } from './operational-flow.js';
+import { esRetiroVacio } from './gits.js';
 import type { Operacion } from './domain.js';
 
 const cita = (id: string): Operacion => ({ id, modalidad: 'LCL', estado: 'AGENDADA', volante: '164709', unidad: '-', fechaCita: '2026-10-22T08:00:00-05:00', fechaGarita: null, fechaIngresoDespacho: null, fechaCompletado: null, fuente: 'FALCON' });
@@ -43,6 +44,27 @@ test('conserva el retiro vacío en una cita anulada si no existe otra cita activ
   const group = crearFlujoOperativo([anulada], [retiroVacio])[0];
   assert.equal(group?.volante, '167732');
   assert.equal(group?.movimientos[0]?.movimiento, 'libre');
+});
+
+test('enlaza un retiro reestibado por A.R. y descarta el pesaje consolidado del mismo volante', () => {
+  const maritima: Operacion = { ...cita('aut'), volante: '168271', unidad: 'D6F807', autorizacionRetiro: '168741', fechaGarita: '2026-11-23T06:47:04-05:00' };
+  const consolidado = { ...movimiento('total'), volante: '168271', placa: 'D6F807', fechaGarita: '2026-11-23T06:54:20-05:00', observacion: 'REESTIBADO // 62 BULTOS EN TOTAL' };
+  const porcion = { ...movimiento('parte'), volante: null, placa: 'D6F807', fechaGarita: '2026-11-23T06:54:55-05:00', observacion: 'RETIRO REESTIBADO //AUT//168741// 48 BULTOS', autorizacionRetiro: '168741' };
+  const group = crearFlujoOperativo([maritima], [consolidado, porcion])[0];
+  assert.equal(group?.movimientos.length, 1);
+  assert.equal(group?.movimientos[0]?.movimiento, 'parte');
+});
+
+test('considera retiro vacío el movimiento de Balanza Libre marcado como cancelado', () => {
+  const maritima: Operacion = { ...cita('cancelada'), volante: '168573', unidad: 'F8R929', autorizacionRetiro: '169063', fechaGarita: '2026-11-23T13:00:00-05:00' };
+  const retiroCancelado = {
+    ...movimiento('libre-cancelado'), volante: null, placa: 'F8R929', fechaGarita: '2026-11-23T13:21:58-05:00',
+    observacion: 'RETIRO AUT//169063// CANCELADO // A SE TIENE QUE DESGLOSAR LA MERCADERIA', autorizacionRetiro: '169063', retiroVacio: true
+  };
+  assert.equal(esRetiroVacio(retiroCancelado.observacion), true);
+  const group = crearFlujoOperativo([maritima], [retiroCancelado])[0];
+  assert.equal(group?.movimientos[0]?.volante, '168573');
+  assert.equal(group?.movimientos[0]?.retiroVacio, true);
 });
 
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
