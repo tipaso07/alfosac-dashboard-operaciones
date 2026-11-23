@@ -19,6 +19,8 @@ export interface Operacion {
   estado: EstadoOperacion;
   volante: string;
   unidad: string;
+  /** Contenedor de la cita FCL, informado por Falcon. */
+  contenedor?: string | null;
   fechaCita: string | null;
   fechaGarita: string | null;
   fechaIngresoDespacho: string | null;

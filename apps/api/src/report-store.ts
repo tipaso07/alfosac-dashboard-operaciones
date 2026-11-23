@@ -9,6 +9,7 @@ export async function asegurarEsquemaOperaciones() {
   await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS peso_declarado NUMERIC(18,3);');
   await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS telefono_contacto VARCHAR(40);');
   await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS autorizacion_retiro VARCHAR(40);');
+  await pool.query('ALTER TABLE operaciones ADD COLUMN IF NOT EXISTS contenedor VARCHAR(40);');
 }
 
 export function fechaActualLima() {
@@ -34,15 +35,16 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
     await pool.query(`
       INSERT INTO operaciones (
         id, fuente_origen, identificador_origen, llave_operacion, modalidad, estado,
-        volante, unidad, fecha_cita, fecha_garita, fecha_ingreso_despacho,
+        volante, unidad, contenedor, fecha_cita, fecha_garita, fecha_ingreso_despacho,
         fecha_completado, peso_declarado, telefono_contacto, autorizacion_retiro, actualizado_origen_en
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW())
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
       ON CONFLICT (fuente_origen, identificador_origen) DO UPDATE SET
         llave_operacion = EXCLUDED.llave_operacion,
         modalidad = EXCLUDED.modalidad,
         estado = EXCLUDED.estado,
         volante = EXCLUDED.volante,
         unidad = EXCLUDED.unidad,
+        contenedor = EXCLUDED.contenedor,
         fecha_cita = EXCLUDED.fecha_cita,
         fecha_garita = EXCLUDED.fecha_garita,
         fecha_ingreso_despacho = EXCLUDED.fecha_ingreso_despacho,
@@ -54,7 +56,7 @@ export async function guardarOperaciones(operaciones: Operacion[]) {
         recibido_en = NOW();
     `, [
       stableUuid(`FALCON:${item.id}`), 'FALCON', item.id, item.id, item.modalidad, item.estado,
-      item.volante, item.unidad, item.fechaCita, item.fechaGarita,
+      item.volante, item.unidad, item.contenedor ?? null, item.fechaCita, item.fechaGarita,
       item.fechaIngresoDespacho, item.fechaCompletado, item.pesoDeclarado ?? null, item.telefonoContacto ?? null, item.autorizacionRetiro ?? null
     ]);
   }
@@ -81,9 +83,9 @@ export async function listarOperaciones() {
   const reportDate = fechaReporteActual();
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
-    volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
+    volante: string | null; unidad: string | null; contenedor: string | null; fecha_cita: string | null; fecha_garita: string | null;
     fecha_ingreso_despacho: string | null; fecha_completado: string | null; peso_declarado: number | null; telefono_contacto: string | null; autorizacion_retiro: string | null; fuente_origen: Operacion['fuente'];
-  }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
+  }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, contenedor, fecha_cita, fecha_garita,
       fecha_ingreso_despacho, fecha_completado, peso_declarado, telefono_contacto, autorizacion_retiro, fuente_origen
      FROM operaciones
      WHERE (
@@ -102,7 +104,7 @@ export async function listarOperaciones() {
      ORDER BY COALESCE(fecha_cita, fecha_ingreso_despacho, fecha_garita) DESC LIMIT 500;`, [reportDate]);
   return result.rows.map((row) => ({
     id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
-    volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
+    volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-', contenedor: row.contenedor,
     fechaCita: row.fecha_cita, fechaGarita: row.fecha_garita,
     fechaIngresoDespacho: row.fecha_ingreso_despacho, fechaCompletado: row.fecha_completado,
     pesoDeclarado: row.peso_declarado, telefonoContacto: row.telefono_contacto, autorizacionRetiro: row.autorizacion_retiro, fuente: row.fuente_origen
@@ -122,15 +124,15 @@ export async function listarOperacionesParaReporte(periodo: 'DIARIO' | 'MENSUAL'
          AND ${fechaEvento} < ((($2::date + 1)::timestamp) AT TIME ZONE 'America/Lima')`;
   const result = await pool.query<{
     identificador_origen: string; modalidad: Operacion['modalidad']; estado: Operacion['estado'];
-    volante: string | null; unidad: string | null; fecha_cita: string | null; fecha_garita: string | null;
+    volante: string | null; unidad: string | null; contenedor: string | null; fecha_cita: string | null; fecha_garita: string | null;
     fecha_ingreso_despacho: string | null; fecha_completado: string | null; peso_declarado: number | null; telefono_contacto: string | null; autorizacion_retiro: string | null; fuente_origen: Operacion['fuente'];
-  }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, fecha_cita, fecha_garita,
+  }>(`SELECT identificador_origen, modalidad, estado, volante, unidad, contenedor, fecha_cita, fecha_garita,
     fecha_ingreso_despacho, fecha_completado, peso_declarado, telefono_contacto, autorizacion_retiro, fuente_origen
       FROM operaciones WHERE ${condition}
       ORDER BY fecha_cita ASC LIMIT 5000`, periodo === 'RANGO' ? [fecha, hasta] : [fecha]);
   return result.rows.map((row) => ({
     id: row.identificador_origen, modalidad: row.modalidad, estado: row.estado,
-    volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-',
+    volante: row.volante ?? row.identificador_origen, unidad: row.unidad ?? '-', contenedor: row.contenedor,
     fechaCita: row.fecha_cita, fechaGarita: row.fecha_garita,
     fechaIngresoDespacho: row.fecha_ingreso_despacho, fechaCompletado: row.fecha_completado,
     pesoDeclarado: row.peso_declarado, telefonoContacto: row.telefono_contacto, autorizacionRetiro: row.autorizacion_retiro, fuente: row.fuente_origen

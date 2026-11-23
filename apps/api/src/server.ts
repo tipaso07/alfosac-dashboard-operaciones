@@ -185,7 +185,7 @@ async function importarFalcon() {
   const maritimas = await enriquecerMaritimasConGits(maritimasSource);
   const toOperation = (item: Awaited<ReturnType<typeof leerOperacionesMaritimas>>[number]) => ({
     id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
-    volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
+    volante: item.volante, unidad: item.unidad, contenedor: item.contenedor, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
     fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
     pesoDeclarado: item.pesoDeclarado ?? null, telefonoContacto: item.telefonoContacto ?? null, autorizacionRetiro: item.autorizacionRetiro ?? null, fuente: 'FALCON' as const
   });
@@ -242,6 +242,7 @@ async function consultarReporteDirecto(periodo: PeriodoReporte, fecha: string, h
       estado: fechaCompletado ? 'COMPLETADA' as const : fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
       volante: item.volante,
       unidad: item.unidad,
+      contenedor: item.contenedor,
       fechaCita: item.fechaCita,
       fechaGarita: item.fechaGarita,
       fechaIngresoDespacho,
@@ -1016,7 +1017,7 @@ app.post('/api/dashboard/flow.xlsx', async (request, response) => {
   const tono = (value: unknown): FilaSeguimientoExcel['tonoEspera'] =>
     value === 'ok' || value === 'warning' || value === 'alert' ? value : 'neutral';
   const filas: FilaSeguimientoExcel[] = fuente.map((fila: FilaSeguimientoEntrada) => ({
-    fechaCita: texto(fila?.fechaCita, 24), horaCita: texto(fila?.horaCita, 20), volante: texto(fila?.volante, 30),
+    fechaCita: texto(fila?.fechaCita, 24), horaCita: texto(fila?.horaCita, 20), volante: texto(fila?.volante, 30), contenedor: texto(fila?.contenedor, 40),
     placa: texto(fila?.placa, 40), registro: texto(fila?.registro, 20), espera: texto(fila?.espera, 30),
     ingreso: texto(fila?.ingreso, 30), salida: texto(fila?.salida, 30), atencion: texto(fila?.atencion, 30),
     estado: texto(fila?.estado, 180), observacion: texto(fila?.observacion, 220), anulada: fila?.anulada === true,
@@ -1068,7 +1069,7 @@ app.post('/api/integrations/falcon/import/maritime', async (_request, response) 
     const [source, anuladas] = await Promise.all([leerOperacionesMaritimas(10_000), leerAnulacionesMaritimas(10_000)]);
     const operations = source.map((item) => ({
       id: item.id, modalidad: item.modalidad, estado: item.fechaCompletado ? 'COMPLETADA' as const : item.fechaIngresoDespacho ? 'EN_DESPACHO' as const : item.fechaGarita ? 'EN_GARITA' as const : 'AGENDADA' as const,
-      volante: item.volante, unidad: item.unidad, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
+      volante: item.volante, unidad: item.unidad, contenedor: item.contenedor, fechaCita: item.fechaCita, fechaGarita: item.fechaGarita,
       fechaIngresoDespacho: item.fechaIngresoDespacho, fechaCompletado: item.fechaCompletado ?? null,
       pesoDeclarado: item.pesoDeclarado ?? null, telefonoContacto: item.telefonoContacto ?? null, autorizacionRetiro: item.autorizacionRetiro ?? null, fuente: 'FALCON' as const
     }));
