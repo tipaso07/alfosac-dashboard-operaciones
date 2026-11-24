@@ -1,12 +1,13 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { crearResumen } from './dashboard.js';
+import type { Operacion } from './domain.js';
 import { crearFlujoOperativo, resumenDeFlujo } from './operational-flow.js';
 import { movimientosDemo, operacionesDemo } from './demo-source.js';
 import { crearReporteOperativo, reporteACsv, type ModalidadReporte, type PeriodoReporte } from './reports.js';
 import { reporteAExcel, seguimientoAExcel, type FilaSeguimientoExcel } from './excel-report.js';
 import { auditarAnulacionesFalcon, auditarCierreFalcon, auditarCierreFalconRango, buscarCandidatosAnulacionFalcon, buscarEventosOperativosFalcon, catalogarEnlaceAereoFalcon, consultarCitasPorHora, consultarDisponibilidadFalcon, contarCitasPorHora, detalleCitaFalcon, diagnosticarFalcon, historialCitasPorVolanteFalcon, listarCitasConControlSalida, listarCitasConEventosLogisticos, trazarModuloEnlaceAereoFalcon, trazarOperacionAereaFalcon, trazarRetiroAereoFalcon, vistaPreviaFalcon } from './falcon.js';
 import { leerAnulacionesMaritimas, leerOperacionesAereas, leerOperacionesMaritimas } from './falcon.js';
-import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoPesajeLibreGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits } from './gits.js';
+import { buscarReferenciasGaritaGits, catalogoEnlacesGits, catalogoGaritaGits, catalogoPesajeLibreGits, catalogoTecnicoFlujoGits, consultarFlujoDiarioGits, correlacionSeguraGits, diagnosticarGits, listarCandidatosOperativosGits, listarObjetosFlujoGits, obtenerMuestrasFlujoGits, trazarAtencionTicketGits, trazarDocumentosMovimientoGits, trazarGaritaGits, trazarVolanteGits, type GitsDailyFlowItem } from './gits.js';
 import { asegurarEsquemaOperaciones, fechaReporteActual, guardarOperaciones, listarOperaciones, listarOperacionesParaReporte, listarPendientesLlegada, retirarMaritimasNoVigentes } from './report-store.js';
 import { asegurarEsquemaDisponibilidad, guardarDisponibilidadHistorica, listarDisponibilidadHistorica, listarDisponibilidadHistoricaRango } from './availability-store.js';
 import { autenticarUsuario, autenticacionHabilitada, asegurarEsquemaAutenticacion, cambiarContrasena, crearSesion, crearUsuario, leerSesion, listarUsuarios, registrarAuditoria, revocarSesion, type RolUsuario, type UsuarioSesion } from './auth-store.js';
@@ -258,6 +259,88 @@ async function consultarReporteDirecto(periodo: PeriodoReporte, fecha: string, h
   let cierre: { anuladas: number; sinAtencion: number } | null = null;
   try { cierre = await auditarCierreFalconRango(rango.desde, rango.hasta, modalidades); } catch { /* El reporte conserva los hitos aunque no esté disponible el cierre. */ }
   return { operations, movimientos, cierre, hasta: rango.hasta };
+}
+
+function fechaLimaReporte(value: string | null) {
+  if (!value) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+function fechaCortaReporte(value: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
+}
+
+function horaReporte(value: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('es-PE', { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(value));
+}
+
+function duracionReporte(inicio: string | null, fin: string | null) {
+  if (!inicio || !fin) return null;
+  const segundos = Math.floor((new Date(fin).getTime() - new Date(inicio).getTime()) / 1_000);
+  if (!Number.isFinite(segundos) || segundos < 0) return null;
+  return `${String(Math.floor(segundos / 3_600)).padStart(2, '0')}:${String(Math.floor((segundos % 3_600) / 60)).padStart(2, '0')}:${String(segundos % 60).padStart(2, '0')}`;
+}
+
+function tonoReporte(duracion: string | null, tipo: 'ESPERA' | 'OPERATIVO'): FilaSeguimientoExcel['tonoEspera'] {
+  if (!duracion) return 'neutral';
+  const [horas, minutos, segundos] = duracion.split(':').map(Number);
+  const total = horas * 60 + minutos + segundos / 60;
+  const amarillo = tipo === 'ESPERA' ? 15 : 30;
+  const rojo = tipo === 'ESPERA' ? 30 : 45;
+  return total > rojo ? 'alert' : total > amarillo ? 'warning' : 'ok';
+}
+
+function segundoPesajeValido(movimiento: { fechaGarita: string | null; fechaSalidaBalanza: string | null; pesoFinal: number | null }) {
+  return Boolean(movimiento.fechaGarita && movimiento.fechaSalidaBalanza && movimiento.pesoFinal != null && movimiento.pesoFinal > 0
+    && new Date(movimiento.fechaSalidaBalanza).getTime() > new Date(movimiento.fechaGarita).getTime());
+}
+
+/** Filas detalladas reutilizables para seguimiento diario, mensual o por rango. */
+function crearFilasSeguimientoReporte(operaciones: Operacion[], movimientos: GitsDailyFlowItem[] | null, periodo: PeriodoReporte, fecha: string, hasta: string | null, modalidad: ModalidadReporte): FilaSeguimientoExcel[] {
+  const groups = crearFlujoOperativo(operaciones, movimientos ?? []);
+  const dentro = (value: string | null) => {
+    const dia = fechaLimaReporte(value);
+    if (!dia) return false;
+    if (periodo === 'DIARIO') return dia === fecha;
+    if (periodo === 'MENSUAL') return dia.slice(0, 7) === fecha.slice(0, 7);
+    return Boolean(hasta && dia >= fecha && dia <= hasta);
+  };
+  return groups.flatMap((group) => group.citas
+    .filter((cita) => dentro(cita.fechaCita) && (modalidad === 'TODAS' || cita.modalidad === modalidad))
+    .map((cita) => {
+      const movimientosCita = group.citas.length === 1 ? group.movimientos : group.movimientos.filter((movimiento) => {
+        const evento = movimiento.fechaGarita ?? movimiento.fechaSalidaBalanza;
+        return Boolean(evento && cita.fechaCita && new Date(evento).getTime() >= new Date(cita.fechaCita).getTime());
+      });
+      const retiroVacio = movimientosCita.find((movimiento) => movimiento.retiroVacio);
+      const valido = movimientosCita.filter(segundoPesajeValido);
+      const movimiento = movimientosCita.at(-1);
+      const espera = movimiento ? duracionReporte(cita.fechaGarita, movimiento.fechaGarita) : null;
+      const operativo = movimiento && segundoPesajeValido(movimiento) ? duracionReporte(movimiento.fechaGarita, movimiento.fechaSalidaBalanza) : null;
+      const multiple = movimientosCita.length > 1;
+      const estado = retiroVacio ? 'Retiro vacío / no atendida'
+        : multiple ? `Atención múltiple · ${movimientosCita.length} unidades`
+          : movimiento && segundoPesajeValido(movimiento) ? 'Completado'
+            : movimiento?.fechaGarita ? 'Primer pesaje GITS sin salida por balanza'
+              : cita.fechaGarita ? 'En garita' : 'Programada';
+      return {
+        fechaCita: fechaCortaReporte(cita.fechaCita), horaCita: horaReporte(cita.fechaCita), volante: cita.volante,
+        contenedor: cita.modalidad === 'FCL' ? cita.contenedor ?? movimiento?.contenedor ?? '—' : '—',
+        placa: multiple ? `${movimientosCita.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—',
+        registro: cita.fechaGarita ? horaReporte(cita.fechaGarita) : '—',
+        espera: retiroVacio ? '' : multiple ? 'Ver detalle' : espera ?? '—',
+        ingreso: retiroVacio ? '' : multiple ? `${movimientosCita.length} ingresos` : movimiento?.fechaGarita ? horaReporte(movimiento.fechaGarita) : '—',
+        salida: retiroVacio ? '' : multiple ? `${valido.length} salidas` : movimiento && segundoPesajeValido(movimiento) ? horaReporte(movimiento.fechaSalidaBalanza) : '—',
+        atencion: retiroVacio ? '' : multiple ? 'Por unidad' : operativo ?? '—', estado,
+        observacion: retiroVacio ? 'Pesaje libre: retiro vacío / cancelado' : '', anulada: false,
+        tonoEspera: tonoReporte(espera, 'ESPERA'), tonoAtencion: tonoReporte(operativo, 'OPERATIVO')
+      };
+    }))
+    .sort((a, b) => `${a.fechaCita}${a.horaCita}${a.volante}`.localeCompare(`${b.fechaCita}${b.horaCita}${b.volante}`));
 }
 
 async function syncFalconIfEnabled() {
@@ -1006,6 +1089,45 @@ app.get('/api/reports/operations.xlsx', async (request, response) => {
     response.send(excel);
   } catch (error) {
     response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo descargar el reporte.' });
+  }
+});
+
+/** Descarga el mismo detalle de seguimiento, con períodos históricos. */
+app.get('/api/reports/tracking.xlsx', async (request, response) => {
+  const periodo = String(request.query.periodo ?? 'DIARIO').toUpperCase() as PeriodoReporte;
+  const fechaRecibida = String(request.query.fecha ?? fechaReporteActual());
+  const fecha = periodo === 'MENSUAL' && /^\d{4}-\d{2}$/.test(fechaRecibida) ? `${fechaRecibida}-01` : fechaRecibida;
+  const hasta = typeof request.query.hasta === 'string' ? request.query.hasta : null;
+  const modalidad = String(request.query.modalidad ?? 'TODAS').toUpperCase() as ModalidadReporte;
+  if (!['DIARIO', 'MENSUAL', 'RANGO'].includes(periodo) || !['TODAS', 'FCL', 'LCL'].includes(modalidad)
+    || (periodo === 'RANGO' && (!hasta || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || hasta < fecha))) {
+    response.status(400).json({ message: 'Parámetros de seguimiento no válidos.' });
+    return;
+  }
+  try {
+    let operaciones: Operacion[];
+    let movimientos: GitsDailyFlowItem[] | null;
+    if (modoDemostracion()) {
+      operaciones = operacionesDemo;
+      movimientos = movimientosDemo;
+    } else {
+      try {
+        const directo = await consultarReporteDirecto(periodo, fecha, hasta, modalidad);
+        operaciones = directo.operations;
+        movimientos = directo.movimientos;
+      } catch {
+        operaciones = await listarOperacionesParaReporte(periodo, fecha, hasta ?? undefined);
+        movimientos = null;
+      }
+    }
+    const filas = crearFilasSeguimientoReporte(operaciones, movimientos, periodo, fecha, hasta, modalidad);
+    const titulo = `Seguimiento operativo · ${periodo === 'RANGO' ? `${fecha} al ${hasta}` : periodo === 'MENSUAL' ? fecha.slice(0, 7) : fecha} · ${modalidad === 'TODAS' ? 'FCL y LCL' : modalidad}`;
+    const excel = await seguimientoAExcel(titulo, filas);
+    response.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    response.setHeader('Content-Disposition', `attachment; filename="seguimiento-${periodo.toLowerCase()}-${fecha}-${modalidad.toLowerCase()}.xlsx"`);
+    response.send(excel);
+  } catch (error) {
+    response.status(503).json({ message: error instanceof Error ? error.message : 'No se pudo descargar el seguimiento.' });
   }
 });
 

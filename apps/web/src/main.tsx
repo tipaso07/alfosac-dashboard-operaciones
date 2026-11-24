@@ -468,7 +468,6 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <option value="CON_SALIDA_BALANZA">Con salida por balanza</option><option value="MULTIPLES">Vínculo múltiple</option>
           </select></label>
           {(busqueda || horaFiltro || situacionFiltro !== 'TODAS') && <button className="clear-filters" onClick={() => { setBusqueda(''); setHoraFiltro(''); setSituacionFiltro('TODAS'); }}>Limpiar filtros</button>}
-          {vista === 'LISTA' && <button className="clear-filters" onClick={() => void descargarVistaIndividual()}>Descargar vista actual</button>}
         </div>
 
         <div className="operations-table-wrap">
@@ -678,6 +677,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   const [fecha, setFecha] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
   const [hasta, setHasta] = useState(reportDate ?? new Date().toISOString().slice(0, 10));
   const [modalidad, setModalidad] = useState<'TODAS' | 'FCL' | 'LCL'>('TODAS');
+  const [tipoReporte, setTipoReporte] = useState<'SEGUIMIENTO' | 'CIERRE'>('CIERRE');
   const [reporte, setReporte] = useState<ReporteOperativo | null>(null);
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(true);
@@ -688,6 +688,11 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
     if (siguiente !== 'MENSUAL' && /^\d{4}-\d{2}$/.test(fecha)) setFecha(`${fecha}-01`);
   };
   useEffect(() => {
+    if (tipoReporte !== 'CIERRE') {
+      setCargando(false);
+      setError('');
+      return;
+    }
     let vigente = true;
     const params = new URLSearchParams({ periodo, fecha, modalidad });
     if (periodo === 'RANGO') params.set('hasta', hasta);
@@ -700,7 +705,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       .catch((reason: { message?: string }) => { if (vigente) { setReporte(null); setError(reason.message ?? 'No se pudo generar el reporte.'); } })
       .finally(() => { if (vigente) setCargando(false); });
     return () => { vigente = false; };
-  }, [periodo, fecha, hasta, modalidad]);
+  }, [periodo, fecha, hasta, modalidad, tipoReporte]);
 
   const params = new URLSearchParams({ periodo, fecha, modalidad });
   if (periodo === 'RANGO') params.set('hasta', hasta);
@@ -714,15 +719,17 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
   // El cierre entregado por Operaciones considera atenciones en garita y anulaciones.
   // Las no atendidas y los hitos GITS se muestran como información independiente.
   const totalCierreReporte = (reporte?.estadisticas.registroGarita ?? 0) + anuladasReporte;
+  const enlaceDescarga = tipoReporte === 'SEGUIMIENTO' ? `/api/reports/tracking.xlsx?${params}` : `/api/reports/operations.xlsx?${params}`;
   return <section className="reports-panel">
-    <div className="panel-heading"><div><p className="brand">REPORTES</p><h2>Cierre operativo FCL y LCL</h2></div><a className="detail-button" href={`/api/reports/operations.xlsx?${params}`}>Descargar para Excel</a></div>
+    <div className="panel-heading"><div><h2>Reportes</h2></div><a className="detail-button" href={enlaceDescarga}>Descargar para Excel</a></div>
     <div className="reports-controls">
       <label>Período<select value={periodo} onChange={(event) => cambiarPeriodo(event.target.value as 'DIARIO' | 'MENSUAL' | 'RANGO')}><option value="DIARIO">Diario</option><option value="RANGO">Rango de fechas</option><option value="MENSUAL">Mensual</option></select></label>
       <label>{periodo === 'RANGO' ? 'Desde' : 'Fecha'}<input type={periodo === 'MENSUAL' ? 'month' : 'date'} value={periodo === 'MENSUAL' ? fecha.slice(0, 7) : fecha} onChange={(event) => setFecha(event.target.value)} /></label>
       {periodo === 'RANGO' && <label>Hasta<input type="date" min={fecha} value={hasta} onChange={(event) => setHasta(event.target.value)} /></label>}
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
+      <label>Tipo de reporte<select value={tipoReporte} onChange={(event) => setTipoReporte(event.target.value as 'SEGUIMIENTO' | 'CIERRE')}><option value="SEGUIMIENTO">Seguimiento operativo</option><option value="CIERRE">Cierre operativo</option></select></label>
     </div>
-    {error ? <p className="empty">{error}</p> : reporte ? <>
+    {tipoReporte === 'SEGUIMIENTO' ? <p className="report-note">Incluye el detalle de citas, registro en garita, tiempos de espera y operativo, ingresos, salidas, estado y observaciones para el período elegido.</p> : error ? <p className="empty">{error}</p> : reporte ? <>
       <div className="report-summary-grid">
         <section className="report-chart-card">
           <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3><p className="report-active-caption">Citas activas: <b>{citasActivas}</b></p></div><strong>{totalCierreReporte}<small>total de cierre</small></strong></div>
