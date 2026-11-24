@@ -438,7 +438,6 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       <section className="operations-panel">
         <div className="panel-heading">
           <div>
-            <p className="brand">OPERACIONES</p>
             <h2>Seguimiento operativo</h2>
           </div>
           <p>{gruposFiltrados.length} volante(s)</p>
@@ -729,7 +728,7 @@ function ReportesPanel({ reportDate }: { reportDate: string | null }) {
       <label>Modalidad<select value={modalidad} onChange={(event) => setModalidad(event.target.value as 'TODAS' | 'FCL' | 'LCL')}><option value="TODAS">FCL y LCL</option><option value="FCL">FCL</option><option value="LCL">LCL</option></select></label>
       <label>Tipo de reporte<select value={tipoReporte} onChange={(event) => setTipoReporte(event.target.value as 'SEGUIMIENTO' | 'CIERRE')}><option value="SEGUIMIENTO">Seguimiento operativo</option><option value="CIERRE">Cierre operativo</option></select></label>
     </div>
-    {tipoReporte === 'SEGUIMIENTO' ? <p className="report-note">Incluye el detalle de citas, registro en garita, tiempos de espera y operativo, ingresos, salidas, estado y observaciones para el período elegido.</p> : error ? <p className="empty">{error}</p> : reporte ? <>
+    {tipoReporte === 'SEGUIMIENTO' ? null : error ? <p className="empty">{error}</p> : reporte ? <>
       <div className="report-summary-grid">
         <section className="report-chart-card">
           <div className="report-card-heading"><div><p className="brand">CIERRE DE CITAS</p><h3>Resultado del período</h3><p className="report-active-caption">Citas activas: <b>{citasActivas}</b></p></div><strong>{totalCierreReporte}<small>total de cierre</small></strong></div>
@@ -808,7 +807,7 @@ function ConfiguracionPanel({ user }: { user: UsuarioSesion }) {
   };
 
   return <section className="settings-panel">
-    <div className="panel-heading"><div><p className="brand">CONFIGURACIÓN</p><h2>Acceso y usuarios</h2></div><p>{user.email}</p></div>
+    <div className="panel-heading"><div><h2>Acceso y usuarios</h2></div><p>{user.email}</p></div>
     <div className="settings-grid">
       <form className="settings-card" onSubmit={(event) => void guardarClave(event)}>
         <div><h3>Actualizar contraseña</h3></div>
