@@ -111,6 +111,30 @@ function asociarRetirosVaciosPorPlaca(citas: Operacion[], movimientos: GitsDaily
   });
 }
 
+/**
+ * Contingencia autorizada por Operaciones: en algunos turnos GITS registra el
+ * pesaje, pero no el documento ni ticket. Para no perder el primer pesaje se
+ * enlaza solo si una única cita activa tiene la misma placa, garita previa y
+ * fecha. Si hay más de una posibilidad, el movimiento queda sin asociar.
+ */
+function asociarPesajesSinVinculoPorPlaca(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
+  return movimientos.map((movimiento) => {
+    if (movimiento.volante || movimiento.retiroVacio || !movimiento.placa || !movimiento.fechaGarita) return movimiento;
+    const placa = placaNormalizada(movimiento.placa);
+    if (!placa) return movimiento;
+    const instante = new Date(movimiento.fechaGarita).getTime();
+    const candidatas = citas.filter((cita) => {
+      if ((cita.modalidad !== 'LCL' && cita.modalidad !== 'FCL') || cita.estado === 'ANULADA' || !cita.volante || !cita.fechaGarita) return false;
+      const registro = new Date(cita.fechaGarita).getTime();
+      return placaNormalizada(cita.unidad) === placa
+        && fechaLima(cita.fechaGarita) === fechaLima(movimiento.fechaGarita)
+        && registro <= instante
+        && instante - registro <= 6 * 60 * 60_000;
+    });
+    return candidatas.length === 1 ? { ...movimiento, volante: candidatas[0].volante } : movimiento;
+  });
+}
+
 function movimientosConfirmados(group: GrupoFlujoOperativo) {
   // Las anulaciones quedan como historial visual, pero no vuelven ambiguo el
   // vínculo de la única cita activa con su movimiento físico.
@@ -164,7 +188,8 @@ function marcarRetirosConjuntos(groups: GrupoFlujoOperativo[]) {
 
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
 export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
-  const movimientosEnlazados = asociarRetirosVaciosPorPlaca(citas, asociarRetirosReestibadosPorAutorizacion(citas, movimientos));
+  const movimientosEnlazados = asociarPesajesSinVinculoPorPlaca(citas,
+    asociarRetirosVaciosPorPlaca(citas, asociarRetirosReestibadosPorAutorizacion(citas, movimientos)));
   const citasPorVolante = new Map<string, Operacion[]>();
   for (const cita of citas) {
     const volante = volanteNormalizado(cita.volante);

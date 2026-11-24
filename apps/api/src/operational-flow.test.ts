@@ -67,6 +67,23 @@ test('considera retiro vacío el movimiento de Balanza Libre marcado como cancel
   assert.equal(group?.movimientos[0]?.retiroVacio, true);
 });
 
+test('asocia primer pesaje sin documento solo con la única cita compatible por placa y garita', () => {
+  const maritima: Operacion = { ...cita('sin-enlace'), volante: '168232', unidad: 'C6Y939', fechaGarita: '2026-11-24T09:45:00-05:00' };
+  const primerPesaje = { ...movimiento('sin-documento'), volante: null, placa: 'C6Y939', fechaGarita: '2026-11-24T09:56:00-05:00', retiroVacio: false };
+  const group = crearFlujoOperativo([maritima], [primerPesaje])[0];
+  assert.equal(group?.volante, '168232');
+  assert.equal(group?.movimientos[0]?.movimiento, 'sin-documento');
+});
+
+test('no asocia por placa un pesaje sin documento si hay dos citas compatibles', () => {
+  const primera: Operacion = { ...cita('ambigua-1'), volante: '168232', unidad: 'C6Y939', fechaGarita: '2026-11-24T09:40:00-05:00' };
+  const segunda: Operacion = { ...cita('ambigua-2'), volante: '168233', unidad: 'C6Y939', fechaGarita: '2026-11-24T09:45:00-05:00' };
+  const primerPesaje = { ...movimiento('sin-documento'), volante: null, placa: 'C6Y939', fechaGarita: '2026-11-24T09:56:00-05:00', retiroVacio: false };
+  const groups = crearFlujoOperativo([primera, segunda], [primerPesaje]);
+  assert.equal(groups.find((group) => group.volante === '168232')?.movimientos.length, 0);
+  assert.equal(groups.find((group) => group.volante === '168233')?.movimientos.length, 0);
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');
