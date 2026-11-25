@@ -334,14 +334,15 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
   const seguimientoFiltrado = seguimiento.filter((item) => modalidadesVisibles.includes(item.modalidad) && (filtro === 'TODAS' || item.modalidad === filtro));
   const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
   const alertas = seguimientoFiltrado.filter((item) => esCritico(item.estado) || esProximo(item.estado));
-  const totales = resumen.filter((item) => modalidadesVisibles.includes(item.modalidad)).reduce((acumulado, item) => ({
+  const modalidadesResumen = modalidadesVisibles.filter((modalidad) => filtro === 'TODAS' || modalidad === filtro);
+  const totales = resumen.filter((item) => modalidadesResumen.includes(item.modalidad)).reduce((acumulado, item) => ({
     agendadas: acumulado.agendadas + item.agendadas,
     garita: acumulado.garita + item.garita,
     despacho: acumulado.despacho + item.despacho,
     completadas: acumulado.completadas + item.completadas,
     noCompletadas: acumulado.noCompletadas + item.noCompletadas
   }), { agendadas: 0, garita: 0, despacho: 0, completadas: 0, noCompletadas: 0 });
-  const seguimientoTotal = modalidadesVisibles.reduce((total, modalidad) => ({
+  const seguimientoTotal = modalidadesResumen.reduce((total, modalidad) => ({
     criticas: total.criticas + resumenSeguimiento[modalidad].criticas,
     proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
     pesoObservado: total.pesoObservado + resumenSeguimiento[modalidad].pesoObservado
