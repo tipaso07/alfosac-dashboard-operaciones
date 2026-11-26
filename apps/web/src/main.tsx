@@ -491,7 +491,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
               <tr>
                 <th>F. cita</th><th>Hora cita</th><th>Volante / A.R.</th>{filtro === 'FCL' && <th>Contenedor</th>}<th>Placa</th><th>Registro</th><th>T. espera</th>
                 <th>Ingreso</th><th>T. espera almacén</th><th>Salida</th><th>T. operativo</th>
-                <th></th>
+                <th className="detail-face-column"></th>
               </tr>
             </thead>
             <tbody>
@@ -523,7 +523,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                       )}
                     </>
                   )}
-                  <td>{anulada
+                  <td className="detail-face-column">{anulada
                     ? <button className="health-face cancelled-face cancelled-detail-button" onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver historial de cita anulada" aria-label="Ver historial de cita anulada"><CancelledFace /></button>
                     : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver detalle de la operación" aria-label={retiroVacio ? 'Ver detalle: retiro vacío / no atendida' : `Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
