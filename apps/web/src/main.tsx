@@ -367,7 +367,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       const espera = multiple ? 'Ver detalle' : segundosEspera == null ? '—' : formatDuration(segundosEspera);
       const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
       const anulada = cita.estado === 'ANULADA';
-      const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
+      const porcentajePeso = cita.modalidad === 'LCL' || cita.modalidad === 'FCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
       const completado = !multiple && Boolean(movimiento && tieneSegundoPesajeValido(movimiento));
       const observaciones = !anulada ? [
         segundosEspera != null && durationTone(segundosEspera, 'ESPERA', cita) === 'alert'
@@ -1153,7 +1153,7 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
     }
   });
 
-  const porcentajePeso = cita.modalidad === 'LCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
+  const porcentajePeso = cita.modalidad === 'LCL' || cita.modalidad === 'FCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
   // El seguimiento ya genera PESO_OBSERVADO para esta misma cita. La
   // comprobación local solo es un respaldo para datos históricos sin ese
   // seguimiento, de modo que no se presenten dos tarjetas iguales.
@@ -1515,8 +1515,8 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         minutosRetraso = minutosEntre(now, primerPesaje);
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
-      /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
-      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (detallePeso = detalleDiferenciaPesoGrupo(grupo)) != null && (porcentajePeso = detallePeso.porcentaje) > toleranciaPeso
+      /** El control contrasta el peso recibido en Falcon contra el neto de balanza para LCL y FCL. */
+      } else if ((cita.modalidad === 'LCL' || cita.modalidad === 'FCL') && movimientos.length > 0 && segundoPesaje && (detallePeso = detalleDiferenciaPesoGrupo(grupo)) != null && (porcentajePeso = detallePeso.porcentaje) > toleranciaPeso
         // Si un retiro conjunto realmente supera la tolerancia, la alerta se
         // publica una sola vez en el primer volante; los demás quedan como
         // completados para no duplicar ni confundir a ATC.
