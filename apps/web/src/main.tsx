@@ -379,7 +379,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           && !(seguimientoCita.estado === 'GARITA_SIN_INGRESO' && segundosEspera != null)
           && !(seguimientoCita.estado === 'BALANZA_SIN_SALIDA' && segundosAtencion != null)
           ? etiquetaSeguimiento(seguimientoCita) : null,
-        porcentajePeso != null && porcentajePeso > toleranciaPeso
+        porcentajePeso != null && superaToleranciaPeso(group, detalleDiferenciaPesoGrupo(group))
           ? `Diferencia de peso ${(porcentajePeso * 100).toFixed(1)}% · supera 5%` : null
       ].filter((texto): texto is string => Boolean(texto)) : [];
       // Falcon conserva ambas casuísticas dentro de la misma tabla de
@@ -1158,7 +1158,7 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
   // comprobación local solo es un respaldo para datos históricos sin ese
   // seguimiento, de modo que no se presenten dos tarjetas iguales.
   const pesoYaDiagnosticado = group.citas.some((citaGrupo) => seguimiento.get(citaGrupo.id)?.estado === 'PESO_OBSERVADO');
-  if (porcentajePeso != null && porcentajePeso > toleranciaPeso && !pesoYaDiagnosticado) {
+  if (porcentajePeso != null && superaToleranciaPeso(group, detalleDiferenciaPesoGrupo(group)) && !pesoYaDiagnosticado) {
     const ultimoMovimiento = movimientos.at(-1)!;
     agregar({ key: `peso-${cita.id}`, tone: 'alert', level: 'CRÍTICA', title: 'Diferencia de peso por validar', cita, fechaReferencia: ultimoMovimiento.fechaSalidaBalanza ?? ultimoMovimiento.fechaGarita!, porcentajePeso });
   }
@@ -1439,6 +1439,16 @@ function detalleDiferenciaPesoGrupo(group: GrupoFlujo) {
   return { recibido: recibidoMaritimo, despachado: neto, variacion: neto - recibidoMaritimo, porcentaje: Math.abs(neto - recibidoMaritimo) / recibidoMaritimo };
 }
 
+/**
+ * FCL se alerta únicamente si el neto despachado supera el peso recibido.
+ * LCL conserva el control bilateral histórico, porque allí se revisan tanto
+ * faltantes como excesos de mercadería.
+ */
+function superaToleranciaPeso(group: GrupoFlujo, detalle: ReturnType<typeof detalleDiferenciaPesoGrupo>) {
+  if (!detalle || detalle.porcentaje <= toleranciaPeso) return false;
+  return group.modalidad !== 'FCL' || detalle.variacion > 0;
+}
+
 function pesoNumericoOpcional(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
@@ -1516,7 +1526,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
       /** El control contrasta el peso recibido en Falcon contra el neto de balanza para LCL y FCL. */
-      } else if ((cita.modalidad === 'LCL' || cita.modalidad === 'FCL') && movimientos.length > 0 && segundoPesaje && (detallePeso = detalleDiferenciaPesoGrupo(grupo)) != null && (porcentajePeso = detallePeso.porcentaje) > toleranciaPeso
+      } else if ((cita.modalidad === 'LCL' || cita.modalidad === 'FCL') && movimientos.length > 0 && segundoPesaje && (detallePeso = detalleDiferenciaPesoGrupo(grupo)) != null && (porcentajePeso = detallePeso.porcentaje) > toleranciaPeso && superaToleranciaPeso(grupo, detallePeso)
         // Si un retiro conjunto realmente supera la tolerancia, la alerta se
         // publica una sola vez en el primer volante; los demás quedan como
         // completados para no duplicar ni confundir a ATC.
