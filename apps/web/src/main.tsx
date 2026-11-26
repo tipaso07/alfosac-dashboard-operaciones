@@ -1405,10 +1405,10 @@ function pesoRecibidoFalcon(group: GrupoFlujo) {
 }
 
 function pesoNetoMovimiento(movimiento: MovimientoFisico) {
-  const netoDirecto = pesoNumericoOpcional(movimiento.pesoNetoBalanza);
   const inicial = pesoNumericoOpcional(movimiento.pesoInicial);
   const final = pesoNumericoOpcional(movimiento.pesoFinal);
-  return netoDirecto ?? (inicial != null && final != null ? Math.abs(final - inicial) : null);
+  if (inicial != null && inicial > 0 && final != null && final > 0) return Math.abs(final - inicial);
+  return pesoNumericoOpcional(movimiento.pesoNetoBalanza);
 }
 
 /** En retiro múltiple se suman los netos de todas las unidades, pero el peso marítimo recibido del volante se toma una sola vez. */

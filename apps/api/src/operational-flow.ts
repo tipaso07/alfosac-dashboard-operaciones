@@ -73,9 +73,10 @@ function claveHorarioCita(value: string | null) {
 }
 
 function pesoNeto(movimiento: GitsDailyFlowItem) {
-  if (movimiento.pesoNetoBalanza != null) return movimiento.pesoNetoBalanza;
-  if (movimiento.pesoInicial != null && movimiento.pesoFinal != null) return Math.abs(movimiento.pesoFinal - movimiento.pesoInicial);
-  return null;
+  if (movimiento.pesoInicial != null && movimiento.pesoInicial > 0 && movimiento.pesoFinal != null && movimiento.pesoFinal > 0) {
+    return Math.abs(movimiento.pesoFinal - movimiento.pesoInicial);
+  }
+  return movimiento.pesoNetoBalanza;
 }
 
 /**
