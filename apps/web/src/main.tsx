@@ -487,7 +487,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <tbody>
               {citasOrdenadas.length ? citasOrdenadas.map(({ group, cita }) => {
                 const movimientos = movimientosDeCita(group, cita);
-                const esMultiple = movimientos.length > 1;
+                const esMultiple = cita.modalidad !== 'FCL' && movimientos.length > 1;
                 const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
                 const placa = esMultiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
                 const seguimientoCita = seguimientoPorCita.get(cita.id);
@@ -562,7 +562,7 @@ function groupVisualState(group: GrupoFlujo, seguimientoPorCita: Map<string, Seg
 
 /** Una cita con varios movimientos del mismo volante representa un retiro fraccionado confirmado por ATC. */
 function esAtencionMultiple(group: GrupoFlujo) {
-  return group.citas.filter((cita) => cita.estado !== 'ANULADA').length === 1 && group.movimientos.length > 1;
+  return group.modalidad !== 'FCL' && group.citas.filter((cita) => cita.estado !== 'ANULADA').length === 1 && group.movimientos.length > 1;
 }
 
 /** Solo se atribuyen pesajes cuando el vínculo es único o es un retiro fraccionado válido. */
@@ -635,11 +635,11 @@ function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento:
   if (seguimiento?.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
   const movimientos = movimientosDeCita(group, cita).filter((movimiento) => !movimiento.retiroVacio);
   const pendienteBalanza = movimientos.find((movimiento) => alertaPrimerPesajePendiente(movimiento) !== null);
-  if (pendienteBalanza) return `Primer pesaje GITS sin salida por balanza · ${formatDuration(duracionAtencionVisible(pendienteBalanza)!)}`;
+  if (pendienteBalanza) return `UT dentro del Almacén - ${formatDuration(duracionAtencionVisible(pendienteBalanza)!)}`;
   if (seguimiento && (esCritico(seguimiento.estado) || esProximo(seguimiento.estado))) return etiquetaSeguimiento(seguimiento);
-  if (movimientos.length > 1) return `Atención múltiple · ${movimientos.length} unidades`;
+  if (cita.modalidad !== 'FCL' && movimientos.length > 1) return `Atención múltiple · ${movimientos.length} unidades`;
   const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
-  const atencionMultiple = (group.retiroConjunto?.volantes.length ?? 0) > 1;
+  const atencionMultiple = cita.modalidad !== 'FCL' && (group.retiroConjunto?.volantes.length ?? 0) > 1;
   if (movimiento && tieneSegundoPesajeValido(movimiento)) return atencionMultiple ? 'Completado · atención múltiple' : 'Completado';
   if (movimiento?.fechaGarita) return 'En balanza';
   if (cita.fechaGarita) return `En garita, espera de ${formatDuration(durationSeconds(cita.fechaGarita, new Date().toISOString()) ?? 0)}`;
@@ -1141,7 +1141,7 @@ function alertasDiagnosticoGrupo(group: GrupoFlujo, seguimiento: Map<string, Seg
     const tonoAtencion = durationTone(atencion, 'ATENCION');
     if (!seguimientoAtencion && atencion !== null && (tonoAtencion === 'warning' || tonoAtencion === 'alert')) {
       const sinSalida = !tieneSegundoPesajeValido(movimiento);
-      agregar({ key: `atencion-${cita.id}-${movimiento.movimiento}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'CRÍTICA' : 'SEGUIMIENTO', title: `${sinSalida ? 'Primer pesaje GITS sin salida por balanza' : 'Demora en atención operativa'}${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
+      agregar({ key: `atencion-${cita.id}-${movimiento.movimiento}`, tone: tonoAtencion, level: tonoAtencion === 'alert' ? 'CRÍTICA' : 'SEGUIMIENTO', title: `${sinSalida ? 'UT dentro del Almacén' : 'Demora en atención operativa'}${esAtencionMultiple(group) ? ` · ${movimiento.placa ?? 'sin placa'}` : ''}`, cita, fechaReferencia: movimiento.fechaGarita!, duracion: formatDuration(atencion) });
     }
   });
 
@@ -1194,20 +1194,20 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const retiroVacio = estado?.estado === 'RETIRO_VACIO';
         const alertaBalanza = alertaPrimerPesajePendiente(movimiento);
         const sinSalida = alertaBalanza !== null;
-        const atencionMultiple = (group.retiroConjunto?.volantes.length ?? 0) > 1;
+        const atencionMultiple = cita.modalidad !== 'FCL' && (group.retiroConjunto?.volantes.length ?? 0) > 1;
         const esperaEnGarita = !movimiento?.fechaGarita && cita.fechaGarita
           ? durationSeconds(cita.fechaGarita, new Date().toISOString()) : null;
         const etiqueta = anulada ? 'Anulada'
           : retiroVacio ? 'Retiro vacío / no atendida'
-          : sinSalida && (alertaBalanza === 'alert' || alertaBalanza === 'warning') ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
+          : sinSalida ? `UT dentro del Almacén - ${formatDuration(atencion!)}`
           : esperaEnGarita !== null ? `En garita, espera de ${formatDuration(esperaEnGarita)}`
           : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
-          : estado?.estado === 'EN_ATENCION' ? `En almacén / atención${atencionMultiple ? ' múltiple' : ''} en curso`
+          : estado?.estado === 'EN_ATENCION' ? `UT dentro del Almacén - ${formatDuration(atencion ?? 0)}`
           : movimiento && tieneSegundoPesajeValido(movimiento) ? `Completado${atencionMultiple ? ' · atención múltiple' : ''}`
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: movimientos.length > 1 && !atencionMultiple ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : alertaBalanza === 'alert' ? 'alert' : alertaBalanza === 'warning' ? 'warning' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: cita.modalidad !== 'FCL' && movimientos.length > 1 && !atencionMultiple ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : alertaBalanza === 'alert' ? 'alert' : alertaBalanza === 'warning' ? 'warning' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
         });
       });
   });
@@ -1556,11 +1556,11 @@ function crearResumenSeguimiento(seguimiento: SeguimientoLlegada[]): Record<Moda
 function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
   if (item.estado === 'CITA_VENCIDA') return 'Cita vencida: Sin registro en garita';
-  if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita Falcon';
+  if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita';
   if (item.estado === 'GARITA_SIN_INGRESO') return `Demora para ingreso al DT · ${item.minutosRetraso} min`;
   if (item.estado === 'EN_GARITA') return `En garita, espera de ${item.minutosRetraso} min`;
-  if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
-  if (item.estado === 'EN_ATENCION') return 'En almacén / atención en curso';
+  if (item.estado === 'BALANZA_SIN_SALIDA') return `UT dentro del Almacén - ${formatDuration(item.minutosRetraso * 60)}`;
+  if (item.estado === 'EN_ATENCION' || item.estado === 'EN_BALANZA') return `UT dentro del Almacén - ${formatDuration(item.minutosRetraso * 60)}`;
   if (item.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
   if (item.estado === 'PESO_OBSERVADO') {
     const variacion = item.variacionPeso ?? 0;

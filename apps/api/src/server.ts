@@ -321,7 +321,9 @@ function crearFilasSeguimientoReporte(operaciones: Operacion[], movimientos: Git
       const movimiento = movimientosCita.at(-1);
       const espera = movimiento ? duracionReporte(cita.fechaGarita, movimiento.fechaGarita) : null;
       const operativo = movimiento && segundoPesajeValido(movimiento) ? duracionReporte(movimiento.fechaGarita, movimiento.fechaSalidaBalanza) : null;
-      const multiple = movimientosCita.length > 1;
+      // En FCL cada cita corresponde a un contenedor: aunque comparta volante,
+      // se reporta como una operación independiente y no como atención múltiple.
+      const multiple = cita.modalidad !== 'FCL' && movimientosCita.length > 1;
       const estado = retiroVacio ? 'Retiro vacío / no atendida'
         : multiple ? `Atención múltiple · ${movimientosCita.length} unidades`
           : movimiento && segundoPesajeValido(movimiento) ? 'Completado'
