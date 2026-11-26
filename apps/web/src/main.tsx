@@ -486,7 +486,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <tbody>{resumenHora.length > 0 ? resumenHora.map((item) => (
               <tr key={item.hora} className={`summary-hour-row ${item.critical ? 'critical-row' : item.warning ? 'warning-row' : ''}`} onClick={() => setHoraInspeccion(item.hora)}><td className={item.citaCritical ? 'appointment-hour-alert' : item.citaWarning ? 'appointment-hour-warning' : ''}>{item.hora}</td><td>{item.citas}</td><td>{item.garita}</td><td>{item.ingreso}</td><td>{item.despacho}</td><td>{item.revisar}</td><td><span className={item.critical ? 'state-badge state-alert' : 'state-badge'}>{item.critical ? `${item.pendientes} alerta(s)` : item.warning ? 'Próxima alerta' : item.incidencias ? 'Incidencia general' : item.revisar ? 'Por revisar' : 'Sin alerta'}</span></td></tr>
             )) : <tr><td colSpan={7} className="empty">No hay operaciones para este filtro.</td></tr>}</tbody>
-          </table> : <table className="operations-table detail-list">
+          </table> : <table className={`operations-table detail-list ${filtro === 'FCL' ? 'detail-list-fcl' : ''}`}>
             <thead>
               <tr>
                 <th>F. cita</th><th>Hora cita</th><th>Volante / A.R.</th>{filtro === 'FCL' && <th>Contenedor</th>}<th>Placa</th><th>Registro</th><th>T. espera</th>
