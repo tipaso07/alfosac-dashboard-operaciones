@@ -1408,7 +1408,7 @@ function pesoNetoMovimiento(movimiento: MovimientoFisico) {
   const inicial = pesoNumericoOpcional(movimiento.pesoInicial);
   const final = pesoNumericoOpcional(movimiento.pesoFinal);
   if (inicial != null && inicial > 0 && final != null && final > 0) return Math.abs(final - inicial);
-  return pesoNumericoOpcional(movimiento.pesoNetoBalanza);
+  return null;
 }
 
 /** En retiro múltiple se suman los netos de todas las unidades, pero el peso marítimo recibido del volante se toma una sola vez. */

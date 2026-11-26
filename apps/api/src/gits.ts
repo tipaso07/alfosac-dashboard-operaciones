@@ -208,11 +208,11 @@ function numero(value: unknown) {
  * En algunos tickets FCL, MOVBAL_N_DIFERENCIA representa el VGM (bruto con
  * tara). El neto operativo se obtiene de los dos pesajes físicos.
  */
-function pesoNetoOperativo(pesoInicial: number | null, pesoFinal: number | null, valorLegado: number | null) {
+function pesoNetoOperativo(pesoInicial: number | null, pesoFinal: number | null) {
   if (pesoInicial != null && pesoInicial > 0 && pesoFinal != null && pesoFinal > 0) {
     return Math.abs(pesoFinal - pesoInicial);
   }
-  return valorLegado;
+  return null;
 }
 
 /** Balanza Libre conserva el volante dentro de su observación, sin el puente documental habitual. */
@@ -993,7 +993,7 @@ export async function trazarVolanteGits(volante: string): Promise<GitsVolanteTra
         fechaFinalizacionTicket: fechaGitsPeru(row.fecha_finalizacion_ticket),
         pesoInicial: numero(row.peso_inicial),
         pesoFinal: numero(row.peso_final),
-        pesoNetoBalanza: pesoNetoOperativo(numero(row.peso_inicial), numero(row.peso_final), numero(row.peso_neto_balanza)),
+        pesoNetoBalanza: pesoNetoOperativo(numero(row.peso_inicial), numero(row.peso_final)),
         pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado)
       }))
     };
@@ -1309,7 +1309,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
         pesoInicial: numero(row.peso_inicial),
         pesoFinal: numero(row.peso_final),
-        pesoNetoBalanza: pesoNetoOperativo(numero(row.peso_inicial), numero(row.peso_final), numero(row.peso_neto_balanza)),
+        pesoNetoBalanza: pesoNetoOperativo(numero(row.peso_inicial), numero(row.peso_final)),
         cantidadTarjas: numero(row.cantidad_tarjas),
         pesoMercaderiaDeclarado: numero(row.peso_mercaderia_declarado),
         observacion,

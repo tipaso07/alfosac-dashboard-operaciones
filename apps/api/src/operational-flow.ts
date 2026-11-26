@@ -76,7 +76,7 @@ function pesoNeto(movimiento: GitsDailyFlowItem) {
   if (movimiento.pesoInicial != null && movimiento.pesoInicial > 0 && movimiento.pesoFinal != null && movimiento.pesoFinal > 0) {
     return Math.abs(movimiento.pesoFinal - movimiento.pesoInicial);
   }
-  return movimiento.pesoNetoBalanza;
+  return null;
 }
 
 /**
