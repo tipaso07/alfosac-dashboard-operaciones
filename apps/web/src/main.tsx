@@ -31,7 +31,7 @@ type Resumen = {
   noCompletadas: number;
 };
 
-type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null; observacion?: string | null; retiroVacio?: boolean };
+type MovimientoFisico = { movimiento: string; placa: string | null; contenedor: string | null; fechaGarita: string | null; fechaIngresoAlmacen: string | null; fechaSalidaAlmacen: string | null; fechaInicioAtencion?: string | null; fechaSalidaBalanza: string | null; pesoInicial: number | null; pesoFinal: number | null; pesoNetoBalanza: number | null; pesoMercaderiaDeclarado: number | null; observacion?: string | null; retiroVacio?: boolean };
 type AereoAsociado = { volante: string; placa: string; fechaGarita: string; primerPesaje: string | null; segundoPesaje: string | null; pesoDeclarado: number | null; diferenciaMinutos: number };
 type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operacion[]; movimientos: MovimientoFisico[]; tipo: 'UNICO' | 'MULTIPLE' | 'SIN_CITA' | 'SIN_MOVIMIENTO'; aereosAsociados?: AereoAsociado[]; retiroConjunto?: { placa: string; volantes: string[]; pesoDeclarado: number | null; pesoNetoBalanza: number | null; porcentajePeso: number | null } | null };
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
@@ -363,8 +363,10 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
       const placa = multiple ? `${movimientos.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—';
       const contenedor = cita.modalidad === 'FCL' ? cita.contenedor ?? movimiento?.contenedor ?? '—' : '—';
       const segundosEspera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
-      const segundosAtencion = durationSeconds(movimiento?.fechaGarita ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
+      const segundosEsperaAlmacen = durationSeconds(movimiento?.fechaGarita ?? null, movimiento?.fechaInicioAtencion ?? null);
+      const segundosAtencion = durationSeconds(movimiento?.fechaInicioAtencion ?? null, movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null);
       const espera = multiple ? 'Ver detalle' : segundosEspera == null ? '—' : formatDuration(segundosEspera);
+      const esperaAlmacen = multiple ? 'Por unidad' : segundosEsperaAlmacen == null ? '—' : formatDuration(segundosEsperaAlmacen);
       const atencion = multiple ? 'Por unidad' : segundosAtencion == null ? '—' : formatDuration(segundosAtencion);
       const anulada = cita.estado === 'ANULADA';
       const porcentajePeso = cita.modalidad === 'LCL' || cita.modalidad === 'FCL' ? porcentajeDiferenciaPesoGrupo(group) : null;
@@ -390,7 +392,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
         : [marcaPesajeLibre, ...observaciones].filter((texto): texto is string => Boolean(texto)).join(' | ');
       return {
         fechaCita: cita.fechaCita ? formatDateShort(cita.fechaCita) : '—', horaCita: cita.fechaCita ? formatTime(cita.fechaCita) : '—',
-        volante: group.volante, contenedor, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera,
+        volante: group.volante, contenedor, placa, registro: anulada ? '' : cita.fechaGarita ? formatTime(cita.fechaGarita) : '—', espera: anulada ? '' : espera, esperaAlmacen: anulada ? '' : esperaAlmacen,
         ingreso: anulada ? '' : multiple ? `${movimientos.length} ingresos` : movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—',
         salida: anulada ? '' : multiple ? `${movimientos.filter(tieneSegundoPesajeValido).length} salidas` : movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—',
         atencion: anulada ? '' : atencion, estado: anulada ? 'Anulada' : completado ? 'Completado' : '', observacion, anulada,
@@ -488,7 +490,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
             <thead>
               <tr>
                 <th>F. cita</th><th>Hora cita</th><th>Volante / A.R.</th>{filtro === 'FCL' && <th>Contenedor</th>}<th>Placa</th><th>Registro</th><th>T. espera</th>
-                <th>Ingreso</th><th>Salida</th><th>T. operativo</th>
+                <th>Ingreso</th><th>T. espera almacén</th><th>Salida</th><th>T. operativo</th>
                 <th></th>
               </tr>
             </thead>
@@ -515,9 +517,9 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                     <>
                       <td>{cita.fechaGarita ? formatTime(cita.fechaGarita) : '—'}</td>
                       {esMultiple ? (
-                        <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></>
+                        <><td className="duration-cell">Ver detalle</td><td>{movimientos.length} ingresos</td><td className="duration-cell">Por unidad</td><td>{movimientos.filter(tieneSegundoPesajeValido).length} salidas</td><td className="duration-cell">Por unidad</td></>
                       ) : (
-                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
+                        <><DurationTableCell start={cita.fechaGarita} end={movimiento?.fechaGarita ?? null} tipo="ESPERA" cita={cita} /><td>{movimiento?.fechaGarita ? formatTime(movimiento.fechaGarita) : '—'}</td><DurationTableCell start={movimiento?.fechaGarita ?? null} end={movimiento?.fechaInicioAtencion ?? null} tipo="ESPERA" /><td>{movimiento && tieneSegundoPesajeValido(movimiento) ? formatTime(movimiento.fechaSalidaBalanza!) : '—'}</td><DurationTableCell start={movimiento?.fechaInicioAtencion ?? null} end={movimiento && tieneSegundoPesajeValido(movimiento) ? movimiento.fechaSalidaBalanza : null} tipo="ATENCION" /></>
                       )}
                     </>
                   )}
@@ -526,7 +528,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
                     : <button className={`health-face health-face-${visual}`} onClick={() => setSeleccionado({ group, citaId: cita.id })} title="Ver detalle de la operación" aria-label={retiroVacio ? 'Ver detalle: retiro vacío / no atendida' : `Ver detalle: ${faceLabel(visual)}`}><HealthFace state={visual} /></button>
                   }</td>
                 </tr>;
-              }) : <tr><td colSpan={filtro === 'FCL' ? 11 : 10} className="empty">No hay operaciones para estos filtros.</td></tr>}
+              }) : <tr><td colSpan={filtro === 'FCL' ? 12 : 11} className="empty">No hay operaciones para estos filtros.</td></tr>}
             </tbody>
           </table>}
         </div>
@@ -1069,12 +1071,17 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
       {detalle.movimientos.length ? <ol className="timeline">{detalle.movimientos.map((movement) => {
         const citaRelacionada = citaSeleccionada ?? group.citas[0];
         const espera = durationSeconds(citaRelacionada?.fechaGarita ?? null, movement.fechaGarita);
+        const esperaAlmacen = durationSeconds(movement.fechaGarita, movement.fechaInicioAtencion ?? null);
+        const operativo = duracionAtencionReal(movement);
         const tonoEspera = durationTone(espera, 'ESPERA', citaRelacionada);
         return <li key={movement.movimiento} className={`done movement-timeline-item${movement.contenedor ? ' has-container' : ''}`}>
           <span>Ingreso a balanza: {movement.fechaGarita ? formatDateTime(movement.fechaGarita) : 'Sin hora'} · Salida por balanza: {tieneSegundoPesajeValido(movement) ? formatDateTime(movement.fechaSalidaBalanza!) : 'Pendiente de segundo pesaje'} · Placa: {movement.placa ?? '—'}</span>
           {movement.contenedor && <strong>{movement.contenedor}</strong>}
           <div className="movement-metrics">
             {espera !== null && <p>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b></p>}
+            {movement.fechaInicioAtencion && <p>Inicio de atención (tarja): {formatDateTime(movement.fechaInicioAtencion)}</p>}
+            {esperaAlmacen !== null && <p>Espera en almacén: {formatDuration(esperaAlmacen)}</p>}
+            {operativo !== null && <p>Tiempo operativo: {formatDuration(operativo)}</p>}
             <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)}</p>
             <p>Tara: {formatWeight(taraBalanza(movement))}</p>
             <p>Peso neto: {formatWeight(movement.pesoNetoBalanza)}</p>
@@ -1251,18 +1258,19 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
     <section className="hour-inspection-modal" role="dialog" aria-modal="true" aria-label={`Inspección de ${hora}`} onMouseDown={(event) => event.stopPropagation()}>
       <header className="hour-inspection-header"><div><p>INSPECCIÓN POR HORA</p><h2>{hora} · {modalidad ? nombres[modalidad] : 'FCL y LCL'}</h2></div><button className="close-button" onClick={onClose} aria-label="Cerrar inspección">×</button></header>
       <div className="hour-inspection-note"><span>Detalle de citas, garita y pesajes asociados a este horario.</span><strong>{filas.length} {filas.length === 1 ? 'cita' : 'citas'}</strong></div>
-      <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th>{muestraContenedor && <th>Contenedor</th>}<th>Hora cita</th><th>T. espera</th><th>T. operativo</th><th>Estado actual</th></tr></thead>
+      <div className="hour-inspection-table-wrap"><table className="hour-inspection-table"><thead><tr><th>Placa</th><th>Volante</th>{muestraContenedor && <th>Contenedor</th>}<th>Hora cita</th><th>T. espera</th><th>T. espera almacén</th><th>T. operativo</th><th>Estado actual</th></tr></thead>
         <tbody>{filasConVolanteCombinado.length ? filasConVolanteCombinado.map(({ cita, movimiento, etiqueta, tono, grupoPlaca, volanteRowSpan }) => {
           const espera = durationSeconds(cita.fechaGarita, movimiento?.fechaGarita ?? null);
-          const atencion = movimiento ? duracionAtencionVisible(movimiento) : null;
+          const esperaAlmacen = durationSeconds(movimiento?.fechaGarita ?? null, movimiento?.fechaInicioAtencion ?? null);
+          const atencion = movimiento ? duracionAtencionReal(movimiento) : null;
           // T. operativo es un dato definitivo solo después del segundo pesaje.
           // El reloj en curso permanece visible en la alerta de balanza.
           const atencionDefinitiva = movimiento && tieneSegundoPesajeValido(movimiento) ? atencion : null;
           const claseGrupo = grupoPlaca ? ` inspection-associated inspection-associated-${grupoPlaca.indice === 0 ? 'start' : grupoPlaca.indice === grupoPlaca.total - 1 ? 'end' : 'middle'}` : '';
           const tonoHora = tonoHoraCita(seguimientoPorCita.get(cita.id));
           const anulada = cita.estado === 'ANULADA';
-          return <tr className={`${claseGrupo}${anulada ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td>{volanteRowSpan > 0 && <td rowSpan={volanteRowSpan}>{cita.volante}</td>}{muestraContenedor && <td>{cita.contenedor ?? movimiento?.contenedor ?? '—'}</td>}<td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={anulada || espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{anulada || espera === null ? '' : formatDuration(espera)}</td><td className={anulada || atencionDefinitiva === null ? '' : `inspection-time duration-${durationTone(atencionDefinitiva, 'ATENCION')}`}>{anulada || atencionDefinitiva === null ? '' : formatDuration(atencionDefinitiva)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
-        }) : <tr><td colSpan={muestraContenedor ? 7 : 6} className="empty">No hay citas para este horario.</td></tr>}</tbody>
+          return <tr className={`${claseGrupo}${anulada ? ' inspection-cancelled-row' : ''}`} key={`${cita.id}-${movimiento?.movimiento ?? 'sin-movimiento'}`}><td>{movimiento?.placa ?? cita.unidad ?? '—'}</td>{volanteRowSpan > 0 && <td rowSpan={volanteRowSpan}>{cita.volante}</td>}{muestraContenedor && <td>{cita.contenedor ?? movimiento?.contenedor ?? '—'}</td>}<td className={tonoHora ? `appointment-hour-${tonoHora}` : ''}>{cita.fechaCita ? formatTime(cita.fechaCita) : '—'}</td><td className={anulada || espera === null ? '' : `inspection-time duration-${durationTone(espera, 'ESPERA', cita)}`}>{anulada || espera === null ? '' : formatDuration(espera)}</td><td className={anulada || esperaAlmacen === null ? '' : 'inspection-time'}>{anulada || esperaAlmacen === null ? '' : formatDuration(esperaAlmacen)}</td><td className={anulada || atencionDefinitiva === null ? '' : `inspection-time duration-${durationTone(atencionDefinitiva, 'ATENCION')}`}>{anulada || atencionDefinitiva === null ? '' : formatDuration(atencionDefinitiva)}</td><td><span className={`inspection-status inspection-status-${tono}`}>{etiqueta}</span></td></tr>;
+        }) : <tr><td colSpan={muestraContenedor ? 8 : 7} className="empty">No hay citas para este horario.</td></tr>}</tbody>
       </table></div>
     </section>
   </div>;
@@ -1487,6 +1495,12 @@ function duracionAtencionVisible(movimiento: MovimientoFisico) {
   const hoy = fechaLima(new Date().toISOString());
   if (fechaLima(movimiento.fechaGarita) !== hoy) return null;
   return durationSeconds(movimiento.fechaGarita, new Date().toISOString());
+}
+
+/** Tiempo definitivo de atención: primera tarja de salida hasta segundo pesaje. */
+function duracionAtencionReal(movimiento: MovimientoFisico) {
+  if (!movimiento.fechaInicioAtencion || !tieneSegundoPesajeValido(movimiento)) return null;
+  return durationSeconds(movimiento.fechaInicioAtencion, movimiento.fechaSalidaBalanza);
 }
 
 /** Una salida con peso final cero o a la misma hora del ingreso no cierra el pesaje. */

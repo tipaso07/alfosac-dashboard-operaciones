@@ -133,6 +133,8 @@ export interface GitsDailyFlowItem {
   fechaSalidaBalanza: string | null;
   fechaIngresoAlmacen: string | null;
   fechaSalidaAlmacen: string | null;
+  /** Primer tarjado de salida: inicio real de la atención operativa. */
+  fechaInicioAtencion?: string | null;
   /** Primer/segundo pesaje y diferencia registrados por balanza. */
   pesoInicial: number | null;
   pesoFinal: number | null;
@@ -1183,6 +1185,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         fecha_salida_balanza: Date | null;
         fecha_ingreso_almacen: Date | null;
         fecha_salida_almacen: Date | null;
+        fecha_inicio_atencion: Date | null;
         peso_inicial: number | null;
         peso_final: number | null;
         peso_neto_balanza: number | null;
@@ -1264,7 +1267,8 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
           balanza.MOVBAL_C_OBSERVACION AS observacion,
           pesoDocumento.peso_mercaderia_declarado,
           almacen.fecha_ingreso_almacen,
-          salida.fecha_salida_almacen
+          salida.fecha_salida_almacen,
+          tarja.fecha_inicio_atencion
         FROM dbo.OPETV_MOVIMIENTO_BALANZA balanza
         LEFT JOIN volantesMovimiento documento
           ON documento.empresa = balanza.EMPRES_C_CODIGO
@@ -1287,6 +1291,15 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
             AND registroSalida.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
           ORDER BY registroSalida.WSRESAL_D_FECHA_SALIDA_ALMACEN ASC
         ) salida
+        OUTER APPLY (
+          /* La primera tarja de SALIDA marca cuándo operaciones inicia
+             efectivamente el despacho, no cuándo la UT cruzó balanza. */
+          SELECT MIN(tarja.TARJA_D_FECHA) AS fecha_inicio_atencion
+          FROM dbo.OPETV_TARJA tarja
+          WHERE tarja.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
+            AND tarja.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
+            AND UPPER(LTRIM(RTRIM(tarja.TARJA_C_MOVIMIENTO))) = 'SALIDA'
+        ) tarja
         WHERE balanza.EMPRES_C_CODIGO = @empresa
           AND balanza.MOVBAL_D_FECHA_INGRESO >= @fromDate
           AND balanza.MOVBAL_D_FECHA_INGRESO < DATEADD(day, 1, @untilDate)
@@ -1307,6 +1320,7 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
         fechaSalidaBalanza: fechaGitsPeru(row.fecha_salida_balanza),
         fechaIngresoAlmacen: fechaGitsPeru(row.fecha_ingreso_almacen),
         fechaSalidaAlmacen: fechaGitsPeru(row.fecha_salida_almacen),
+        fechaInicioAtencion: fechaGitsPeru(row.fecha_inicio_atencion),
         pesoInicial: numero(row.peso_inicial),
         pesoFinal: numero(row.peso_final),
         pesoNetoBalanza: pesoNetoOperativo(numero(row.peso_inicial), numero(row.peso_final)),

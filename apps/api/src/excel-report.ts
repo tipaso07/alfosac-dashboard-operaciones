@@ -33,6 +33,7 @@ export type FilaSeguimientoExcel = {
   registro: string;
   espera: string;
   ingreso: string;
+  esperaAlmacen: string;
   salida: string;
   atencion: string;
   estado: string;
@@ -55,9 +56,9 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   workbook.creator = 'ALFOSAC';
   workbook.created = new Date();
   const sheet = workbook.addWorksheet('Seguimiento', { views: [{ state: 'frozen', ySplit: 4 }] });
-  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Contenedor', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'Salida', 'T. operativo', 'Estado actual', 'Observación'];
+  const headers = ['F. cita', 'Hora cita', 'Volante / A.R.', 'Contenedor', 'Placa', 'Registro', 'T. espera', 'Ingreso', 'T. espera almacén', 'Salida', 'T. operativo', 'Estado actual', 'Observación'];
 
-  sheet.mergeCells('A1:L1');
+  sheet.mergeCells('A1:M1');
   const title = sheet.getCell('A1');
   title.value = 'Seguimiento operativo';
   title.font = { name: 'Poppins', size: 16, bold: true, color: { argb: 'FFFFFFFF' } };
@@ -65,7 +66,7 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   title.alignment = { vertical: 'middle' };
   sheet.getRow(1).height = 28;
 
-  sheet.mergeCells('A2:L2');
+  sheet.mergeCells('A2:M2');
   const subtitle = sheet.getCell('A2');
   subtitle.value = titulo;
   subtitle.font = { name: 'Poppins', size: 10, color: { argb: '3C566D' } };
@@ -83,7 +84,7 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
   for (const fila of filas) {
     const row = sheet.addRow([
       fila.fechaCita, fila.horaCita, fila.volante, fila.contenedor, fila.placa, fila.registro,
-      fila.espera, fila.ingreso, fila.salida, fila.atencion, fila.estado, fila.observacion
+      fila.espera, fila.ingreso, fila.esperaAlmacen, fila.salida, fila.atencion, fila.estado, fila.observacion
     ]);
     row.height = 22;
     row.eachCell((cell) => {
@@ -97,16 +98,16 @@ export async function seguimientoAExcel(titulo: string, filas: FilaSeguimientoEx
         cell.font = { name: 'Poppins', size: 10, color: { argb: '667085' } };
       });
     } else {
-      [7, 10].forEach((column, index) => {
+      [7, 11].forEach((column, index) => {
         const tone = index === 0 ? fila.tonoEspera : fila.tonoAtencion;
         if (tone !== 'neutral') sheet.getCell(row.number, column).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillTiempo(tone) } };
       });
     }
   }
 
-  const widths = [14, 13, 16, 18, 15, 14, 15, 14, 14, 15, 28, 42];
+  const widths = [14, 13, 16, 18, 15, 14, 15, 14, 18, 14, 15, 28, 42];
   widths.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
-  sheet.autoFilter = { from: 'A4', to: `L${Math.max(4, filas.length + 4)}` };
+  sheet.autoFilter = { from: 'A4', to: `M${Math.max(4, filas.length + 4)}` };
   sheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }

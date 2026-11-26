@@ -320,7 +320,8 @@ function crearFilasSeguimientoReporte(operaciones: Operacion[], movimientos: Git
       const valido = movimientosCita.filter(segundoPesajeValido);
       const movimiento = movimientosCita.at(-1);
       const espera = movimiento ? duracionReporte(cita.fechaGarita, movimiento.fechaGarita) : null;
-      const operativo = movimiento && segundoPesajeValido(movimiento) ? duracionReporte(movimiento.fechaGarita, movimiento.fechaSalidaBalanza) : null;
+      const esperaAlmacen = movimiento ? duracionReporte(movimiento.fechaGarita, movimiento.fechaInicioAtencion ?? null) : null;
+      const operativo = movimiento && segundoPesajeValido(movimiento) ? duracionReporte(movimiento.fechaInicioAtencion ?? null, movimiento.fechaSalidaBalanza) : null;
       // En FCL cada cita corresponde a un contenedor: aunque comparta volante,
       // se reporta como una operación independiente y no como atención múltiple.
       const multiple = cita.modalidad !== 'FCL' && movimientosCita.length > 1;
@@ -336,6 +337,7 @@ function crearFilasSeguimientoReporte(operaciones: Operacion[], movimientos: Git
         registro: cita.fechaGarita ? horaReporte(cita.fechaGarita) : '—',
         espera: retiroVacio ? '' : multiple ? 'Ver detalle' : espera ?? '—',
         ingreso: retiroVacio ? '' : multiple ? `${movimientosCita.length} ingresos` : movimiento?.fechaGarita ? horaReporte(movimiento.fechaGarita) : '—',
+        esperaAlmacen: retiroVacio ? '' : multiple ? 'Por unidad' : esperaAlmacen ?? '—',
         salida: retiroVacio ? '' : multiple ? `${valido.length} salidas` : movimiento && segundoPesajeValido(movimiento) ? horaReporte(movimiento.fechaSalidaBalanza) : '—',
         atencion: retiroVacio ? '' : multiple ? 'Por unidad' : operativo ?? '—', estado,
         observacion: retiroVacio ? 'Pesaje libre: retiro vacío / cancelado' : '', anulada: false,
@@ -1143,7 +1145,7 @@ app.post('/api/dashboard/flow.xlsx', async (request, response) => {
   const filas: FilaSeguimientoExcel[] = fuente.map((fila: FilaSeguimientoEntrada) => ({
     fechaCita: texto(fila?.fechaCita, 24), horaCita: texto(fila?.horaCita, 20), volante: texto(fila?.volante, 30), contenedor: texto(fila?.contenedor, 40),
     placa: texto(fila?.placa, 40), registro: texto(fila?.registro, 20), espera: texto(fila?.espera, 30),
-    ingreso: texto(fila?.ingreso, 30), salida: texto(fila?.salida, 30), atencion: texto(fila?.atencion, 30),
+    ingreso: texto(fila?.ingreso, 30), esperaAlmacen: texto(fila?.esperaAlmacen, 30), salida: texto(fila?.salida, 30), atencion: texto(fila?.atencion, 30),
     estado: texto(fila?.estado, 180), observacion: texto(fila?.observacion, 220), anulada: fila?.anulada === true,
     tonoEspera: tono(fila?.tonoEspera), tonoAtencion: tono(fila?.tonoAtencion)
   }));
