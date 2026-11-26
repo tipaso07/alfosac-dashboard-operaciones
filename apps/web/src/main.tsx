@@ -347,6 +347,13 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     proximas: total.proximas + resumenSeguimiento[modalidad].proximas,
     pesoObservado: total.pesoObservado + resumenSeguimiento[modalidad].pesoObservado
   }), { criticas: 0, proximas: 0, pesoObservado: 0 });
+  // Una UT programada se identifica por la placa asignada a la cita en Falcon.
+  // La misma placa en varios volantes se cuenta una sola vez en este indicador.
+  const unidadesProgramadasLcl = new Set(citasOrdenadas
+    .filter(({ cita }) => cita.modalidad === 'LCL')
+    .map(({ cita }) => cita.unidad.trim().toUpperCase())
+    .filter((unidad) => unidad && unidad !== '-' && unidad !== '—')
+  ).size;
   const descargarVistaIndividual = async () => {
     const filas = citasOrdenadas.map(({ group, cita }) => {
       const movimientos = movimientosDeCita(group, cita);
@@ -428,10 +435,11 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
 
       {seccion === 'OPERACION' && <>
       <section className="internal-kpis" aria-label="Resumen general">
-        <Kpi label="Citas / A.R." value={totales.agendadas} />
+        {filtro === 'LCL'
+          ? <KpiDoble principal={{ label: 'Citas agendadas', value: totales.agendadas }} secundario={{ label: 'UT programadas', value: unidadesProgramadasLcl }} />
+          : <Kpi label="Citas / A.R." value={totales.agendadas} />}
         <Kpi label="Registro en garita" value={totales.garita} />
-        <Kpi label="Alertas críticas" value={seguimientoTotal.criticas} />
-        <Kpi label="Peso por validar" value={seguimientoTotal.pesoObservado} />
+        <Kpi label={seguimientoTotal.pesoObservado ? `Alertas críticas · incluye ${seguimientoTotal.pesoObservado} peso(s) por validar` : 'Alertas críticas'} value={seguimientoTotal.criticas} />
       </section>
 
       <IncidentNotice incidentes={incidentes} />
@@ -1261,6 +1269,13 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
 
 function Kpi({ label, value }: { label: string; value: number | string }) {
   return <article className="tv-kpi"><span>{label}</span><strong>{value}</strong></article>;
+}
+
+function KpiDoble({ principal, secundario }: { principal: { label: string; value: number | string }; secundario: { label: string; value: number | string } }) {
+  return <article className="tv-kpi kpi-doble">
+    <div><span>{principal.label}</span><strong>{principal.value}</strong></div>
+    <div><span>{secundario.label}</span><strong>{secundario.value}</strong></div>
+  </article>;
 }
 
 function IncidentNotice({ incidentes }: { incidentes: IncidenteOperativo[] }) {
