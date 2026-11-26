@@ -104,6 +104,14 @@ test('FCL conserva una operación por contenedor aunque comparta volante', () =>
   assert.equal(groups.find((group) => group.citas[0]?.contenedor === 'ONEU5629625')?.movimientos[0]?.movimiento, 'fcl-dos');
 });
 
+test('FCL asocia un pesaje sin contenedor cuando el volante y la cita del día son únicos', () => {
+  const operacion: Operacion = { ...cita('fcl-sin-contenedor-gits'), modalidad: 'FCL', volante: '168945', contenedor: 'CMAU1234567', fechaCita: '2026-11-26T09:00:00-05:00' };
+  const pesaje = { ...movimiento('fcl-sin-contenedor-gits'), volante: '168945', contenedor: null };
+  const group = crearFlujoOperativo([operacion], [pesaje])[0];
+  assert.equal(group?.citas[0]?.contenedor, 'CMAU1234567');
+  assert.equal(group?.movimientos[0]?.movimiento, 'fcl-sin-contenedor-gits');
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');

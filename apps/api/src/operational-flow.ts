@@ -256,9 +256,16 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
   for (const movimiento of movimientosEnlazados) {
     const volante = volanteNormalizado(movimiento.volante);
     const contenedor = contenedorNormalizado(movimiento.contenedor);
-    const candidatasFcl = citas.filter((cita) => cita.modalidad === 'FCL'
-      && contenedorNormalizado(cita.contenedor) === contenedor
+    const fclMismoVolante = citas.filter((cita) => cita.modalidad === 'FCL'
       && (!volante || volanteNormalizado(cita.volante) === volante));
+    // El contenedor es la llave principal de FCL. Sin embargo, algunos
+    // registros de balanza llegan sin contenedor (o Falcon aún no lo expone).
+    // En ese caso solo se usa el volante y la fecha cuando existe una única
+    // cita compatible; así se recuperan sus hitos sin cruzar contenedores.
+    const candidatasFclExactas = contenedor
+      ? fclMismoVolante.filter((cita) => contenedorNormalizado(cita.contenedor) === contenedor)
+      : [];
+    const candidatasFcl = candidatasFclExactas.length ? candidatasFclExactas : volante ? fclMismoVolante : [];
     const candidatasLcl = citas.filter((cita) => cita.modalidad !== 'FCL' && volanteNormalizado(cita.volante) === volante);
     const candidatas = candidatasFcl.length ? candidatasFcl : candidatasLcl;
     // Un contenedor puede reprogramarse. La cita del mismo día del movimiento
