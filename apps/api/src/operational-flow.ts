@@ -49,6 +49,18 @@ function placaNormalizada(value: string | null | undefined) {
   return placa && placa !== '-' ? placa : null;
 }
 
+function contenedorNormalizado(value: string | null | undefined) {
+  const contenedor = value?.trim().replace(/\s+/g, '').toUpperCase() ?? '';
+  return contenedor && contenedor !== '-' ? contenedor : null;
+}
+
+/** FCL se controla por cita/contenedor; LCL mantiene el agrupamiento por volante. */
+function claveGrupoCita(cita: Operacion) {
+  const volante = volanteNormalizado(cita.volante) ?? cita.id;
+  if (cita.modalidad !== 'FCL') return `VOLANTE:${volante}`;
+  return `FCL:${contenedorNormalizado(cita.contenedor) ?? 'SIN-CONTENEDOR'}:${cita.id}`;
+}
+
 function diferenciaMinutos(a: string, b: string) {
   return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 60_000;
 }
@@ -235,39 +247,51 @@ function marcarRetirosConjuntos(groups: GrupoFlujoOperativo[]) {
 export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
   const movimientosEnlazados = compartirPesajeDeAtencionMultiple(citas, asociarPesajesSinVinculoPorPlaca(citas,
     asociarRetirosVaciosPorPlaca(citas, asociarRetirosReestibadosPorAutorizacion(citas, movimientos))));
-  const citasPorVolante = new Map<string, Operacion[]>();
+  const citasPorClave = new Map<string, Operacion[]>();
   for (const cita of citas) {
-    const volante = volanteNormalizado(cita.volante);
-    if (!volante) continue;
-    citasPorVolante.set(volante, [...(citasPorVolante.get(volante) ?? []), cita]);
+    const clave = claveGrupoCita(cita);
+    citasPorClave.set(clave, [...(citasPorClave.get(clave) ?? []), cita]);
   }
-  const movimientosPorVolante = new Map<string, GitsDailyFlowItem[]>();
+  const movimientosPorClave = new Map<string, GitsDailyFlowItem[]>();
   for (const movimiento of movimientosEnlazados) {
     const volante = volanteNormalizado(movimiento.volante);
-    if (!volante) continue;
-    movimientosPorVolante.set(volante, [...(movimientosPorVolante.get(volante) ?? []), movimiento]);
+    const contenedor = contenedorNormalizado(movimiento.contenedor);
+    const candidatasFcl = citas.filter((cita) => cita.modalidad === 'FCL'
+      && contenedorNormalizado(cita.contenedor) === contenedor
+      && (!volante || volanteNormalizado(cita.volante) === volante));
+    const candidatasLcl = citas.filter((cita) => cita.modalidad !== 'FCL' && volanteNormalizado(cita.volante) === volante);
+    const candidatas = candidatasFcl.length ? candidatasFcl : candidatasLcl;
+    // Un contenedor puede reprogramarse. La cita del mismo día del movimiento
+    // tiene prioridad para no trasladar su pesaje a otra fecha.
+    const candidatasDelDia = candidatas.filter((cita) => fechaLima(cita.fechaCita) === fechaLima(movimiento.fechaGarita));
+    const cita = candidatasFcl.length
+      ? (candidatasDelDia.length === 1 ? candidatasDelDia[0] : candidatas.length === 1 ? candidatas[0] : null)
+      : candidatasLcl[0] ?? null;
+    const clave = cita ? claveGrupoCita(cita) : `SIN_CITA:${volante ?? contenedor ?? movimiento.empresa + ':' + movimiento.movimiento}`;
+    movimientosPorClave.set(clave, [...(movimientosPorClave.get(clave) ?? []), movimiento]);
   }
 
-  const volantes = new Set([...citasPorVolante.keys(), ...movimientosPorVolante.keys()]);
-  const groups: GrupoFlujoOperativo[] = [...volantes].map((volante) => {
-    const citasDelVolante = citasPorVolante.get(volante) ?? [];
-    const movimientosCandidatos = movimientosPorVolante.get(volante) ?? [];
+  const claves = new Set([...citasPorClave.keys(), ...movimientosPorClave.keys()]);
+  const groups: GrupoFlujoOperativo[] = [...claves].map((clave) => {
+    const citasDelGrupo = citasPorClave.get(clave) ?? [];
+    const movimientosCandidatos = movimientosPorClave.get(clave) ?? [];
     // Cuando existen porciones identificadas por AUT, el movimiento sin AUT es
     // el consolidado del viaje y no representa un volante adicional.
     const movimientosDelVolante = (movimientosCandidatos.some((movimiento) => movimiento.autorizacionRetiro)
       ? movimientosCandidatos.filter((movimiento) => !esConsolidadoReestibado(movimiento))
       : movimientosCandidatos
     ).sort((a, b) => (a.fechaGarita ?? '').localeCompare(b.fechaGarita ?? ''));
-    const modalidades = [...new Set(citasDelVolante.map((cita) => cita.modalidad))];
+    const modalidades = [...new Set(citasDelGrupo.map((cita) => cita.modalidad))];
+    const volante = volanteNormalizado(citasDelGrupo[0]?.volante) ?? volanteNormalizado(movimientosDelVolante[0]?.volante) ?? clave;
     return {
       volante,
       modalidad: modalidades.length === 1 ? modalidades[0] : null,
-      citas: citasDelVolante,
+      citas: citasDelGrupo,
       movimientos: movimientosDelVolante,
       aereosAsociados: [],
-      tipo: citasDelVolante.length === 0 ? 'SIN_CITA'
+      tipo: citasDelGrupo.length === 0 ? 'SIN_CITA'
         : movimientosDelVolante.length === 0 ? 'SIN_MOVIMIENTO'
-          : citasDelVolante.length === 1 && movimientosDelVolante.length === 1 ? 'UNICO' : 'MULTIPLE'
+          : citasDelGrupo.length === 1 && movimientosDelVolante.length === 1 ? 'UNICO' : 'MULTIPLE'
     };
   });
   const maritimas = groups.filter((group) => group.modalidad === 'FCL' || group.modalidad === 'LCL');

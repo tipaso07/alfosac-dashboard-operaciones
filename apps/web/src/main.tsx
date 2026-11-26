@@ -37,7 +37,7 @@ type GrupoFlujo = { volante: string; modalidad: Modalidad | null; citas: Operaci
 type IncidenteOperativo = { modalidades: Modalidad[]; message: string };
 /** El seguimiento mantiene separados los hitos Falcon de los pesajes GITS. */
 type EstadoSeguimiento = 'PROGRAMADA' | 'CITA_POR_VENCER' | 'CITA_VENCIDA' | 'EN_GARITA' | 'GARITA_SIN_INGRESO' | 'VINCULO_PENDIENTE' | 'EN_ATENCION' | 'EN_BALANZA' | 'BALANZA_SIN_SALIDA' | 'PESO_OBSERVADO' | 'RETIRO_VACIO' | 'INCIDENCIA_OPERATIVA';
-type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null };
+type SeguimientoLlegada = { id: string; volante: string; modalidad: Modalidad; fechaCita: string; placa: string | null; estado: EstadoSeguimiento; minutosRetraso: number; fechaReferencia: string; porcentajePeso?: number | null; pesoRecibido?: number | null; pesoDespachado?: number | null; variacionPeso?: number | null };
 type DiagnosticoAlerta = { key: string; tone: 'warning' | 'alert'; level: string; title: string; cita: Operacion; fechaReferencia: string; duracion?: string; porcentajePeso?: number | null; contact?: boolean };
 type ResumenSeguimiento = { proximas: number; criticas: number; revisar: number; pesoObservado: number };
 type ReporteOperativo = {
@@ -329,7 +329,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
     return true;
   }), [grupos, filtro, busqueda, horaFiltro, situacionFiltro, seguimientoPorCita]);
   const citasOrdenadas = useMemo(() => gruposFiltrados
-    .flatMap((group) => group.citas.map((cita) => ({ group, cita })))
+    .flatMap((group) => group.citas.filter((cita) => cita.estado !== 'ANULADA').map((cita) => ({ group, cita })))
     .sort((a, b) => (a.cita.fechaCita ?? '').localeCompare(b.cita.fechaCita ?? '') || a.group.volante.localeCompare(b.group.volante)), [gruposFiltrados]);
   const seguimientoFiltrado = seguimiento.filter((item) => modalidadesVisibles.includes(item.modalidad) && (filtro === 'TODAS' || item.modalidad === filtro));
   const resumenHora = crearDetalleFlujo(gruposFiltrados, reportDate, seguimientoFiltrado);
@@ -1177,7 +1177,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
   const seguimientoPorCita = new Map(seguimiento.map((item) => [item.id, item]));
   const filasBase = grupos.flatMap((group) => {
     return group.citas
-      .filter((cita) => cita.fechaCita
+      .filter((cita) => cita.estado !== 'ANULADA' && cita.fechaCita
         && (!reportDate || fechaLima(cita.fechaCita) === reportDate)
         && formatTime(cita.fechaCita).slice(0, 5) === hora.slice(0, 5))
       // La anulada conserva solo una referencia de placa. No debe repetir los
@@ -1230,11 +1230,11 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
   // Cuando el mismo volante genera varias filas consecutivas, se representa
   // como una sola celda vertical, sin perder el detalle por unidad/pesaje.
   const filasConVolanteCombinado = filas.map((fila, indice) => {
-    if (indice > 0 && filas[indice - 1].cita.volante === fila.cita.volante) {
+    if (fila.cita.modalidad !== 'FCL' && indice > 0 && filas[indice - 1].cita.modalidad !== 'FCL' && filas[indice - 1].cita.volante === fila.cita.volante) {
       return { ...fila, volanteRowSpan: 0 };
     }
     let total = 1;
-    while (filas[indice + total]?.cita.volante === fila.cita.volante) total += 1;
+    while (fila.cita.modalidad !== 'FCL' && filas[indice + total]?.cita.modalidad !== 'FCL' && filas[indice + total]?.cita.volante === fila.cita.volante) total += 1;
     return { ...fila, volanteRowSpan: total };
   });
   const muestraContenedor = modalidad === 'FCL';
@@ -1398,10 +1398,19 @@ function pesoNetoMovimiento(movimiento: MovimientoFisico) {
 
 /** En retiro múltiple se suman los netos de todas las unidades, pero el peso marítimo recibido del volante se toma una sola vez. */
 function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
+  return detalleDiferenciaPesoGrupo(group)?.porcentaje ?? null;
+}
+
+function detalleDiferenciaPesoGrupo(group: GrupoFlujo) {
   // En un retiro conjunto la API ya suma todos los volantes y todos los
   // movimientos de la misma UT. Nunca se compara un viaje completo contra
   // el peso de un solo volante.
-  if (group.retiroConjunto) return group.retiroConjunto.porcentajePeso;
+  if (group.retiroConjunto) {
+    const recibido = group.retiroConjunto.pesoDeclarado;
+    const despachado = group.retiroConjunto.pesoNetoBalanza;
+    if (recibido == null || despachado == null || recibido <= 0) return null;
+    return { recibido, despachado, variacion: despachado - recibido, porcentaje: Math.abs(despachado - recibido) / recibido };
+  }
   const movimientos = movimientosConfirmados(group).filter((movimiento) => !movimiento.retiroVacio);
   if (!movimientos.length || movimientos.some((movimiento) => !tieneSegundoPesajeValido(movimiento))) return null;
   const netos = movimientos.map(pesoNetoMovimiento);
@@ -1412,7 +1421,7 @@ function porcentajeDiferenciaPesoGrupo(group: GrupoFlujo) {
   // no tienen movimiento GITS asociado y nunca deben alterar esta diferencia.
   const recibidoMaritimo = pesoRecibidoFalcon(group);
   if (neto == null || recibidoMaritimo == null || recibidoMaritimo <= 0) return null;
-  return Math.abs(neto - recibidoMaritimo) / recibidoMaritimo;
+  return { recibido: recibidoMaritimo, despachado: neto, variacion: neto - recibidoMaritimo, porcentaje: Math.abs(neto - recibidoMaritimo) / recibidoMaritimo };
 }
 
 function pesoNumericoOpcional(value: unknown): number | null {
@@ -1475,6 +1484,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       let fechaReferencia = cita.fechaCita!;
       let minutosRetraso = 0;
       let porcentajePeso: number | null | undefined;
+      let detallePeso: ReturnType<typeof detalleDiferenciaPesoGrupo> = null;
 
       if (retiroVacio) {
         estado = 'RETIRO_VACIO';
@@ -1491,7 +1501,7 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
         estado = minutosRetraso > minutosRojoAtencion ? 'BALANZA_SIN_SALIDA'
           : minutosRetraso > minutosNaranjaAtencion ? 'EN_BALANZA' : 'EN_ATENCION';
       /** El control peso neto vs. mercancía declarada aplica a carga suelta (LCL), no a contenedores FCL. */
-      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (porcentajePeso = porcentajeDiferenciaPesoGrupo(grupo)) != null && porcentajePeso > toleranciaPeso
+      } else if (cita.modalidad === 'LCL' && movimientos.length > 0 && segundoPesaje && (detallePeso = detalleDiferenciaPesoGrupo(grupo)) != null && (porcentajePeso = detallePeso.porcentaje) > toleranciaPeso
         // Si un retiro conjunto realmente supera la tolerancia, la alerta se
         // publica una sola vez en el primer volante; los demás quedan como
         // completados para no duplicar ni confundir a ATC.
@@ -1526,7 +1536,8 @@ function crearSeguimientoLlegadas(grupos: GrupoFlujo[], reportDate: string | nul
       return {
         id: cita.id, volante: cita.volante, modalidad: cita.modalidad, fechaCita: cita.fechaCita!,
         placa: movimientoPrincipal?.placa ?? grupo.movimientos.find((movimiento) => movimiento.fechaGarita)?.placa ?? cita.unidad ?? null,
-        estado, minutosRetraso, fechaReferencia, porcentajePeso
+        estado, minutosRetraso, fechaReferencia, porcentajePeso,
+        pesoRecibido: detallePeso?.recibido ?? null, pesoDespachado: detallePeso?.despachado ?? null, variacionPeso: detallePeso?.variacion ?? null
       };
     }));
 }
@@ -1544,14 +1555,18 @@ function crearResumenSeguimiento(seguimiento: SeguimientoLlegada[]): Record<Moda
 
 function etiquetaSeguimiento(item: SeguimientoLlegada) {
   if (item.estado === 'INCIDENCIA_OPERATIVA') return 'Incidencia operativa: seguimiento general activo';
-  if (item.estado === 'CITA_VENCIDA') return `Cita vencida: sin registro en garita Falcon · ${item.minutosRetraso} min`;
+  if (item.estado === 'CITA_VENCIDA') return 'Cita vencida: Sin registro en garita';
   if (item.estado === 'CITA_POR_VENCER') return 'Cita por vencer: sin registro en garita Falcon';
   if (item.estado === 'GARITA_SIN_INGRESO') return `Demora para ingreso al DT · ${item.minutosRetraso} min`;
   if (item.estado === 'EN_GARITA') return `En garita, espera de ${item.minutosRetraso} min`;
   if (item.estado === 'BALANZA_SIN_SALIDA') return `Primer pesaje GITS sin salida por balanza · ${item.minutosRetraso} min`;
   if (item.estado === 'EN_ATENCION') return 'En almacén / atención en curso';
   if (item.estado === 'RETIRO_VACIO') return 'Retiro vacío / no atendida';
-  if (item.estado === 'PESO_OBSERVADO') return `Diferencia de peso ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · supera 5%`;
+  if (item.estado === 'PESO_OBSERVADO') {
+    const variacion = item.variacionPeso ?? 0;
+    const signo = variacion >= 0 ? '+' : '-';
+    return `Variación de peso: ${signo}${Math.abs(variacion).toFixed(0)} kg / ${((item.porcentajePeso ?? 0) * 100).toFixed(1)}% · recibido ${item.pesoRecibido?.toFixed(0) ?? '—'} kg · despachado ${item.pesoDespachado?.toFixed(0) ?? '—'} kg`;
+  }
   if (item.estado === 'VINCULO_PENDIENTE') return 'Hay más de una cita o movimiento: requiere validación';
   return 'Programada';
 }

@@ -93,6 +93,17 @@ test('comparte el primer pesaje de una atención múltiple desde la primera bala
   assert.equal(groups.find((group) => group.volante === '168683')?.movimientos[0]?.movimiento, 'compartido');
 });
 
+test('FCL conserva una operación por contenedor aunque comparta volante', () => {
+  const primero: Operacion = { ...cita('fcl-1'), modalidad: 'FCL', volante: '168603', contenedor: 'TCLU6450873', fechaCita: '2026-11-26T07:00:00-05:00' };
+  const segundo: Operacion = { ...cita('fcl-2'), modalidad: 'FCL', volante: '168603', contenedor: 'ONEU5629625', fechaCita: '2026-11-26T07:00:00-05:00' };
+  const movimientoUno = { ...movimiento('fcl-uno'), volante: '168603', contenedor: 'TCLU6450873' };
+  const movimientoDos = { ...movimiento('fcl-dos'), volante: '168603', contenedor: 'ONEU5629625' };
+  const groups = crearFlujoOperativo([primero, segundo], [movimientoUno, movimientoDos]);
+  assert.equal(groups.filter((group) => group.volante === '168603').length, 2);
+  assert.equal(groups.find((group) => group.citas[0]?.contenedor === 'TCLU6450873')?.movimientos[0]?.movimiento, 'fcl-uno');
+  assert.equal(groups.find((group) => group.citas[0]?.contenedor === 'ONEU5629625')?.movimientos[0]?.movimiento, 'fcl-dos');
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');
