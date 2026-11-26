@@ -1298,7 +1298,9 @@ export async function consultarFlujoDiarioGits(date: string, limit = 50, hasta =
           FROM dbo.OPETV_TARJA tarja
           WHERE tarja.EMPRES_C_CODIGO = balanza.EMPRES_C_CODIGO
             AND tarja.MOVBAL_C_NUMERO = balanza.MOVBAL_C_NUMERO
-            AND UPPER(LTRIM(RTRIM(tarja.TARJA_C_MOVIMIENTO))) = 'SALIDA'
+            /* GITS guarda SALIDA como código 02; algunas instalaciones
+               exponen el literal. Se aceptan ambos sin inferir por placa. */
+            AND UPPER(LTRIM(RTRIM(tarja.TARJA_C_MOVIMIENTO))) IN ('02', 'SALIDA')
         ) tarja
         WHERE balanza.EMPRES_C_CODIGO = @empresa
           AND balanza.MOVBAL_D_FECHA_INGRESO >= @fromDate
