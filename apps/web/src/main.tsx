@@ -1075,7 +1075,8 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
           {movement.contenedor && <strong>{movement.contenedor}</strong>}
           <div className="movement-metrics">
             {espera !== null && <p>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b></p>}
-            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} · Tara: {formatWeight(taraBalanza(movement))}</p>
+            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)}</p>
+            <p>Tara: {formatWeight(taraBalanza(movement))}</p>
             <p>Peso neto: {formatWeight(movement.pesoNetoBalanza)}</p>
             <p>Peso marítimo recibido: {formatWeight(pesoRecibido)}</p>
           </div>
