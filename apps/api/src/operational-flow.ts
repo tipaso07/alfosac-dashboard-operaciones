@@ -53,6 +53,13 @@ function diferenciaMinutos(a: string, b: string) {
   return Math.abs(new Date(a).getTime() - new Date(b).getTime()) / 60_000;
 }
 
+function claveHorarioCita(value: string | null) {
+  if (!value) return null;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(value));
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}`;
+}
+
 function pesoNeto(movimiento: GitsDailyFlowItem) {
   if (movimiento.pesoNetoBalanza != null) return movimiento.pesoNetoBalanza;
   if (movimiento.pesoInicial != null && movimiento.pesoFinal != null) return Math.abs(movimiento.pesoFinal - movimiento.pesoInicial);
@@ -135,6 +142,44 @@ function asociarPesajesSinVinculoPorPlaca(citas: Operacion[], movimientos: GitsD
   });
 }
 
+/**
+ * Cuando varias citas del mismo horario usan una sola UT, GITS puede informar
+ * un único primer pesaje. Se replica ese hito entre los volantes únicamente
+ * si todos comparten placa, día, hora de cita y existe un solo movimiento
+ * físico en la ventana; los conteos lo deduplican por número de movimiento.
+ */
+function compartirPesajeDeAtencionMultiple(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
+  const resultado: GitsDailyFlowItem[] = [];
+  for (const movimiento of movimientos) {
+    if (movimiento.retiroVacio || !movimiento.placa || !movimiento.fechaGarita) {
+      resultado.push(movimiento);
+      continue;
+    }
+    const placa = placaNormalizada(movimiento.placa);
+    const instante = new Date(movimiento.fechaGarita).getTime();
+    const candidatas = citas.filter((cita) => {
+      if ((cita.modalidad !== 'LCL' && cita.modalidad !== 'FCL') || cita.estado === 'ANULADA' || !cita.volante || !cita.fechaGarita || !cita.fechaCita) return false;
+      const registro = new Date(cita.fechaGarita).getTime();
+      return placaNormalizada(cita.unidad) === placa
+        && fechaLima(cita.fechaGarita) === fechaLima(movimiento.fechaGarita)
+        && fechaLima(cita.fechaCita) === fechaLima(movimiento.fechaGarita)
+        && registro <= instante
+        && instante - registro <= 6 * 60 * 60_000;
+    });
+    const horarios = new Set(candidatas.map((cita) => claveHorarioCita(cita.fechaCita)).filter(Boolean));
+    const movimientosFisicos = new Set(movimientos
+      .filter((item) => placaNormalizada(item.placa) === placa && item.fechaGarita
+        && fechaLima(item.fechaGarita) === fechaLima(movimiento.fechaGarita)
+        && diferenciaMinutos(item.fechaGarita!, movimiento.fechaGarita!) <= 10)
+      .map((item) => `${item.empresa}:${item.movimiento}`));
+    const movimientoCompatible = !movimiento.volante || candidatas.some((cita) => volanteNormalizado(cita.volante) === volanteNormalizado(movimiento.volante));
+    if (candidatas.length > 1 && horarios.size === 1 && movimientosFisicos.size === 1 && movimientoCompatible) {
+      candidatas.forEach((cita) => resultado.push({ ...movimiento, volante: cita.volante }));
+    } else resultado.push(movimiento);
+  }
+  return [...new Map(resultado.map((movimiento) => [`${movimiento.empresa}:${movimiento.movimiento}:${volanteNormalizado(movimiento.volante) ?? ''}`, movimiento])).values()];
+}
+
 function movimientosConfirmados(group: GrupoFlujoOperativo) {
   // Las anulaciones quedan como historial visual, pero no vuelven ambiguo el
   // vínculo de la única cita activa con su movimiento físico.
@@ -188,8 +233,8 @@ function marcarRetirosConjuntos(groups: GrupoFlujoOperativo[]) {
 
 /** Agrupa sin atribuir un movimiento físico a una cita cuando no es único. */
 export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFlowItem[]) {
-  const movimientosEnlazados = asociarPesajesSinVinculoPorPlaca(citas,
-    asociarRetirosVaciosPorPlaca(citas, asociarRetirosReestibadosPorAutorizacion(citas, movimientos)));
+  const movimientosEnlazados = compartirPesajeDeAtencionMultiple(citas, asociarPesajesSinVinculoPorPlaca(citas,
+    asociarRetirosVaciosPorPlaca(citas, asociarRetirosReestibadosPorAutorizacion(citas, movimientos))));
   const citasPorVolante = new Map<string, Operacion[]>();
   for (const cita of citas) {
     const volante = volanteNormalizado(cita.volante);

@@ -639,7 +639,8 @@ function etiquetaFilaIndividual(cita: Operacion, group: GrupoFlujo, seguimiento:
   if (seguimiento && (esCritico(seguimiento.estado) || esProximo(seguimiento.estado))) return etiquetaSeguimiento(seguimiento);
   if (movimientos.length > 1) return `Atención múltiple · ${movimientos.length} unidades`;
   const movimiento = movimientos.length === 1 ? movimientos[0] : undefined;
-  if (movimiento && tieneSegundoPesajeValido(movimiento)) return 'Completado';
+  const atencionMultiple = (group.retiroConjunto?.volantes.length ?? 0) > 1;
+  if (movimiento && tieneSegundoPesajeValido(movimiento)) return atencionMultiple ? 'Completado · atención múltiple' : 'Completado';
   if (movimiento?.fechaGarita) return 'En balanza';
   if (cita.fechaGarita) return `En garita, espera de ${formatDuration(durationSeconds(cita.fechaGarita, new Date().toISOString()) ?? 0)}`;
   return 'Programada';
@@ -1193,6 +1194,7 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
         const retiroVacio = estado?.estado === 'RETIRO_VACIO';
         const alertaBalanza = alertaPrimerPesajePendiente(movimiento);
         const sinSalida = alertaBalanza !== null;
+        const atencionMultiple = (group.retiroConjunto?.volantes.length ?? 0) > 1;
         const esperaEnGarita = !movimiento?.fechaGarita && cita.fechaGarita
           ? durationSeconds(cita.fechaGarita, new Date().toISOString()) : null;
         const etiqueta = anulada ? 'Anulada'
@@ -1200,12 +1202,12 @@ function HourInspectionModal({ hora, modalidad, grupos, seguimiento, reportDate,
           : sinSalida && (alertaBalanza === 'alert' || alertaBalanza === 'warning') ? `Primer pesaje GITS sin salida por balanza · ${formatDuration(atencion!)}`
           : esperaEnGarita !== null ? `En garita, espera de ${formatDuration(esperaEnGarita)}`
           : esRojo || esAmarillo ? etiquetaSeguimiento(estado!)
-          : estado?.estado === 'EN_ATENCION' ? 'En almacén / atención en curso'
-          : movimiento && tieneSegundoPesajeValido(movimiento) ? 'Completado'
+          : estado?.estado === 'EN_ATENCION' ? `En almacén / atención${atencionMultiple ? ' múltiple' : ''} en curso`
+          : movimiento && tieneSegundoPesajeValido(movimiento) ? `Completado${atencionMultiple ? ' · atención múltiple' : ''}`
             : movimiento?.fechaGarita ? 'En balanza'
               : cita.fechaGarita ? 'En garita'
                 : 'Programada';
-        return { cita, movimiento, etiqueta: movimientos.length > 1 ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : alertaBalanza === 'alert' ? 'alert' : alertaBalanza === 'warning' ? 'warning' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
+        return { cita, movimiento, etiqueta: movimientos.length > 1 && !atencionMultiple ? `${etiqueta} · atención múltiple` : etiqueta, tono: anulada || retiroVacio ? 'unknown' : alertaBalanza === 'alert' ? 'alert' : alertaBalanza === 'warning' ? 'warning' : esRojo || tonoTiempo === 'alert' ? 'alert' : esAmarillo || tonoTiempo === 'warning' ? 'warning' : estado?.estado === 'EN_ATENCION' || movimiento && tieneSegundoPesajeValido(movimiento) ? 'ok' : 'unknown' };
         });
       });
   });

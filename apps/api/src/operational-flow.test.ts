@@ -84,6 +84,15 @@ test('no asocia por placa un pesaje sin documento si hay dos citas compatibles',
   assert.equal(groups.find((group) => group.volante === '168233')?.movimientos.length, 0);
 });
 
+test('comparte el primer pesaje de una atención múltiple desde la primera balanza', () => {
+  const primera: Operacion = { ...cita('multiple-1'), volante: '168682', unidad: 'AHU840', fechaCita: '2026-11-26T08:00:00-05:00', fechaGarita: '2026-11-26T08:30:00-05:00' };
+  const segunda: Operacion = { ...cita('multiple-2'), volante: '168683', unidad: 'AHU840', fechaCita: '2026-11-26T08:00:00-05:00', fechaGarita: '2026-11-26T08:32:00-05:00' };
+  const primerPesaje = { ...movimiento('compartido'), volante: '168682', placa: 'AHU840', fechaGarita: '2026-11-26T08:56:52-05:00', retiroVacio: false };
+  const groups = crearFlujoOperativo([primera, segunda], [primerPesaje]);
+  assert.equal(groups.find((group) => group.volante === '168682')?.movimientos[0]?.movimiento, 'compartido');
+  assert.equal(groups.find((group) => group.volante === '168683')?.movimientos[0]?.movimiento, 'compartido');
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');
