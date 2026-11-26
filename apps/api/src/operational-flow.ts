@@ -170,7 +170,7 @@ function compartirPesajeDeAtencionMultiple(citas: Operacion[], movimientos: Gits
     const placa = placaNormalizada(movimiento.placa);
     const instante = new Date(movimiento.fechaGarita).getTime();
     const candidatas = citas.filter((cita) => {
-      if ((cita.modalidad !== 'LCL' && cita.modalidad !== 'FCL') || cita.estado === 'ANULADA' || !cita.volante || !cita.fechaGarita || !cita.fechaCita) return false;
+      if (cita.modalidad !== 'LCL' || cita.estado === 'ANULADA' || !cita.volante || !cita.fechaGarita || !cita.fechaCita) return false;
       const registro = new Date(cita.fechaGarita).getTime();
       return placaNormalizada(cita.unidad) === placa
         && fechaLima(cita.fechaGarita) === fechaLima(movimiento.fechaGarita)
@@ -271,8 +271,17 @@ export function crearFlujoOperativo(citas: Operacion[], movimientos: GitsDailyFl
     // Un contenedor puede reprogramarse. La cita del mismo día del movimiento
     // tiene prioridad para no trasladar su pesaje a otra fecha.
     const candidatasDelDia = candidatas.filter((cita) => fechaLima(cita.fechaCita) === fechaLima(movimiento.fechaGarita));
+    const placa = placaNormalizada(movimiento.placa);
+    const instante = movimiento.fechaGarita ? new Date(movimiento.fechaGarita).getTime() : null;
+    const candidatasMismaUT = placa && instante !== null
+      ? (candidatasDelDia.length ? candidatasDelDia : candidatas).filter((candidate) => {
+        if (placaNormalizada(candidate.unidad) !== placa || !candidate.fechaGarita) return false;
+        const registro = new Date(candidate.fechaGarita).getTime();
+        return registro <= instante && instante - registro <= 6 * 60 * 60_000;
+      })
+      : [];
     const cita = candidatasFcl.length
-      ? (candidatasDelDia.length === 1 ? candidatasDelDia[0] : candidatas.length === 1 ? candidatas[0] : null)
+      ? (candidatasMismaUT.length === 1 ? candidatasMismaUT[0] : candidatasDelDia.length === 1 ? candidatasDelDia[0] : candidatas.length === 1 ? candidatas[0] : null)
       : candidatasLcl[0] ?? null;
     const clave = cita ? claveGrupoCita(cita) : `SIN_CITA:${volante ?? contenedor ?? movimiento.empresa + ':' + movimiento.movimiento}`;
     movimientosPorClave.set(clave, [...(movimientosPorClave.get(clave) ?? []), movimiento]);

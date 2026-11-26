@@ -112,6 +112,16 @@ test('FCL asocia un pesaje sin contenedor cuando el volante y la cita del día s
   assert.equal(group?.movimientos[0]?.movimiento, 'fcl-sin-contenedor-gits');
 });
 
+test('FCL usa placa y garita para separar contenedores del mismo volante', () => {
+  const primero: Operacion = { ...cita('fcl-placa-uno'), modalidad: 'FCL', volante: '168603', unidad: 'AAA111', contenedor: 'TCLU6450873', fechaCita: '2026-11-26T07:00:00-05:00', fechaGarita: '2026-11-26T07:05:00-05:00' };
+  const segundo: Operacion = { ...cita('fcl-placa-dos'), modalidad: 'FCL', volante: '168603', unidad: 'BBB222', contenedor: 'ONEU5629625', fechaCita: '2026-11-26T07:00:00-05:00', fechaGarita: '2026-11-26T07:06:00-05:00' };
+  const pesajeUno = { ...movimiento('fcl-placa-uno'), volante: '168603', placa: 'AAA111', contenedor: null, fechaGarita: '2026-11-26T07:20:00-05:00' };
+  const pesajeDos = { ...movimiento('fcl-placa-dos'), volante: '168603', placa: 'BBB222', contenedor: null, fechaGarita: '2026-11-26T07:21:00-05:00' };
+  const groups = crearFlujoOperativo([primero, segundo], [pesajeUno, pesajeDos]);
+  assert.equal(groups.find((group) => group.citas[0]?.contenedor === 'TCLU6450873')?.movimientos[0]?.movimiento, 'fcl-placa-uno');
+  assert.equal(groups.find((group) => group.citas[0]?.contenedor === 'ONEU5629625')?.movimientos[0]?.movimiento, 'fcl-placa-dos');
+});
+
 test('ordena grupos cuando Postgres devuelve una fecha como objeto Date', () => {
   const dated = { ...cita('1'), fechaCita: new Date('2026-10-22T08:00:00-05:00') } as unknown as Operacion;
   assert.equal(crearFlujoOperativo([dated], [movimiento('a')])[0]?.volante, '164709');
