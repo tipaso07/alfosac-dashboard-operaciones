@@ -1075,7 +1075,7 @@ function FlowModal({ group, citaId, seguimiento, onClose }: { group: GrupoFlujo;
           {movement.contenedor && <strong>{movement.contenedor}</strong>}
           <div className="movement-metrics">
             {espera !== null && <p>Espera desde garita: <b className={`duration-${tonoEspera}`}>{formatDuration(espera)}</b></p>}
-            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)}</p>
+            <p>Pesos de balanza: {formatWeight(movement.pesoInicial)} / {formatWeight(movement.pesoFinal)} · Tara: {formatWeight(taraBalanza(movement))}</p>
             <p>Peso neto: {formatWeight(movement.pesoNetoBalanza)}</p>
             <p>Peso marítimo recibido: {formatWeight(pesoRecibido)}</p>
           </div>
@@ -1409,6 +1409,14 @@ function pesoNetoMovimiento(movimiento: MovimientoFisico) {
   const final = pesoNumericoOpcional(movimiento.pesoFinal);
   if (inicial != null && inicial > 0 && final != null && final > 0) return Math.abs(final - inicial);
   return null;
+}
+
+/** La tara de la UT es el menor peso físico registrado en los dos pesajes. */
+function taraBalanza(movimiento: MovimientoFisico) {
+  const inicial = pesoNumericoOpcional(movimiento.pesoInicial);
+  const final = pesoNumericoOpcional(movimiento.pesoFinal);
+  if (inicial == null || inicial <= 0 || final == null || final <= 0) return null;
+  return Math.min(inicial, final);
 }
 
 /** En retiro múltiple se suman los netos de todas las unidades, pero el peso marítimo recibido del volante se toma una sola vez. */
