@@ -319,13 +319,15 @@ function crearFilasSeguimientoReporte(operaciones: Operacion[], movimientos: Git
       const retiroVacio = movimientosCita.find((movimiento) => movimiento.retiroVacio);
       const valido = movimientosCita.filter(segundoPesajeValido);
       const movimiento = movimientosCita.at(-1);
+      const anulada = cita.estado === 'ANULADA';
       const espera = movimiento ? duracionReporte(cita.fechaGarita, movimiento.fechaGarita) : null;
       const esperaAlmacen = movimiento ? duracionReporte(movimiento.fechaGarita, movimiento.fechaInicioAtencion ?? null) : null;
       const operativo = movimiento && segundoPesajeValido(movimiento) ? duracionReporte(movimiento.fechaInicioAtencion ?? null, movimiento.fechaSalidaBalanza) : null;
       // En FCL cada cita corresponde a un contenedor: aunque comparta volante,
       // se reporta como una operación independiente y no como atención múltiple.
       const multiple = cita.modalidad !== 'FCL' && movimientosCita.length > 1;
-      const estado = retiroVacio ? 'Retiro vacío / no atendida'
+      const estado = anulada ? 'Anulada'
+        : retiroVacio ? 'Retiro vacío / no atendida'
         : multiple ? `Atención múltiple · ${movimientosCita.length} unidades`
           : movimiento && segundoPesajeValido(movimiento) ? 'Completado'
             : movimiento?.fechaGarita ? 'Primer pesaje GITS sin salida por balanza'
@@ -334,13 +336,13 @@ function crearFilasSeguimientoReporte(operaciones: Operacion[], movimientos: Git
         fechaCita: fechaCortaReporte(cita.fechaCita), horaCita: horaReporte(cita.fechaCita), volante: cita.volante,
         contenedor: cita.modalidad === 'FCL' ? cita.contenedor ?? movimiento?.contenedor ?? '—' : '—',
         placa: multiple ? `${movimientosCita.length} unidades` : movimiento?.placa ?? cita.unidad ?? '—',
-        registro: cita.fechaGarita ? horaReporte(cita.fechaGarita) : '—',
-        espera: retiroVacio ? '' : multiple ? 'Ver detalle' : espera ?? '—',
-        ingreso: retiroVacio ? '' : multiple ? `${movimientosCita.length} ingresos` : movimiento?.fechaGarita ? horaReporte(movimiento.fechaGarita) : '—',
-        esperaAlmacen: retiroVacio ? '' : multiple ? 'Por unidad' : esperaAlmacen ?? '—',
-        salida: retiroVacio ? '' : multiple ? `${valido.length} salidas` : movimiento && segundoPesajeValido(movimiento) ? horaReporte(movimiento.fechaSalidaBalanza) : '—',
-        atencion: retiroVacio ? '' : multiple ? 'Por unidad' : operativo ?? '—', estado,
-        observacion: retiroVacio ? 'Pesaje libre: retiro vacío / cancelado' : '', anulada: false,
+        registro: anulada ? '' : cita.fechaGarita ? horaReporte(cita.fechaGarita) : '—',
+        espera: anulada || retiroVacio ? '' : multiple ? 'Ver detalle' : espera ?? '—',
+        ingreso: anulada || retiroVacio ? '' : multiple ? `${movimientosCita.length} ingresos` : movimiento?.fechaGarita ? horaReporte(movimiento.fechaGarita) : '—',
+        esperaAlmacen: anulada || retiroVacio ? '' : multiple ? 'Por unidad' : esperaAlmacen ?? '—',
+        salida: anulada || retiroVacio ? '' : multiple ? `${valido.length} salidas` : movimiento && segundoPesajeValido(movimiento) ? horaReporte(movimiento.fechaSalidaBalanza) : '—',
+        atencion: anulada || retiroVacio ? '' : multiple ? 'Por unidad' : operativo ?? '—', estado,
+        observacion: anulada ? 'Cita anulada' : retiroVacio ? 'Pesaje libre: retiro vacío / cancelado' : '', anulada,
         tonoEspera: tonoReporte(espera, 'ESPERA'), tonoAtencion: tonoReporte(operativo, 'OPERATIVO')
       };
     }))
