@@ -439,7 +439,7 @@ function InternalScreen({ resumen, grupos, seguimiento, resumenSeguimiento, upda
           ? <KpiDoble principal={{ label: 'Citas agendadas', value: totales.agendadas }} secundario={{ label: 'UT programadas', value: unidadesProgramadasLcl }} />
           : <Kpi label="Citas / A.R." value={totales.agendadas} />}
         <Kpi label="Registro en garita" value={totales.garita} />
-        <Kpi label={seguimientoTotal.pesoObservado ? `Alertas críticas · incluye ${seguimientoTotal.pesoObservado} peso(s) por validar` : 'Alertas críticas'} value={seguimientoTotal.criticas} />
+        <Kpi label={seguimientoTotal.pesoObservado ? `Alertas críticas - ${seguimientoTotal.pesoObservado} peso(s) por validar` : 'Alertas críticas'} value={seguimientoTotal.criticas} />
       </section>
 
       <IncidentNotice incidentes={incidentes} />
